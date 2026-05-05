@@ -56,6 +56,30 @@ target_link_libraries(hello_world
 
 apply_project_warnings(hello_world)
 
+add_executable(echo_server
+    src/echo_server.cpp
+)
+
+target_link_libraries(echo_server
+    PRIVATE
+        hello_lib
+        project_boost_asio
+)
+
+apply_project_warnings(echo_server)
+
+add_executable(echo_client
+    src/echo_client.cpp
+)
+
+target_link_libraries(echo_client
+    PRIVATE
+        hello_lib
+        project_boost_asio
+)
+
+apply_project_warnings(echo_client)
+
 if(ENABLE_TESTING)
     add_subdirectory(tests)
 endif()

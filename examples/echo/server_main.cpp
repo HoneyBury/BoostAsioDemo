@@ -8,6 +8,7 @@
 #include "game/gateway/gateway_service.h"
 #include "game/gateway/session_manager.h"
 #include "game/login/login_service.h"
+#include "game/login/http_token_validator.h"
 #include "game/login/token_validator.h"
 #include "game/room/room_manager.h"
 #include "game/room/room_service.h"
@@ -95,6 +96,12 @@ int main(int argc, char* argv[]) {
                  file_validator->user_count(),
                  auth_path.string());
         token_validator = std::make_unique<game::login::JsonFileTokenValidator>(std::move(*file_validator));
+    } else if (config.auth_provider == "http") {
+        LOG_INFO("Using HTTP token validator at {}", config.auth_http_endpoint);
+        token_validator = std::make_unique<game::login::HttpTokenValidator>(
+            io_context.get_executor(),
+            config.auth_http_endpoint,
+            config.auth_http_timeout);
     } else {
         LOG_INFO("Using development token validator");
         token_validator = std::make_unique<game::login::DevTokenValidator>();

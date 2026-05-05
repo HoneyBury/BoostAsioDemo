@@ -193,6 +193,12 @@ GatewayAppConfig load_gateway_config(const std::filesystem::path& path) {
         config.auth_provider = *value;
     }
     config.auth_users_path = get_path_value(store, "gateway.auth.users_path");
+    if (const auto value = store.get_string("gateway.auth.http_endpoint")) {
+        config.auth_http_endpoint = *value;
+    }
+    if (const auto value = store.get_milliseconds("gateway.auth.http_timeout_ms")) {
+        config.auth_http_timeout = *value;
+    }
     if (const auto value = store.get_uint32("session.max_packet_size")) {
         config.session_max_packet_size = *value;
     }

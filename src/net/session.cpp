@@ -1,6 +1,7 @@
 #include "net/session.h"
 
 #include "app/logging.h"
+#include "net/buffer_pool.h"
 #include "net/packet_codec.h"
 
 #include <atomic>
@@ -171,6 +172,9 @@ void Session::do_read_header() {
                                     return;
                                 }
 
+                                // Acquire from buffer pool to reduce allocation churn
+                                auto pooled = BufferPool::instance().acquire_vector(self->expected_body_length_);
+                                self->read_body_ = std::move(pooled);
                                 self->read_body_.assign(self->expected_body_length_, '\0');
                                 self->do_read_body();
                             }));
@@ -224,6 +228,11 @@ void Session::do_read_body() {
                                              ex.what());
                                     self->handle_close(asio::error::invalid_argument);
                                     return;
+                                }
+
+                                // Release read buffer back to pool before next read
+                                if (!self->read_body_.empty()) {
+                                    BufferPool::instance().release_vector(std::move(self->read_body_));
                                 }
 
                                 if (!self->stopped_) {

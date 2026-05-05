@@ -3,6 +3,7 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -34,10 +35,18 @@ bool write_text_file(const std::filesystem::path& path, const std::string& conte
 GatewayRuntimeMetricsSnapshot collect_runtime_metrics(const GatewayMetrics& metrics,
                                                       const SessionManager& session_manager,
                                                       const game::room::RoomManager& room_manager,
-                                                      const game::battle::BattleManager& battle_manager) {
+                                                      const game::battle::BattleManager& battle_manager,
+                                                      const GatewayMetricsSnapshot* previous,
+                                                      double elapsed_sec) {
     const auto session_snapshot = session_manager.snapshot();
+    const auto current_counters = metrics.snapshot();
+    GatewayMetricsRateSnapshot rates;
+    if (previous && elapsed_sec > 0.0) {
+        rates = GatewayMetrics::compute_rates(current_counters, *previous, elapsed_sec);
+    }
     return GatewayRuntimeMetricsSnapshot{
-        .counters = metrics.snapshot(),
+        .counters = current_counters,
+        .rates = rates,
         .active_sessions = session_snapshot.active_sessions,
         .authenticated_sessions = session_snapshot.authenticated_sessions,
         .active_rooms = room_manager.room_count(),
@@ -46,6 +55,7 @@ GatewayRuntimeMetricsSnapshot collect_runtime_metrics(const GatewayMetrics& metr
 }
 
 std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
+    const auto r = snapshot.rates;
     return fmt::format(
         "# TYPE gateway_sessions_accepted_total counter\n"
         "gateway_sessions_accepted_total {}\n"
@@ -74,7 +84,19 @@ std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snaps
         "# TYPE gateway_active_rooms gauge\n"
         "gateway_active_rooms {}\n"
         "# TYPE gateway_active_battles gauge\n"
-        "gateway_active_battles {}\n",
+        "gateway_active_battles {}\n"
+        "# TYPE gateway_sessions_accepted_rate gauge\n"
+        "gateway_sessions_accepted_rate {:.2f}\n"
+        "# TYPE gateway_packets_received_rate gauge\n"
+        "gateway_packets_received_rate {:.2f}\n"
+        "# TYPE gateway_packets_sent_rate gauge\n"
+        "gateway_packets_sent_rate {:.2f}\n"
+        "# TYPE gateway_bytes_received_rate gauge\n"
+        "gateway_bytes_received_rate {:.2f}\n"
+        "# TYPE gateway_bytes_sent_rate gauge\n"
+        "gateway_bytes_sent_rate {:.2f}\n"
+        "# TYPE gateway_login_success_rate gauge\n"
+        "gateway_login_success_rate {:.2f}\n",
         snapshot.counters.accepted_sessions,
         snapshot.counters.closed_sessions,
         snapshot.counters.received_packets,
@@ -88,7 +110,13 @@ std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snaps
         snapshot.active_sessions,
         snapshot.authenticated_sessions,
         snapshot.active_rooms,
-        snapshot.active_battles);
+        snapshot.active_battles,
+        r.accepted_sessions_per_sec,
+        r.received_packets_per_sec,
+        r.sent_packets_per_sec,
+        r.received_bytes_per_sec,
+        r.sent_bytes_per_sec,
+        r.login_successes_per_sec);
 }
 
 std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
@@ -107,6 +135,12 @@ std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
         {"authenticated_sessions", snapshot.authenticated_sessions},
         {"active_rooms", snapshot.active_rooms},
         {"active_battles", snapshot.active_battles},
+        {"sessions_accepted_per_sec", std::round(snapshot.rates.accepted_sessions_per_sec * 100.0) / 100.0},
+        {"packets_received_per_sec", std::round(snapshot.rates.received_packets_per_sec * 100.0) / 100.0},
+        {"packets_sent_per_sec", std::round(snapshot.rates.sent_packets_per_sec * 100.0) / 100.0},
+        {"bytes_received_per_sec", std::round(snapshot.rates.received_bytes_per_sec * 100.0) / 100.0},
+        {"bytes_sent_per_sec", std::round(snapshot.rates.sent_bytes_per_sec * 100.0) / 100.0},
+        {"login_successes_per_sec", std::round(snapshot.rates.login_successes_per_sec * 100.0) / 100.0},
     };
     return document.dump(2);
 }

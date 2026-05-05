@@ -136,14 +136,28 @@ void GatewayServer::arm_metrics_timer() {
             return;
         }
 
+        const auto now = std::chrono::steady_clock::now();
+        const auto* prev_ptr = &previous_metrics_snapshot_;
+        double elapsed_sec = 0.0;
+        if (last_metrics_export_time_.time_since_epoch().count() > 0) {
+            elapsed_sec = std::chrono::duration<double>(now - last_metrics_export_time_).count();
+        }
+        last_metrics_export_time_ = now;
+
         const auto runtime_snapshot =
-            collect_runtime_metrics(metrics_, session_manager_, room_manager_, battle_manager_);
-        LOG_INFO("Gateway metrics: {}, active_sessions={}, authenticated_sessions={}, rooms={}, battles={}",
+            collect_runtime_metrics(metrics_, session_manager_, room_manager_, battle_manager_,
+                                    prev_ptr, elapsed_sec);
+        previous_metrics_snapshot_ = runtime_snapshot.counters;
+
+        LOG_INFO("Gateway metrics: {}, active_sessions={}, auth_sessions={}, rooms={}, battles={}, "
+                 "pkts_recv/s={:.1f}, pkts_sent/s={:.1f}",
                  metrics_.summary(),
                  runtime_snapshot.active_sessions,
                  runtime_snapshot.authenticated_sessions,
                  runtime_snapshot.active_rooms,
-                 runtime_snapshot.active_battles);
+                 runtime_snapshot.active_battles,
+                 runtime_snapshot.rates.received_packets_per_sec,
+                 runtime_snapshot.rates.sent_packets_per_sec);
 
         if (!write_metrics_files(runtime_snapshot, metrics_export_options_)) {
             LOG_WARN("Failed to export metrics files");

@@ -14,14 +14,22 @@ class BattleManager {
 public:
     struct InputEvent {
         std::uint64_t sequence = 0;
+        std::uint32_t frame_number = 0;
         std::string user_id;
         std::string payload;
+    };
+
+    struct FrameSnapshot {
+        std::uint32_t frame_number = 0;
+        std::string room_id;
+        std::vector<InputEvent> inputs;
     };
 
     struct BattleSnapshot {
         std::string room_id;
         std::vector<std::string> player_ids;
         std::uint64_t next_sequence = 1;
+        std::uint32_t current_frame = 0;
         std::vector<InputEvent> inputs;
     };
 
@@ -54,6 +62,7 @@ public:
     SubmitInputOutcome submit_input(const std::string& room_id,
                                     const std::string& user_id,
                                     std::string payload);
+    [[nodiscard]] std::optional<FrameSnapshot> advance_frame(const std::string& room_id);
     void remove_room(const std::string& room_id);
     [[nodiscard]] bool battle_started(const std::string& room_id) const;
     [[nodiscard]] std::size_t active_battle_count() const;
@@ -63,6 +72,7 @@ private:
     struct BattleContext {
         std::vector<std::string> player_ids;
         std::uint64_t next_sequence = 1;
+        std::uint32_t current_frame = 0;
         std::vector<InputEvent> inputs;
     };
 

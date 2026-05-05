@@ -20,6 +20,19 @@ struct GatewayMetricsSnapshot {
     std::uint64_t battle_start_successes = 0;
 };
 
+struct GatewayMetricsRateSnapshot {
+    double accepted_sessions_per_sec = 0.0;
+    double closed_sessions_per_sec = 0.0;
+    double received_packets_per_sec = 0.0;
+    double sent_packets_per_sec = 0.0;
+    double received_bytes_per_sec = 0.0;
+    double sent_bytes_per_sec = 0.0;
+    double blocked_packets_per_sec = 0.0;
+    double login_successes_per_sec = 0.0;
+    double room_join_successes_per_sec = 0.0;
+    double battle_start_successes_per_sec = 0.0;
+};
+
 class GatewayMetrics {
 public:
     void on_session_accepted();
@@ -33,6 +46,10 @@ public:
 
     [[nodiscard]] GatewayMetricsSnapshot snapshot() const;
     [[nodiscard]] std::string summary() const;
+
+    [[nodiscard]] static GatewayMetricsRateSnapshot compute_rates(const GatewayMetricsSnapshot& current,
+                                                                   const GatewayMetricsSnapshot& previous,
+                                                                   double elapsed_sec);
 
 private:
     std::atomic<std::uint64_t> accepted_sessions_{0};

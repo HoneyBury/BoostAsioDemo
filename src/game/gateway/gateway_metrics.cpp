@@ -70,4 +70,34 @@ std::string GatewayMetrics::summary() const {
         current.battle_start_successes);
 }
 
+GatewayMetricsRateSnapshot GatewayMetrics::compute_rates(const GatewayMetricsSnapshot& current,
+                                                           const GatewayMetricsSnapshot& previous,
+                                                           double elapsed_sec) {
+    if (elapsed_sec <= 0.0) {
+        return {};
+    }
+    return GatewayMetricsRateSnapshot{
+        .accepted_sessions_per_sec =
+            static_cast<double>(current.accepted_sessions - previous.accepted_sessions) / elapsed_sec,
+        .closed_sessions_per_sec =
+            static_cast<double>(current.closed_sessions - previous.closed_sessions) / elapsed_sec,
+        .received_packets_per_sec =
+            static_cast<double>(current.received_packets - previous.received_packets) / elapsed_sec,
+        .sent_packets_per_sec =
+            static_cast<double>(current.sent_packets - previous.sent_packets) / elapsed_sec,
+        .received_bytes_per_sec =
+            static_cast<double>(current.received_bytes - previous.received_bytes) / elapsed_sec,
+        .sent_bytes_per_sec =
+            static_cast<double>(current.sent_bytes - previous.sent_bytes) / elapsed_sec,
+        .blocked_packets_per_sec =
+            static_cast<double>(current.blocked_packets - previous.blocked_packets) / elapsed_sec,
+        .login_successes_per_sec =
+            static_cast<double>(current.login_successes - previous.login_successes) / elapsed_sec,
+        .room_join_successes_per_sec =
+            static_cast<double>(current.room_join_successes - previous.room_join_successes) / elapsed_sec,
+        .battle_start_successes_per_sec =
+            static_cast<double>(current.battle_start_successes - previous.battle_start_successes) / elapsed_sec,
+    };
+}
+
 }  // namespace game::gateway

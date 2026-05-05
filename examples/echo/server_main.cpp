@@ -1,4 +1,5 @@
 #include "app/config.h"
+#include "app/crash_handler.h"
 #include "app/logging.h"
 #include "game/battle/battle_service.h"
 #include "game/battle/battle_manager.h"
@@ -50,6 +51,7 @@ bool is_numeric_arg(const char* value) {
 
 int main(int argc, char* argv[]) {
     app::logging::init("echo_server");
+    app::crash::install_crash_handler();
 
     std::filesystem::path config_path = "config/gateway.json";
     std::uint16_t port_override = 0;

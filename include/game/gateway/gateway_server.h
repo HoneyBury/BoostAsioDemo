@@ -55,6 +55,8 @@ private:
     std::chrono::milliseconds metrics_log_interval_;
     GatewayMetricsExportOptions metrics_export_options_;
     std::unique_ptr<net::HttpManager> http_manager_;
+    GatewayMetricsSnapshot previous_metrics_snapshot_;
+    std::chrono::steady_clock::time_point last_metrics_export_time_;
 };
 
 }  // namespace game::gateway

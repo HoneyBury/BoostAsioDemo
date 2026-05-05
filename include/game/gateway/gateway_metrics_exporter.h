@@ -13,6 +13,7 @@ namespace game::gateway {
 
 struct GatewayRuntimeMetricsSnapshot {
     GatewayMetricsSnapshot counters;
+    GatewayMetricsRateSnapshot rates;
     std::uint64_t active_sessions = 0;
     std::uint64_t authenticated_sessions = 0;
     std::uint64_t active_rooms = 0;
@@ -24,10 +25,13 @@ struct GatewayMetricsExportOptions {
     std::optional<std::filesystem::path> json_path;
 };
 
-[[nodiscard]] GatewayRuntimeMetricsSnapshot collect_runtime_metrics(const GatewayMetrics& metrics,
-                                                                   const SessionManager& session_manager,
-                                                                   const game::room::RoomManager& room_manager,
-                                                                   const game::battle::BattleManager& battle_manager);
+[[nodiscard]] GatewayRuntimeMetricsSnapshot collect_runtime_metrics(
+    const GatewayMetrics& metrics,
+    const SessionManager& session_manager,
+    const game::room::RoomManager& room_manager,
+    const game::battle::BattleManager& battle_manager,
+    const GatewayMetricsSnapshot* previous = nullptr,
+    double elapsed_sec = 0.0);
 
 [[nodiscard]] std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snapshot);
 [[nodiscard]] std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot);

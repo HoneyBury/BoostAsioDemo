@@ -47,11 +47,37 @@ BattleManager::SubmitInputOutcome BattleManager::submit_input(const std::string&
 
     InputEvent event{
         .sequence = battle_it->second.next_sequence++,
+        .frame_number = battle_it->second.current_frame,
         .user_id = user_id,
         .payload = std::move(payload),
     };
     battle_it->second.inputs.push_back(event);
     return {SubmitInputResult::kOk, room_id, std::move(event)};
+}
+
+std::optional<BattleManager::FrameSnapshot> BattleManager::advance_frame(const std::string& room_id) {
+    std::scoped_lock lock(mutex_);
+    auto battle_it = active_battles_.find(room_id);
+    if (battle_it == active_battles_.end()) {
+        return std::nullopt;
+    }
+
+    auto& ctx = battle_it->second;
+    const auto frame = ctx.current_frame++;
+
+    // Collect all inputs for this frame
+    std::vector<InputEvent> frame_inputs;
+    for (const auto& input : ctx.inputs) {
+        if (input.frame_number == frame) {
+            frame_inputs.push_back(input);
+        }
+    }
+
+    return FrameSnapshot{
+        .frame_number = frame,
+        .room_id = room_id,
+        .inputs = std::move(frame_inputs),
+    };
 }
 
 void BattleManager::remove_room(const std::string& room_id) {
@@ -81,6 +107,7 @@ std::optional<BattleManager::BattleSnapshot> BattleManager::snapshot(const std::
         .room_id = room_id,
         .player_ids = battle_it->second.player_ids,
         .next_sequence = battle_it->second.next_sequence,
+        .current_frame = battle_it->second.current_frame,
         .inputs = battle_it->second.inputs,
     };
 }

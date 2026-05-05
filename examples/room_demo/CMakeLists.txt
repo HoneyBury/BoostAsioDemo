@@ -1,0 +1,2 @@
+add_executable(room_demo room_demo_main.cpp)
+target_link_libraries(room_demo PRIVATE project_game)

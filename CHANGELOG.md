@@ -1,74 +1,52 @@
-# Changelog
+# 更新日志
 
 ## v1.0.0 (2026-05-05)
 
-### Core Architecture
-- Binary protocol: length-prefixed with message ID, request ID, error code, and flags byte
-- Session: async TCP with heartbeat, rate limiting, max packet size check
-- MessageDispatcher: handler registration, middleware chain, per-range thread pools
-- SessionManager: authentication state, duplicate login handling, session migration
-- RoomManager: create/join/leave/ready, owner mechanism, COW broadcast snapshot
-- BattleManager: start/end, frame sync (advance_frame), input history, spectator support
+### 核心架构
+- 二进制协议：长度前缀 + 消息号 + 请求序号 + 错误码 + 标记位
+- Session：异步 TCP + 心跳 + 限频 + 最大包长校验 + 反压保护
+- MessageDispatcher：消息注册 + 中间件链 + 按消息范围线程池路由
+- SessionManager：认证状态 + 重复登录处理 + 会话迁移
+- RoomManager：创建/加入/离开/准备 + 房主机制 + COW 广播快照
+- BattleManager：起战斗/结束 + 帧同步（advance_frame）+ 输入历史 + 观战
 
-### Business Services
-- LoginService: dev/json_file/http auth providers, token TTL (24h), duplicate kick
-- RoomService: room lifecycle, state broadcast, ready tracking
-- BattleService: battle start, input routing, frame sync, settlement
-- PushService: unified ok/error/push responses
-- GatewayService: auth whitelist, rate limit middleware
-- AdminService: kick_player, ban_ip, server_status, reload_config
-- MatchmakingService: queue-based matching with ELO rating spread
+### 业务服务
+- LoginService：三种鉴权模式（dev/json_file/http），Token TTL 24h，顶号踢线
+- RoomService：房间生命周期 + 状态广播 + 准备追踪
+- BattleService：战斗启动 + 输入路由 + 帧同步 + 结算
+- PushService：统一成功/错误/推送响应
+- GatewayService：鉴权白名单 + 限频中间件
+- AdminService：踢人/封禁/状态/重载管理指令
+- MatchmakingService：队列匹配 + ELO 分差控制
 
-### Observability
-- GatewayMetrics: 10 counters (sessions, packets, bytes, blocks, logins, rooms, battles)
-- GatewayMetricsExporter: Prometheus text + JSON snapshot with per-second rate gauges
-- HttpManager: `/health`, `/metrics`, `/metrics/json` on configurable management port
-- Request trace ID: generated at Session ingress, propagated through Dispatcher to handlers
-- Audit logging: login_success/failure, rate_limited, connection_rejected, config_reload
-- Crash handler: Windows SEH + POSIX signals, report to `runtime/crashes/`
-- Log sampling: `LOG_INFO_SAMPLED(N, ...)` for high-frequency paths
+### 可观测性
+- 10 种累计计数器 + 6 种每秒速率仪表盘
+- Prometheus 文本 + JSON 双格式导出
+- HTTP 管理端点：/health /metrics /metrics/json
+- 请求链路追踪 ID（Session → Dispatcher → Handler）
+- 审计日志：登录成功/失败、限频触发、连接拒绝、配置重载
+- 崩溃转储：Windows SEH + POSIX 信号
+- 日志采样宏：LOG_INFO_SAMPLED / LOG_DEBUG_SAMPLED
 
-### Performance
-- BufferPool: reusable `std::string` and `std::vector<char>` pools
-- ObjectPool<T>: generic pooled allocation
-- Auto-compression: transparent zlib compress/decompress for >512B bodies
-- Packet fragmentation: >8KB auto-split into 4KB fragments with reassembly
-- Batch send: `Session::send_batch()` for single-write broadcast
-- Zero-copy read: buffer pool integration in Session read path
-- Broadcast lock optimization: COW snapshot via `broadcast_to_room()`
-- Write queue backpressure: pause read at 75% watermark, resume at 25%
-- Slow connection detection: WARN when write backlog exceeds 50% of limit
+### 性能优化
+- BufferPool / ObjectPool 复用分配
+- 大包自动压缩（>512B）+ 分片传输（>8KB）
+- 批量发包（send_batch）+ COW 广播快照
+- 零拷贝读包路径 + 写队列反压
+- 慢连接检测（积压 > 50% 告警）
+- 连接预热（线性提升至全速）
 
-### Security
-- Token lifecycle: `expires_at` field, 24h TTL (1h for dev tokens)
-- Connection limits: max total + per-IP with rejection logging
-- Rate limiting: per-connection (warm-up ramp), per-user, per-message-type
-- Login protection: per-IP + per-user attempt tracking with auto-block
-- Guest accounts: restricted permissions, reduced rate limit, max_guests cap
-- TLS config: cert chain + private key, `asio::ssl::stream` integration
-- Audit log: structured JSON security events
+### 安全能力
+- Token 生命周期管理（expires_at + TTL）
+- 连接限制（总量 + 单 IP）
+- 多维限频（连接/用户/消息类型）
+- 登录防暴力破解（IP + 用户维度）
+- 游客账号（受限权限 + 降速限制）
+- TLS 配置（证书 + 私钥 + SSL 上下文）
 
-### Engineering
-- CMake presets: windows-msvc-debug, default (ninja), release
-- Third-party management: FetchContent + local `third_party/` for offline builds
-- Docker: multi-stage build, `docker-compose.yml` with healthcheck
-- CI: GitHub Actions build+test matrix (ubuntu/windows/macos) + Docker job
-- 54 tests: 34 unit + 8 integration + 7 fuzz + 5 misc
-- 8 pressure scenarios: echo, invalid_token, slow_echo, broadcast_storm,
-  malicious_packet, battle_broadcast, chaos, stability
-- 6 executables: echo_server, echo_client, gateway_pressure,
-  login_server, room_server, battle_server
-
-### Monitoring
-- Grafana dashboard: 12 panels (sessions, rooms, battles, packets/s, bytes/s, health)
-- Prometheus alerts: 7 rules (down, error rate, saturation, slow connections, auth spike,
-  backlog, metrics absence)
-- Per-second rate gauges: packets_recv/s, packets_sent/s, bytes_recv/s, bytes_sent/s,
-  logins/s, sessions_accepted/s
-
-### Protocol Messages
-- System: 1-2 (heartbeat), 1001-1004 (echo, kicks), 9001 (error)
-- Login: 2001-2002
-- Room: 3001-3009 (create/join/leave/ready/push)
-- Battle: 4001-4006 (start/input/push/state)
-- Admin: 5001-5005 (kick/ban/status/reload/response)
+### 工程能力
+- CMake Presets + FetchContent + 本地 third_party 内网构建
+- Docker 多阶段构建 + docker-compose + GitHub Actions CI
+- 54 个测试（34 单元 + 8 集成 + 7 模糊 + 5 其他）
+- 8 种压测场景（echo/invalid_token/slow_echo/broadcast_storm/malicious/battle/chaos/stability）
+- 6 个可执行文件

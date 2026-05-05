@@ -15,7 +15,7 @@ namespace game::battle {
 
 class ReplayPlayer {
 public:
-    using FrameCallback = std::function<void(const FrameSnapshot&)>;
+    using FrameCallback = std::function<void(const BattleManager::FrameSnapshot&)>;
     using EndCallback = std::function<void()>;
 
     explicit ReplayPlayer(persistence::IBattleReplayStore& store) : store_(store) {}
@@ -31,11 +31,11 @@ public:
 
         frames_.clear();
         for (const auto& f : doc["frames"]) {
-            FrameSnapshot snap;
+            BattleManager::FrameSnapshot snap;
             snap.frame_number = f.value("frame", 0u);
             snap.room_id = room_id_;
             for (const auto& input : f["inputs"]) {
-                InputEvent ev;
+                BattleManager::InputEvent ev;
                 ev.sequence = input.value("seq", 0ull);
                 ev.frame_number = snap.frame_number;
                 ev.user_id = input.value("user_id", "");
@@ -67,7 +67,7 @@ private:
     std::string battle_id_;
     std::string room_id_;
     std::uint32_t total_frames_ = 0;
-    std::vector<FrameSnapshot> frames_;
+    std::vector<BattleManager::FrameSnapshot> frames_;
     std::size_t current_frame_ = 0;
 };
 

@@ -68,7 +68,7 @@ public:
 private:
     void do_read_header();
     void do_read_body();
-    void enqueue_write(PacketMessage message);
+    void enqueue_write(PacketMessage message, bool high_priority = false);
     void do_write();
     void handle_close(const error_code& ec);
     void arm_heartbeat_timer();

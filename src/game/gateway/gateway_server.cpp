@@ -1,5 +1,6 @@
 #include "game/gateway/gateway_server.h"
 
+#include "app/audit_log.h"
 #include "app/logging.h"
 
 #include <utility>
@@ -94,6 +95,7 @@ void GatewayServer::do_accept() {
         const auto current = active_connection_count_.load(std::memory_order_relaxed);
         if (max_connections_ > 0 && current >= max_connections_) {
             LOG_WARN("Connection rejected: at max capacity ({})", max_connections_);
+            AUDIT_LOG("connection_rejected", "reason=max_capacity");
             metrics_.on_packet_blocked();
             error_code ignored;
             socket.close(ignored);
@@ -106,6 +108,7 @@ void GatewayServer::do_accept() {
             std::scoped_lock lock(ip_count_mutex_);
             if (ip_connection_counts_[ip] >= per_ip_limit_) {
                 LOG_WARN("Connection rejected: IP {} at per-IP limit ({})", ip, per_ip_limit_);
+                AUDIT_LOG("connection_rejected", "reason=per_ip_limit ip=" + ip);
                 metrics_.on_packet_blocked();
                 error_code ignored;
                 socket.close(ignored);

@@ -1,5 +1,6 @@
 #include "game/gateway/gateway_service.h"
 
+#include "app/audit_log.h"
 #include "net/protocol.h"
 
 #include <array>
@@ -82,6 +83,7 @@ bool GatewayService::check_rate_limit(const net::DispatchContext& context) const
     }
 
     metrics_.on_packet_blocked();
+    AUDIT_LOG("rate_limited", "session=" + context.session->remote_endpoint());
     context.session->send(net::protocol::kErrorResponse,
                           context.request_id,
                           static_cast<std::int32_t>(net::protocol::ErrorCode::kRateLimited),

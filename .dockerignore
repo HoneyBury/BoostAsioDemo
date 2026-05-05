@@ -1,0 +1,11 @@
+build/
+out/
+.cache/
+logs/
+runtime/
+.idea/
+.claude/
+.git/
+*.md
+.clang-format
+.editorconfig

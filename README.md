@@ -1,163 +1,104 @@
-# C++ Scaffold
+# Boost Game Server Framework v1.0.0
 
-This repository provides a minimal modern C++ starter project with:
+A high-performance C++20 game server framework built on Boost.Asio.
 
-- CMake and CMake Presets
-- Third-party dependencies via `FetchContent`
-- `Boost.Asio` for asynchronous TCP networking
-- `fmt` for formatting
-- `spdlog` for logging
-- `GoogleTest` for unit tests
-- `clang-format` and `.editorconfig`
-- GitHub Actions for CI and release artifacts
+## Features
 
-## 第三方依赖管理
+### Network Transport
+- Binary protocol: `[4B len][2B msg][4B req][4B err][1B flags][body]`
+- Auto-compression for large packets (>512B, `flags::kCompressed`)
+- Packet fragmentation for >8KB payloads
+- Batch send (`Session::send_batch`) for broadcast efficiency
+- Zero-copy read path with buffer pool
+- Write queue backpressure to prevent OOM
+- TLS support (`TlsConfig` + `asio::ssl::stream`)
 
-这个项目在 [cmake/Dependencies.cmake](/D:/Program/boost/cmake/Dependencies.cmake:1) 中统一使用 CMake `FetchContent` 管理第三方库。
+### Business Services
+- **Login**: dev/json_file/http auth providers, token TTL, duplicate login handling
+- **Room**: create/join/leave/ready, owner mechanism, room state broadcast
+- **Battle**: start/input/frame sync/end, settlement, spectator mode
+- **Matchmaking**: queue-based, ELO rating spread, configurable match size
+- **Admin**: kick/ban/status/reload commands (msg 5001-5005)
 
-- `FetchContent_Declare(...)` 用来声明依赖来源和版本。
-- `FetchContent_MakeAvailable(...)` 会在 CMake configure 阶段下载源码，并把依赖暴露成当前工程可链接的 CMake target。
-- For `Boost.Asio`, this project intentionally uses a lighter pattern:
-  这里故意使用更轻量的方式：
-  `FetchContent_Populate(...)` 下载官方 Boost 发布包，然后在
-  [cmake/Dependencies.cmake](/D:/Program/boost/cmake/Dependencies.cmake:1) 中创建一个名为 `project_boost_asio` 的 `INTERFACE`
-  target，只导出 Boost 头文件路径和编译宏。
+### Observability
+- Prometheus metrics (counters + per-second rate gauges)
+- JSON metrics snapshot
+- HTTP management endpoint: `/health`, `/metrics`, `/metrics/json`
+- Grafana dashboard template (`grafana/dashboard.json`)
+- Prometheus alerting rules (`prometheus/alerts.yml`)
+- Request trace ID across all layers
+- Security audit log (`logs/audit.log`, JSON lines)
+- Crash dump handler (Windows SEH + POSIX signals)
 
-### 内网环境构建
+### Operations
+- Graceful shutdown (SIGINT/SIGTERM, save state, drain connections)
+- Configuration hot-reload (file watcher)
+- Connection limits (max total + per-IP)
+- Rate limiting (per-connection warm-up + per-user + per-message-type)
+- Guest account support
+- Login brute-force protection
 
-如果开发环境无法直接访问 GitHub，项目支持从本地 `third_party/` 目录加载依赖：
+### Engineering
+- CMake + FetchContent + local third_party (offline build)
+- Docker + docker-compose + CI (GitHub Actions)
+- 54 tests (unit + integration + fuzz)
+- 8 pressure test scenarios
+- Multi-process architecture (standalone login/room/battle servers)
 
-**准备第三方依赖包（只需一人执行一次）：**
+## Quick Start
 
 ```powershell
-# 下载所有第三方库的发布包到 third_party/
-.\third_party\download_deps.bat
-
-# 打包成单个压缩文件（上传到公司内部仓库 / 文件服务器）
-.\third_party\package.bat
-```
-
-**其他内网开发者：**
-
-1. 从公司内部仓库下载 `third_party.zip`
-2. 解压到项目根目录（`third_party/` 文件夹会和 `CMakeLists.txt` 同级）
-3. 正常构建：
-
-```powershell
-cmake --preset windows-msvc-debug
-cmake --build --preset windows-msvc-debug
-```
-
-CMake 在 configure 阶段会自动检测 `third_party/` 下的本地压缩包并优先使用，无需修改任何配置。
-
-这个项目中的依赖作用域如下：
-
-- `hello_lib` links `fmt::fmt` and `spdlog::spdlog` as `PUBLIC`
-  这表示 `hello_world`、`echo_server` 和 `echo_client` 会自动继承所需的头文件路径和链接设置。
-- `echo_server` and `echo_client` link `project_boost_asio` as `PRIVATE`
-  这表示 Boost 只对这两个可执行目标的编译生效，不会继续传播到其他 target。
-- `hello_tests` links `GTest::gtest_main` as `PRIVATE`
-  这样测试依赖就不会污染生产目标。
-
-从工程角度看，常见的 CMake 作用域含义是：
-
-- `PRIVATE`：只有当前 target 自己编译时需要这个依赖
-- `PUBLIC`：当前 target 自己需要，而且所有依赖它的 target 也需要
-- `INTERFACE`：当前 target 自己不直接使用，但依赖它的 target 需要
-
-这个项目里的构建产物范围也比较清晰：
-
-- `hello_lib` 会产出一个可复用静态库，供多个可执行文件复用
-- `hello_world`、`echo_server`、`echo_client` 会产出可执行文件
-- 测试二进制只会在 `ENABLE_TESTING=ON` 时构建
-- 所有生成物都放在 `build/` 目录下，源码和构建产物相互隔离
-
-## Logging
-
-The scaffold includes a baseline `spdlog` setup with:
-
-- colored console output
-- file logging under `logs/`
-- a shared log pattern
-- level selection by build type
-- convenience macros such as `LOG_INFO(...)` and `LOG_ERROR(...)`
-
-Main entry points:
-
-- `app::logging::init("app_name")`
-- `LOG_TRACE(...)`
-- `LOG_DEBUG(...)`
-- `LOG_INFO(...)`
-- `LOG_WARN(...)`
-- `LOG_ERROR(...)`
-- `LOG_CRITICAL(...)`
-
-## Requirements
-
-- CMake 3.21+
-- A C++20 compiler
-- Ninja or another supported CMake generator
-
-## Build
-
-```bash
-cmake --preset default
-cmake --build --preset default
-ctest --preset default
-```
-
-On Windows with Visual Studio 2022 installed:
-
-```bash
+# Build
 cmake --preset windows-msvc-debug
 cmake --build --preset windows-msvc-debug
 ctest --preset windows-msvc-debug
+
+# Run gateway
+./build/windows-msvc-debug/examples/echo/Debug/echo_server.exe config/gateway.json
+
+# Health check
+curl http://localhost:9080/health
+
+# Pressure test
+./build/windows-msvc-debug/examples/pressure/Debug/gateway_pressure.exe 127.0.0.1 9000 100 10 echo
 ```
 
-## Demo
+## Module Architecture
 
-```bash
-./build/default/hello_world
+```
+include/
+├── app/          config, logging, crash_handler, audit_log, graceful_shutdown
+├── net/          session, packet_codec, message_dispatcher, buffer_pool,
+│                 http_manager, rate_limiter, service_router, internal_bus
+├── game/
+│   ├── gateway/  gateway_server, session_manager, push_service, admin_service
+│   ├── login/    login_service, token_validator, http_token_validator
+│   ├── room/     room_manager, room_service
+│   ├── battle/   battle_manager, battle_service, replay_player
+│   ├── match/    matchmaking_service
+│   └── persistence/ player_store, sqlite_store
+src/               Implementation files
+examples/          echo_server, echo_client, gateway_pressure,
+                   login_server, room_server, battle_server
+tests/             54 tests (unit + integration + fuzz)
 ```
 
-Expected output:
+## Configuration
 
-```text
-[2026-05-05 08:39:44.502] [hello_world] [info] Hello, World!
-```
+See `config/gateway.json` for all options including TLS, auth providers,
+connection limits, and session parameters.
 
-## Boost.Asio Echo 示例
+## Third-Party Dependencies
 
-构建：
+Managed via CMake `FetchContent` or local `third_party/` archives:
+- Boost 1.90.0 (Asio, Beast)
+- fmt 11.2.0
+- spdlog 1.15.3
+- nlohmann/json 3.12.0
+- GoogleTest 1.17.0
 
-```bash
-cmake --preset windows-msvc-debug
-cmake --build --preset windows-msvc-debug
-```
+See `third_party/README.md` for offline build instructions.
 
-启动服务端：
+## License
 
-```bash
-./build/windows-msvc-debug/Debug/echo_server.exe 9000
-```
-
-在另一个终端启动客户端：
-
-```bash
-./build/windows-msvc-debug/Debug/echo_client.exe 127.0.0.1 9000 "hello from client"
-```
-
-预期客户端输出：
-
-```text
-[info] Connected to 127.0.0.1:9000
-[info] Sending: hello from client
-[info] Received echo: hello from client
-```
-
-## Asio 运行模型
-
-- `io_context.run()` 会进入事件循环，等待异步操作完成，并执行对应的 handler。
-- 某个 handler 运行在哪个线程上，取决于当前是哪一个线程在调用这个 `io_context` 的 `run()`。
-- 如果只有一个线程调用 `run()`，那所有 handler 都会在这一条线程里执行。
-- 如果多个线程同时对同一个 `io_context` 调用 `run()`，那么 handler 可能运行在这些线程中的任意一个上，除非你用 `strand` 做串行化保护。
+MIT

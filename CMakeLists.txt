@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(cpp_scaffold
-    VERSION 0.1.0
-    DESCRIPTION "A modern C++ starter scaffold"
+project(boost_gateway
+    VERSION 1.0.0
+    DESCRIPTION "A high-performance C++ game server framework"
     LANGUAGES CXX
 )
 

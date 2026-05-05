@@ -282,3 +282,53 @@
 - 广播与推送链路增强
 - 重连恢复与踢线
 - 配置系统
+
+---
+
+## 2026-05-05 阶段七：P2 基础工程增强
+
+### 目标
+
+- 抽象统一推送组件
+- 增强顶号踢线和房间状态恢复
+- 把服务端关键参数迁移到配置系统
+
+### 完成内容
+
+- 新增 `PushService`，统一处理成功响应、错误响应和广播推送
+- 登录顶号时旧连接会收到 `kSessionKickedPush`
+- 新连接会恢复原房间归属，并收到 `kSessionResumedPush`
+- `RoomManager` 新增会话迁移能力
+- 新增轻量配置模块 `app::config`
+- `echo_server` 已支持从 `config/gateway.conf` 加载线程数、端口、心跳和限流相关参数
+- 补齐配置测试和重复登录恢复集成测试
+
+### 影响范围
+
+- `app`
+- `game/gateway`
+- `game/login`
+- `game/room`
+- `game/battle`
+- `examples/echo`
+- `tests/unit`
+- `tests/integration`
+- `docs`
+
+### 问题与风险
+
+- 当前配置格式仍是简单 `key=value`，后续可升级到更强的结构化配置
+- 会话恢复目前只恢复房间归属和战斗状态标记，没有恢复更深层业务上下文
+- 广播推送目前仍是字符串体，后续建议改为结构化协议体
+
+### 测试结果
+
+- `ctest --preset windows-msvc-debug`
+- `23/23` 测试通过
+- `echo_server.exe config/gateway.conf 9103` + `gateway_pressure.exe 127.0.0.1 9103 10 3` 冒烟通过
+
+### 下一步
+
+- 可观测性升级
+- 压测体系扩展
+- 真实鉴权服务与后端集成

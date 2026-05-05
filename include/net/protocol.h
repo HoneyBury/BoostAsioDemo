@@ -29,6 +29,8 @@ constexpr std::uint16_t kHeartbeatResponse = 2;
 
 constexpr std::uint16_t kEchoRequest = 1001;
 constexpr std::uint16_t kEchoResponse = 1002;
+constexpr std::uint16_t kSessionKickedPush = 1003;
+constexpr std::uint16_t kSessionResumedPush = 1004;
 
 constexpr std::uint16_t kLoginRequest = 2001;
 constexpr std::uint16_t kLoginResponse = 2002;

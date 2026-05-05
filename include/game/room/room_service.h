@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/gateway/gateway_metrics.h"
+#include "game/gateway/push_service.h"
 #include "game/gateway/session_manager.h"
 #include "game/battle/battle_manager.h"
 #include "game/room/room_manager.h"
@@ -13,6 +14,7 @@ namespace game::room {
 class RoomService {
 public:
     RoomService(gateway::SessionManager& session_manager,
+                gateway::PushService& push_service,
                 battle::BattleManager& battle_manager,
                 RoomManager& room_manager,
                 gateway::GatewayMetrics& metrics);
@@ -26,6 +28,7 @@ private:
                               const std::shared_ptr<net::Session>& exclude_session = {}) const;
 
     gateway::SessionManager& session_manager_;
+    gateway::PushService& push_service_;
     battle::BattleManager& battle_manager_;
     RoomManager& room_manager_;
     gateway::GatewayMetrics& metrics_;

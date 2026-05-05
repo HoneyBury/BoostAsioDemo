@@ -1,6 +1,7 @@
 #include "game/battle/battle_service.h"
 #include "game/battle/battle_manager.h"
 #include "game/gateway/gateway_metrics.h"
+#include "game/gateway/push_service.h"
 #include "game/gateway/gateway_service.h"
 #include "game/gateway/session_manager.h"
 #include "game/login/login_service.h"
@@ -21,12 +22,13 @@ TEST(ServiceRegistrationTest, RegistersCoreBusinessHandlersAndMiddleware) {
     game::room::RoomManager room_manager;
     game::battle::BattleManager battle_manager;
     game::gateway::GatewayMetrics metrics;
+    game::gateway::PushService push_service;
     game::login::DevTokenValidator token_validator;
 
     game::gateway::GatewayService gateway_service(session_manager, metrics);
-    game::login::LoginService login_service(session_manager, token_validator, metrics);
-    game::room::RoomService room_service(session_manager, battle_manager, room_manager, metrics);
-    game::battle::BattleService battle_service(session_manager, room_manager, battle_manager, metrics);
+    game::login::LoginService login_service(session_manager, push_service, room_manager, token_validator, metrics);
+    game::room::RoomService room_service(session_manager, push_service, battle_manager, room_manager, metrics);
+    game::battle::BattleService battle_service(session_manager, push_service, room_manager, battle_manager, metrics);
 
     gateway_service.register_handlers(dispatcher);
     login_service.register_handlers(dispatcher);

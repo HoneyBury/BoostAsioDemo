@@ -174,3 +174,5 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - `LoginService` 已接入 token 校验与登录上下文
 - `RoomService` 已支持创建、加入、离开、准备和房间广播
 - `BattleService` 已支持房主起战斗、输入路由和战斗广播
+- 顶号登录现在会给旧连接发送 `kSessionKickedPush`，并把房间状态恢复到新连接
+- 服务端启动已支持从 `config/gateway.conf` 加载关键参数

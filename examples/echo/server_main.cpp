@@ -1,7 +1,9 @@
+#include "app/config.h"
 #include "app/logging.h"
 #include "game/battle/battle_service.h"
 #include "game/battle/battle_manager.h"
 #include "game/gateway/gateway_metrics.h"
+#include "game/gateway/push_service.h"
 #include "game/gateway/gateway_server.h"
 #include "game/gateway/gateway_service.h"
 #include "game/gateway/session_manager.h"
@@ -16,32 +18,74 @@
 #include <boost/asio/thread_pool.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <vector>
 
 namespace asio = boost::asio;
 
+namespace {
+
+bool is_numeric_arg(const char* value) {
+    if (value == nullptr || *value == '\0') {
+        return false;
+    }
+
+    for (const auto* current = value; *current != '\0'; ++current) {
+        if (!std::isdigit(static_cast<unsigned char>(*current))) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+}  // namespace
+
 int main(int argc, char* argv[]) {
     app::logging::init("echo_server");
 
-    const auto port = static_cast<std::uint16_t>(argc > 1 ? std::atoi(argv[1]) : 9000);
+    std::filesystem::path config_path = "config/gateway.conf";
+    std::uint16_t port_override = 0;
+    if (argc > 1) {
+        if (is_numeric_arg(argv[1])) {
+            port_override = static_cast<std::uint16_t>(std::atoi(argv[1]));
+        } else {
+            config_path = argv[1];
+        }
+    }
+    if (argc > 2 && is_numeric_arg(argv[2])) {
+        port_override = static_cast<std::uint16_t>(std::atoi(argv[2]));
+    }
+
+    auto config = app::config::load_gateway_config(config_path);
+    if (port_override != 0) {
+        config.port = port_override;
+    }
+    net::SessionOptions session_options;
+    session_options.max_packet_size = config.session_max_packet_size;
+    session_options.max_pending_write_bytes = config.session_max_pending_write_bytes;
+    session_options.heartbeat_check_interval = config.session_heartbeat_check_interval;
+    session_options.heartbeat_timeout = config.session_heartbeat_timeout;
 
     asio::io_context io_context;
-    boost::asio::thread_pool business_pool(std::max(2u, std::thread::hardware_concurrency()));
+    boost::asio::thread_pool business_pool(config.business_threads);
     net::MessageDispatcher dispatcher(business_pool);
     game::gateway::SessionManager session_manager;
     game::room::RoomManager room_manager;
     game::battle::BattleManager battle_manager;
     game::gateway::GatewayMetrics metrics;
+    game::gateway::PushService push_service;
     game::login::DevTokenValidator token_validator;
 
     game::gateway::GatewayService gateway_service(session_manager, metrics);
-    game::login::LoginService login_service(session_manager, token_validator, metrics);
-    game::room::RoomService room_service(session_manager, battle_manager, room_manager, metrics);
-    game::battle::BattleService battle_service(session_manager, room_manager, battle_manager, metrics);
+    game::login::LoginService login_service(session_manager, push_service, room_manager, token_validator, metrics);
+    game::room::RoomService room_service(session_manager, push_service, battle_manager, room_manager, metrics);
+    game::battle::BattleService battle_service(session_manager, push_service, room_manager, battle_manager, metrics);
 
     gateway_service.register_handlers(dispatcher);
     login_service.register_handlers(dispatcher);
@@ -59,11 +103,18 @@ int main(int argc, char* argv[]) {
         });
 
     game::gateway::GatewayServer server(
-        io_context, dispatcher, session_manager, room_manager, battle_manager, metrics, port);
+        io_context,
+        dispatcher,
+        session_manager,
+        room_manager,
+        battle_manager,
+        metrics,
+        config.port,
+        session_options,
+        config.metrics_log_interval);
     server.start();
 
-    const auto io_thread_count =
-        std::max(2u, std::thread::hardware_concurrency() == 0 ? 2u : std::thread::hardware_concurrency());
+    const auto io_thread_count = config.io_threads;
 
     std::vector<std::thread> io_workers;
     io_workers.reserve(io_thread_count);

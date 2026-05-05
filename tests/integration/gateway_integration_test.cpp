@@ -2,6 +2,7 @@
 #include "game/battle/battle_service.h"
 #include "game/battle/battle_manager.h"
 #include "game/gateway/gateway_metrics.h"
+#include "game/gateway/push_service.h"
 #include "game/gateway/gateway_server.h"
 #include "game/gateway/gateway_service.h"
 #include "game/gateway/session_manager.h"
@@ -38,6 +39,7 @@ struct GatewayTestRuntime {
     game::room::RoomManager room_manager;
     game::battle::BattleManager battle_manager;
     game::gateway::GatewayMetrics metrics;
+    game::gateway::PushService push_service;
     game::login::DevTokenValidator token_validator;
     net::SessionOptions options;
     std::unique_ptr<game::gateway::GatewayServer> server;
@@ -49,11 +51,12 @@ struct GatewayTestRuntime {
 
     void start() {
         gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics);
-        login_service = std::make_unique<game::login::LoginService>(session_manager, token_validator, metrics);
+        login_service =
+            std::make_unique<game::login::LoginService>(session_manager, push_service, room_manager, token_validator, metrics);
         room_service =
-            std::make_unique<game::room::RoomService>(session_manager, battle_manager, room_manager, metrics);
+            std::make_unique<game::room::RoomService>(session_manager, push_service, battle_manager, room_manager, metrics);
         battle_service =
-            std::make_unique<game::battle::BattleService>(session_manager, room_manager, battle_manager, metrics);
+            std::make_unique<game::battle::BattleService>(session_manager, push_service, room_manager, battle_manager, metrics);
 
         gateway_service->register_handlers(dispatcher);
         login_service->register_handlers(dispatcher);
@@ -270,6 +273,42 @@ TEST(GatewayIntegrationTest, InvalidTokenIsRejected) {
     EXPECT_EQ(response.message_id, net::protocol::kErrorResponse);
     EXPECT_EQ(response.error_code, static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidToken));
     EXPECT_EQ(response.body, "invalid_token");
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, DuplicateLoginKicksOldSessionAndResumesRoomState) {
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    runtime.start();
+
+    TestClient first;
+    TestClient second;
+    first.connect(runtime.server->local_port());
+    second.connect(runtime.server->local_port());
+
+    const auto first_login =
+        first.exchange(net::protocol::kLoginRequest, 113, "player_resume|token:player_resume|ResumePlayer");
+    EXPECT_EQ(first_login.message_id, net::protocol::kLoginResponse);
+
+    const auto create_room = first.exchange(net::protocol::kRoomCreateRequest, 114, "room_resume");
+    EXPECT_EQ(create_room.message_id, net::protocol::kRoomCreateResponse);
+
+    const auto second_login =
+        second.exchange(net::protocol::kLoginRequest, 115, "player_resume|token:player_resume|ResumePlayer");
+    EXPECT_EQ(second_login.message_id, net::protocol::kLoginResponse);
+    EXPECT_EQ(second_login.body, "login_ok:player_resume:ResumePlayer:room=room_resume");
+
+    const auto kicked_push = first.expect_message(net::protocol::kSessionKickedPush);
+    EXPECT_EQ(kicked_push.body, "session_kicked:duplicate_login:room_transferred");
+
+    const auto resumed_push = second.expect_message(net::protocol::kSessionResumedPush);
+    EXPECT_EQ(resumed_push.body, "session_resumed:room_resume:battle=0");
+
+    const auto leave_room = second.exchange(net::protocol::kRoomLeaveRequest, 116, "");
+    EXPECT_EQ(leave_room.message_id, net::protocol::kRoomLeaveResponse);
+    EXPECT_EQ(leave_room.body, "room_left:room_resume");
 
     runtime.stop();
 }

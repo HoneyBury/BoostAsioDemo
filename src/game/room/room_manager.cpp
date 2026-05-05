@@ -114,6 +114,41 @@ std::pair<RoomManager::ReadyResult, RoomManager::RoomActionOutcome> RoomManager:
             RoomActionOutcome{.room_id = room_id_it->second, .player_count = room_it->second.members.size()}};
 }
 
+bool RoomManager::transfer_session(const SessionPtr& from_session, const SessionPtr& to_session) {
+    std::scoped_lock lock(mutex_);
+
+    const auto from_key = from_session.get();
+    const auto to_key = to_session.get();
+
+    const auto session_room_it = session_rooms_.find(from_key);
+    if (session_room_it == session_rooms_.end()) {
+        return false;
+    }
+
+    auto room_it = rooms_.find(session_room_it->second);
+    if (room_it == rooms_.end()) {
+        return false;
+    }
+
+    const auto member_it = room_it->second.members.find(from_key);
+    if (member_it == room_it->second.members.end()) {
+        return false;
+    }
+
+    auto member = member_it->second;
+    member.session = to_session;
+    room_it->second.members.erase(member_it);
+    room_it->second.members.insert_or_assign(to_key, std::move(member));
+
+    if (room_it->second.owner && room_it->second.owner.get() == from_key) {
+        room_it->second.owner = to_session;
+    }
+
+    session_rooms_.erase(session_room_it);
+    session_rooms_[to_key] = room_it->first;
+    return true;
+}
+
 void RoomManager::remove_session(const SessionPtr& session) {
     std::scoped_lock lock(mutex_);
     remove_from_room_unlocked(session.get());

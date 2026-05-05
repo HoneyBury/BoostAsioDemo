@@ -65,6 +65,7 @@ public:
     std::pair<JoinRoomResult, RoomActionOutcome> join_room(const SessionPtr& session, std::string room_id);
     std::pair<LeaveRoomResult, RoomActionOutcome> leave_room(const SessionPtr& session);
     std::pair<ReadyResult, RoomActionOutcome> set_ready(const SessionPtr& session, bool ready);
+    bool transfer_session(const SessionPtr& from_session, const SessionPtr& to_session);
 
     void remove_session(const SessionPtr& session);
 

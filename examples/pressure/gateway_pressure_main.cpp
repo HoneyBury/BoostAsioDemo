@@ -325,6 +325,13 @@ private:
 
         if (packet.message_id == net::protocol::kEchoResponse) {
             ++completed_messages_;
+            if (config_.scenario == app::config::PressureScenario::kBenchmark &&
+                send_timestamp_.time_since_epoch().count() > 0) {
+                auto latency = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - send_timestamp_).count();
+                latencies_.push_back(static_cast<double>(latency) / 1000.0);
+                send_timestamp_ = {};
+            }
             if (completed_messages_ >= config_.messages_per_client) {
                 finish();
                 return;
@@ -570,11 +577,16 @@ private:
             break;
         case kChaos:
         case kStability:
+        case kBenchmark:
             send_packet(net::protocol::kEchoRequest,
                         "load_msg:" + user_id_ + ":" + std::to_string(completed_messages_));
             break;
         case kMaliciousPacket:
             break;
+        }
+
+        if (config_.scenario == app::config::PressureScenario::kBenchmark) {
+            send_timestamp_ = std::chrono::steady_clock::now();
         }
 
         // Chaos: randomly disconnect after some messages
@@ -597,6 +609,15 @@ private:
     void finish() {
         error_code ignored_ec;
         send_timer_.cancel();
+
+        // Benchmark: compute and log latency stats
+        if (config_.scenario == app::config::PressureScenario::kBenchmark && !latencies_.empty()) {
+            std::sort(latencies_.begin(), latencies_.end());
+            const auto p50 = latencies_[latencies_.size() * 50 / 100];
+            const auto p99 = latencies_[latencies_.size() * 99 / 100];
+            LOG_INFO("Benchmark {} latencies: count={}, p50={:.2f}ms, p99={:.2f}ms, min={:.2f}ms, max={:.2f}ms",
+                     user_id_, latencies_.size(), p50, p99, latencies_.front(), latencies_.back());
+        }
 
         // Room-based scenarios: client 0 stays connected until all members finish
         const bool is_room_scenario = config_.scenario == app::config::PressureScenario::kBroadcastStorm ||
@@ -667,6 +688,8 @@ private:
     std::size_t received_room_pushes_ = 0;
     std::size_t received_battle_inputs_ = 0;
     std::shared_ptr<std::atomic<std::size_t>> room_done_counter_;
+    std::chrono::steady_clock::time_point send_timestamp_;
+    std::vector<double> latencies_;
 };
 
 int main(int argc, char* argv[]) {

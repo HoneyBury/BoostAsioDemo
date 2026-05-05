@@ -3,6 +3,8 @@
 #include "app/logging.h"
 #include "net/buffer_pool.h"
 #include "net/packet_codec.h"
+#include "net/packet_compressor.h"
+#include "net/packet_fragment.h"
 
 #include <atomic>
 #include <utility>
@@ -40,6 +42,12 @@ void Session::send(std::uint16_t message_id,
                          high_priority]() mutable {
         if (self->stopped_) return;
 
+        // Auto-compress large bodies in direct send path
+        if (packet::should_compress(msg.body.size())) {
+            msg.body = packet::compress_body(msg.body);
+            msg.flags |= packet::flags::kCompressed;
+        }
+
         auto pkt = packet::encode(msg.message_id, msg.request_id, msg.error_code, msg.body, msg.flags);
         self->queued_write_bytes_ += pkt.size();
 
@@ -65,7 +73,11 @@ void Session::send_batch(std::vector<PacketMessage> messages) {
 
         // Encode all messages into a single contiguous buffer
         std::string combined;
-        for (const auto& msg : messages) {
+        for (auto& msg : messages) {
+            if (packet::should_compress(msg.body.size())) {
+                msg.body = packet::compress_body(msg.body);
+                msg.flags |= packet::flags::kCompressed;
+            }
             auto pkt = packet::encode(msg.message_id, msg.request_id, msg.error_code, msg.body, msg.flags);
             combined.append(pkt);
         }
@@ -214,6 +226,12 @@ void Session::do_read_body() {
                                 try {
                                     auto packet = packet::decode_payload(self->read_body_);
 
+                                    // Auto-decompress if flagged
+                                    if (packet.flags & packet::flags::kCompressed) {
+                                        packet.body = packet::decompress_body(packet.body);
+                                        packet.flags &= ~packet::flags::kCompressed;
+                                    }
+
                                     const auto trace_id = g_trace_id_counter.fetch_add(1, std::memory_order_relaxed);
 
                                     LOG_INFO("Session {} received message {} with {} bytes body [trace={}]",
@@ -266,8 +284,16 @@ void Session::enqueue_write(PacketMessage message) {
             return;
         }
 
+        // Auto-compress large bodies
+        auto body = message.body;
+        auto flags = message.flags;
+        if (packet::should_compress(body.size())) {
+            body = packet::compress_body(body);
+            flags |= packet::flags::kCompressed;
+        }
+
         auto packet_bytes =
-            packet::encode(message.message_id, message.request_id, message.error_code, message.body, message.flags);
+            packet::encode(message.message_id, message.request_id, message.error_code, body, flags);
 
         if (packet_bytes.size() > packet::kLengthHeaderSize + self->options_.max_packet_size) {
             LOG_WARN("Session {} outgoing packet too large: {} bytes",

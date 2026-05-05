@@ -1,5 +1,7 @@
 #include "game/battle/battle_service.h"
+#include "game/gateway/gateway_metrics.h"
 #include "game/gateway/gateway_service.h"
+#include "game/gateway/session_manager.h"
 #include "game/login/login_service.h"
 #include "game/room/room_service.h"
 #include "net/message_dispatcher.h"
@@ -9,14 +11,16 @@
 
 #include <gtest/gtest.h>
 
-TEST(ServiceRegistrationTest, RegistersCoreBusinessHandlers) {
+TEST(ServiceRegistrationTest, RegistersCoreBusinessHandlersAndMiddleware) {
     boost::asio::thread_pool pool(1);
     net::MessageDispatcher dispatcher(pool);
+    game::gateway::SessionManager session_manager;
+    game::gateway::GatewayMetrics metrics;
 
-    game::gateway::GatewayService gateway_service;
-    game::login::LoginService login_service;
-    game::room::RoomService room_service;
-    game::battle::BattleService battle_service;
+    game::gateway::GatewayService gateway_service(session_manager, metrics);
+    game::login::LoginService login_service(session_manager, metrics);
+    game::room::RoomService room_service(session_manager, metrics);
+    game::battle::BattleService battle_service(session_manager, metrics);
 
     gateway_service.register_handlers(dispatcher);
     login_service.register_handlers(dispatcher);
@@ -28,4 +32,5 @@ TEST(ServiceRegistrationTest, RegistersCoreBusinessHandlers) {
     EXPECT_TRUE(dispatcher.has_handler(net::protocol::kRoomJoinRequest));
     EXPECT_TRUE(dispatcher.has_handler(net::protocol::kBattleStartRequest));
     EXPECT_EQ(dispatcher.handler_count(), 4U);
+    EXPECT_EQ(dispatcher.middleware_count(), 1U);
 }

@@ -1,7 +1,9 @@
 #include "app/logging.h"
 #include "game/battle/battle_service.h"
+#include "game/gateway/gateway_metrics.h"
 #include "game/gateway/gateway_server.h"
 #include "game/gateway/gateway_service.h"
+#include "game/gateway/session_manager.h"
 #include "game/login/login_service.h"
 #include "game/room/room_service.h"
 #include "net/message_dispatcher.h"
@@ -26,13 +28,14 @@ int main(int argc, char* argv[]) {
 
     asio::io_context io_context;
     boost::asio::thread_pool business_pool(std::max(2u, std::thread::hardware_concurrency()));
-
     net::MessageDispatcher dispatcher(business_pool);
+    game::gateway::SessionManager session_manager;
+    game::gateway::GatewayMetrics metrics;
 
-    game::gateway::GatewayService gateway_service;
-    game::login::LoginService login_service;
-    game::room::RoomService room_service;
-    game::battle::BattleService battle_service;
+    game::gateway::GatewayService gateway_service(session_manager, metrics);
+    game::login::LoginService login_service(session_manager, metrics);
+    game::room::RoomService room_service(session_manager, metrics);
+    game::battle::BattleService battle_service(session_manager, metrics);
 
     gateway_service.register_handlers(dispatcher);
     login_service.register_handlers(dispatcher);
@@ -41,12 +44,12 @@ int main(int argc, char* argv[]) {
 
     dispatcher.register_handler(
         net::protocol::kEchoRequest,
-        [](const std::shared_ptr<net::Session>& session, std::string body) {
-            // Echo 示例仍然保留，但已经被放到 examples 并走统一消息分发链路。
-            session->send(net::protocol::kEchoResponse, std::move(body));
+        [](const net::DispatchContext& context) {
+            // Echo 示例仍然保留，用于快速验证网络链路是否通畅。
+            context.session->send(net::protocol::kEchoResponse, context.body);
         });
 
-    game::gateway::GatewayServer server(io_context, dispatcher, port);
+    game::gateway::GatewayServer server(io_context, dispatcher, session_manager, metrics, port);
     server.start();
 
     const auto io_thread_count =
@@ -55,9 +58,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::thread> io_workers;
     io_workers.reserve(io_thread_count);
     for (unsigned int i = 0; i < io_thread_count; ++i) {
-        io_workers.emplace_back([&io_context]() {
-            io_context.run();
-        });
+        io_workers.emplace_back([&io_context]() { io_context.run(); });
     }
 
     for (auto& worker : io_workers) {

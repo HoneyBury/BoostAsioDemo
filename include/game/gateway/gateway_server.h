@@ -1,12 +1,14 @@
 #pragma once
 
+#include "game/gateway/gateway_metrics.h"
+#include "game/gateway/session_manager.h"
 #include "net/message_dispatcher.h"
 #include "net/session.h"
 
 #include <boost/asio.hpp>
 
+#include <chrono>
 #include <cstdint>
-#include <map>
 #include <memory>
 
 namespace game::gateway {
@@ -19,8 +21,11 @@ class GatewayServer {
 public:
     GatewayServer(asio::io_context& io_context,
                   net::MessageDispatcher& dispatcher,
+                  SessionManager& session_manager,
+                  GatewayMetrics& metrics,
                   std::uint16_t port,
-                  net::SessionOptions session_options = {});
+                  net::SessionOptions session_options = {},
+                  std::chrono::milliseconds metrics_log_interval = std::chrono::milliseconds(5000));
 
     void start();
     void stop();
@@ -28,12 +33,16 @@ public:
 
 private:
     void do_accept();
+    void arm_metrics_timer();
 
     asio::io_context& io_context_;
     net::MessageDispatcher& dispatcher_;
+    SessionManager& session_manager_;
+    GatewayMetrics& metrics_;
     tcp::acceptor acceptor_;
-    std::map<const net::Session*, std::shared_ptr<net::Session>> sessions_;
+    asio::steady_timer metrics_timer_;
     net::SessionOptions session_options_;
+    std::chrono::milliseconds metrics_log_interval_;
 };
 
 }  // namespace game::gateway

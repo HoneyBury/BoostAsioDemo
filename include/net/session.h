@@ -30,6 +30,8 @@ public:
     using PacketHandler =
         std::function<void(const std::shared_ptr<Session>&, std::uint16_t, std::string)>;
     using CloseHandler = std::function<void(const std::shared_ptr<Session>&, const error_code&)>;
+    using PacketObserver =
+        std::function<void(const std::shared_ptr<Session>&, std::uint16_t, std::size_t)>;
 
     explicit Session(tcp::socket socket, SessionOptions options = {});
 
@@ -39,6 +41,8 @@ public:
 
     void set_packet_handler(PacketHandler handler);
     void set_close_handler(CloseHandler handler);
+    void set_receive_observer(PacketObserver observer);
+    void set_send_observer(PacketObserver observer);
 
     std::string remote_endpoint() const;
     tcp::socket& socket();
@@ -52,16 +56,23 @@ private:
     void arm_heartbeat_timer();
     void touch_activity();
 
+    struct PendingWrite {
+        std::uint16_t message_id = 0;
+        std::string packet;
+    };
+
     tcp::socket socket_;
     asio::strand<asio::any_io_executor> strand_;
     asio::steady_timer heartbeat_timer_;
     std::array<unsigned char, 4> read_header_{};
     std::vector<char> read_body_;
     std::uint32_t expected_body_length_ = 0;
-    std::deque<std::string> write_queue_;
+    std::deque<PendingWrite> write_queue_;
     std::size_t queued_write_bytes_ = 0;
     PacketHandler packet_handler_;
     CloseHandler close_handler_;
+    PacketObserver receive_observer_;
+    PacketObserver send_observer_;
     std::chrono::steady_clock::time_point last_activity_at_;
     bool stopped_ = false;
     SessionOptions options_;

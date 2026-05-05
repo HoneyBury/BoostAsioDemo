@@ -19,4 +19,6 @@ constexpr std::uint16_t kRoomJoinResponse = 3002;
 constexpr std::uint16_t kBattleStartRequest = 4001;
 constexpr std::uint16_t kBattleStartResponse = 4002;
 
+constexpr std::uint16_t kErrorResponse = 9001;
+
 }  // namespace net::protocol

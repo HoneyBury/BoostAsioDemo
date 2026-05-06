@@ -1,5 +1,26 @@
 # 更新日志
 
+## v1.1.6 — 业务协议冻结（T02 后半）(2026-05-06)
+
+> **范围**：`development-optimization.md`「第二步」——冻结 login / room / battle **字符串 body** 事实源；消除 battle 业务错误误用 **auth** 错误码；**对外 body 文本不变**（仍为 `player_not_in_battle`），**wire 上 `error_code` 变更**（兼容旧客户端需自知）。
+
+### 协议与错误码
+
+- 新增 `net::protocol::ErrorCode::kPlayerNotInBattle` = **3004**，`to_string` → **`player_not_in_battle`**。
+- `BattleService`：`SubmitInputResult::kPlayerNotInBattle` 回复 **`kPlayerNotInBattle`**，不再使用 **`kAuthRequired`**。
+
+### 文档
+
+- **`docs/v1-string-protocol.md`** — 消息号、body 形态、`ErrorCode` 表、与 `net::msg` 分叉说明。
+- **`docs/runtime-playbook.md`、`docs/v1-maturity-matrix.md`、`docs/README.md`、`development-priority.md`**：`v1.1.6` 交叉引用与矩阵更新。
+
+### 测试
+
+- `BattleManagerTest.SubmitInputUnknownPlayerReturnsNotInBattle`
+- `ctest`：64/64 通过（相对 `v1.1.5` +1 单元测）。
+
+---
+
 ## v1.1.5 — 业务事实源校准（叙事文档）(2026-05-06)
 
 > **范围**：维护期 **`development-optimization.md`**「第一步」的**文档验收**——能明确回答登录 vs 恢复、席位建模、battle 与房间关系、`battle_started` SSOT。**无代码与协议变更**，运行时行为与 **`v1.1.4`** 一致。

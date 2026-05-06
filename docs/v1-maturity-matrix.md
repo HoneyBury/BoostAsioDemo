@@ -92,7 +92,7 @@
 | `BattleManager` 观战接口（`add_spectator` 等） | `reserved` | 接口存在，`BattleService` 未提供观战加入 / 退出 / 同步协议 |
 | `ReplayPlayer` + `IBattleReplayStore` | `reserved` | 读取链与存储抽象存在，但 `end_battle()` 主链**不生成 replay**，回放生产链未闭环 |
 | `battle_started` 单一事实源 | `stable`（v1.1.4） | **`BattleManager::active_battles_`（`battle_started(room_id)`）为唯一事实源**；`RoomManager` 不再维护独立 `battle_started` 字段。房间侧通过 `set_battle_active_query([&bm](const auto& id){ return bm.battle_started(id); })` 派生视图（join/ready/snapshot）。`BattleService` 成功起战后不再回写房间。未设置 query 的演示装配中房间「战斗中」视图恒为假 |
-| `SubmitInputResult::kPlayerNotInBattle` 错误码 | `experimental` | 当前被错误地映射为 `ErrorCode::kAuthRequired`，body 为 `player_not_in_battle`，错误码与文本语义不一致；v1.1.6 修正 |
+| `SubmitInputResult::kPlayerNotInBattle` → `ErrorCode::kPlayerNotInBattle` | `stable`（v1.1.6） | body 默认 `player_not_in_battle`（`to_string`）；不再使用 `kAuthRequired` |
 
 ### 3.4 匹配
 
@@ -273,8 +273,8 @@
 | `v1.1.2` | 会话与协议收口 | T03 / T04 |
 | `v1.1.3` | 入口治理前置 | T05 |
 | `v1.1.4` | `battle_started` 单一事实源（T06 第一阶段） | T06 |
-| `v1.1.5` | 业务事实源校准（文档） | （`v1-business-fact-source.md`）— **当前版本** |
-| `v1.1.6` | 业务协议冻结 | T02 后半（错误码语义） |
+| `v1.1.5` | 业务事实源校准（文档） | （`v1-business-fact-source.md`） |
+| `v1.1.6` | 业务协议冻结 | T02 后半：`docs/v1-string-protocol.md` + **`kPlayerNotInBattle`** — **当前版本** |
 | `v1.1.7` | 跨域编排收口 | T07 / T08 |
 | `v1.1.8` | 房间/战斗边界收紧 | T09 |
 | `v1.1.9` | 治理入口分层 | T10 后半 |

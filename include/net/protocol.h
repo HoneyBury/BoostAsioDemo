@@ -20,6 +20,7 @@ enum class ErrorCode : std::int32_t {
     kNotEnoughPlayers = 3001,
     kBattleAlreadyStarted = 3002,
     kBattleNotStarted = 3003,
+    kPlayerNotInBattle = 3004,
     kTokenExpired = 1005,
     kRateLimited = 9001,
     kSessionNotFound = 9002,
@@ -96,6 +97,8 @@ constexpr std::uint16_t kAdminResponse = 5005;
             return "battle_already_started";
         case ErrorCode::kBattleNotStarted:
             return "battle_not_started";
+        case ErrorCode::kPlayerNotInBattle:
+            return "player_not_in_battle";
         case ErrorCode::kRateLimited:
             return "rate_limited";
         case ErrorCode::kSessionNotFound:

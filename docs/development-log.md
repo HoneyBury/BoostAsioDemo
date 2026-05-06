@@ -745,3 +745,28 @@
 - **`v1.1.6`**：`development-optimization.md` 第二步——业务协议表冻结（含错误码语义失真项）。
 
 > **强约束**：未进入 v2；未改 `docs/v2-roadmap.md`。
+
+---
+
+## 2026-05-06 阶段 v1.1.6：业务协议冻结（T02 后半）
+
+### 目标
+
+落实 **`development-optimization.md` §11 T02** 在 **`v1.1.6`** 的收口：login / room / battle **真实字符串协议**可单点查阅；**错误码与语义一致**（`player_not_in_battle` 不再伪装成 `auth_required`）。
+
+### 完成内容
+
+- **`docs/v1-string-protocol.md`**（冻结表 + `net::msg` 分叉）。
+- `include/net/protocol.h`：`kPlayerNotInBattle`；`src/game/battle/battle_service.cpp` 映射修正。
+- `tests/unit/battle_manager_test.cpp`：`SubmitInputUnknownPlayerReturnsNotInBattle`。
+- `docs/runtime-playbook.md`、`v1-maturity-matrix.md`、`development-priority.md`、`docs/README.md`、`CHANGELOG.md` 同步。
+
+### 测试结果
+
+- `ctest`：**64/64**。
+
+### 下一步
+
+- **`v1.1.7`**：跨域编排收口（T07 / T08）。
+
+> **强约束**：v1.x。

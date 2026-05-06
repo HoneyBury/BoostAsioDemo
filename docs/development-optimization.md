@@ -2575,10 +2575,11 @@
 
 ##### 9.20 `SubmitInputResult::kPlayerNotInBattle` 被映射成 `AuthRequired`，错误语义明显失真
 
-代码事实：
-- [include/game/battle/battle_manager.h:53](/D:/Program/boost/include/game/battle/battle_manager.h:53) 定义了 `kPlayerNotInBattle`
-- [src/game/battle/battle_service.cpp:128](/D:/Program/boost/src/game/battle/battle_service.cpp:128) 返回时却使用 `ErrorCode::kAuthRequired`
-- 同时 body 手工写成 `"player_not_in_battle"`
+> **维护状态（`v1.1.6`）**：已新增 `ErrorCode::kPlayerNotInBattle`（3004），`BattleService` 使用该码；默认 body 由 `to_string` 得到 `player_not_in_battle`。本节保留为历史问题陈述。
+
+代码事实（修正前）：
+- `battle_manager.h` 定义了 `kPlayerNotInBattle`
+- `battle_service.cpp` 曾使用 `ErrorCode::kAuthRequired` 并手写 body `"player_not_in_battle"`
 
 不合理点：
 - 从协议层看，这会制造“错误码语义”和“错误消息语义”不一致：

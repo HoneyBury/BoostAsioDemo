@@ -19,3 +19,13 @@ TEST(BattleManagerTest, StartsBattleOncePerRoom) {
     battle_manager.remove_room("room_alpha");
     EXPECT_FALSE(battle_manager.battle_started("room_alpha"));
 }
+
+TEST(BattleManagerTest, SubmitInputUnknownPlayerReturnsNotInBattle) {
+    game::battle::BattleManager battle_manager;
+
+    ASSERT_EQ(battle_manager.start_battle("room_x", {"alice", "bob"}).result,
+              game::battle::BattleManager::StartBattleResult::kOk);
+
+    const auto wrong = battle_manager.submit_input("room_x", "charlie", "move");
+    EXPECT_EQ(wrong.result, game::battle::BattleManager::SubmitInputResult::kPlayerNotInBattle);
+}

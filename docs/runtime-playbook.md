@@ -91,7 +91,7 @@
 | 3001 | `kRoomCreateRequest` / 3002 `kRoomCreateResponse` | 房间 | |
 | 3003 | `kRoomJoinRequest` / 3004 `kRoomJoinResponse` | 房间 | response body：`room_joined:{room_id}:{player_count}` |
 | 3005 | `kRoomLeaveRequest` / 3006 `kRoomLeaveResponse` | 房间 | |
-| 3007 | `kRoomReadyRequest` / 3008 `kRoomReadyResponse` | 房间 | request 解析较宽松，`v1.1.6` 收紧 |
+| 3007 | `kRoomReadyRequest` / 3008 `kRoomReadyResponse` | 房间 | request 解析约定见 `docs/v1-string-protocol.md` §6.4 |
 | 3009 | `kRoomStatePush` | 房间 | body：`room_state:...`（构造时回查 `SessionManager` 补全 user_id） |
 | 4001 | `kBattleStartRequest` / 4002 `kBattleStartResponse` | 战斗 | response body：`battle_started:{room_id}:{player_count}` |
 | 4003 | `kBattleInputRequest` / 4004 `kBattleInputResponse` | 战斗 | response body：`battle_input_accepted:{room_id}:{sequence}` |
@@ -102,16 +102,15 @@
 
 ### 2.4 错误码（`net::protocol::ErrorCode`）
 
-完整定义见 `include/net/protocol.h`。当前已知失真项：
-
-- `kAuthRequired (1001)` 当前**也被用作**战斗模块 `SubmitInputResult::kPlayerNotInBattle` 的错误码（`battle_service.cpp:128`），body 文本是 `player_not_in_battle`。错误码与文本语义不一致，`v1.1.6` 修正。
+数值与默认 body 以 `include/net/protocol.h` 与 **`docs/v1-string-protocol.md` §3** 为准。**`v1.1.6`** 起：`SubmitInputResult::kPlayerNotInBattle` 使用 **`kPlayerNotInBattle (3004)`**，body **`player_not_in_battle`**，不再复用 `kAuthRequired`。
 
 ### 2.5 协议事实源约束
 
 - `v1.x` 维护期内，**字符串 body 是唯一线上协议**
+- **login / room / battle** 的请求响应与 push body **冻结明细**：`docs/v1-string-protocol.md`
 - `net::msg` / `message_serializer` 仅作为协议草案保留，不应被业务 service 使用
-- 任何对线上协议的描述（README / runtime-playbook / 集成测试）必须与本节一致
-- 协议变更必须先更新本节，再改实现
+- 任何对线上协议的描述（README / runtime-playbook / 集成测试）必须与 **`v1-string-protocol.md`** 一致
+- 协议变更必须先更新 **`v1-string-protocol.md`** 与本节，再改实现
 
 ## 3. 消息处理链路
 
@@ -297,5 +296,6 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - `v1.1.3` — 入口治理前置（白名单 / 限频从业务线程池后挪到 ingress 前置）
 - `v1.1.4` — **`battle_started` 单一事实源（第一阶段，`BattleManager` 为准，`RoomManager` 经 `set_battle_active_query` 查询）已完成**
 - `v1.1.5` — **业务事实源叙事校准**（见 `docs/v1-business-fact-source.md`：**无代码变更**）
-- `v1.1.6+` — 业务协议冻结（T02 后半）、错误码语义、跨域编排收口等
+- `v1.1.6` — **业务字符串协议冻结**（`docs/v1-string-protocol.md`）+ **`kPlayerNotInBattle` 错误码语义修正（T02 后半）已完成**
+- `v1.1.7+` — 跨域编排收口（T07 / T08）等
 - `v1.2.0` — 决策点：是否正式推进 typed protocol / internal bus / battle replay 闭环

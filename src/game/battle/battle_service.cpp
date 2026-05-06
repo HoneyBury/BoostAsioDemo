@@ -125,7 +125,7 @@ void BattleService::register_handlers(net::MessageDispatcher& dispatcher) const 
 
                 case BattleManager::SubmitInputResult::kPlayerNotInBattle:
                     push_service_.send_error(
-                        context.session, context.request_id, net::protocol::ErrorCode::kAuthRequired, "player_not_in_battle");
+                        context.session, context.request_id, net::protocol::ErrorCode::kPlayerNotInBattle);
                     return;
             }
         });

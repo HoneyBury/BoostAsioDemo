@@ -87,6 +87,9 @@ int main(int argc, char* argv[]) {
     game::gateway::SessionManager session_manager;
     game::room::RoomManager room_manager;
     game::battle::BattleManager battle_manager;
+    room_manager.set_battle_active_query([&battle_manager](const std::string& room_id) {
+        return battle_manager.battle_started(room_id);
+    });
     game::gateway::GatewayMetrics metrics;
     game::gateway::PushService push_service;
     std::unique_ptr<game::login::TokenValidator> token_validator;

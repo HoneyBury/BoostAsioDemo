@@ -41,6 +41,10 @@ protected:
 
         token_validator = std::make_unique<game::login::DevTokenValidator>();
 
+        room_manager.set_battle_active_query([this](const std::string& room_id) {
+            return battle_manager.battle_started(room_id);
+        });
+
         gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics);
         login_service = std::make_unique<game::login::LoginService>(
             session_manager, push_service, room_manager, *token_validator, metrics);

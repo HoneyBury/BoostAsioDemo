@@ -295,6 +295,6 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 
 - `v1.1.2` — `Session` 主动 / 异常关闭路径统一；固定协议增强顺序；明确分片当前未启用；修正无 zlib 时压缩标记位语义
 - `v1.1.3` — 入口治理前置（白名单 / 限频从业务线程池后挪到 ingress 前置）
-- `v1.1.4` — `battle_started` 单一事实源（停止 `RoomManager` / `BattleManager` 双写）
+- `v1.1.4` — **`battle_started` 单一事实源（第一阶段，`BattleManager` 为准，`RoomManager` 经 `set_battle_active_query` 查询）已完成**
 - `v1.1.5+` — 业务事实源校准、协议冻结、跨域编排收口、横切动作生命周期对齐
 - `v1.2.0` — 决策点：是否正式推进 typed protocol / internal bus / battle replay 闭环

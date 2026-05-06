@@ -3,6 +3,7 @@
 #include "net/session.h"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -75,8 +76,12 @@ public:
     [[nodiscard]] std::vector<SessionPtr> room_members(const std::string& room_id) const;
     [[nodiscard]] std::size_t room_count() const;
     [[nodiscard]] std::size_t member_count(const std::string& room_id) const;
-    [[nodiscard]] bool mark_battle_started(const std::string& room_id);
-    [[nodiscard]] bool battle_started(const std::string& room_id) const;
+
+    /// 将「房间是否已在战斗中」与 `BattleManager` 对齐（单一事实源，v1.1.4 / T06）。
+    /// 凡同时装配 `BattleService` / `BattleManager` 的网关装配点必须在启动前调用，
+    /// 典型：`room.set_battle_active_query([&battle](auto& id) { return battle.battle_started(id); });`
+    /// 若不设置，则房间内 `battle_started` 视图视为恒为假（仅适用于纯演示 / 不包含战斗的子集）。
+    void set_battle_active_query(std::function<bool(const std::string&)> query);
 
     // COW snapshot: snapshot member list under lock, then invoke callback outside lock.
     template <typename F>
@@ -101,16 +106,17 @@ private:
 
     struct RoomState {
         SessionPtr owner;
-        bool battle_started = false;
         std::unordered_map<SessionKey, RoomMember> members;
     };
 
     void remove_from_room_unlocked(SessionKey session_key);
+    [[nodiscard]] bool room_has_active_battle_unlocked(const std::string& room_id) const;
     [[nodiscard]] std::optional<RoomSnapshot> snapshot_unlocked(const std::string& room_id) const;
 
     mutable std::mutex mutex_;
     std::unordered_map<std::string, RoomState> rooms_;
     std::unordered_map<SessionKey, std::string> session_rooms_;
+    std::function<bool(const std::string&)> battle_active_query_;
 };
 
 }  // namespace game::room

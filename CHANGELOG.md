@@ -1,5 +1,33 @@
 # 更新日志
 
+## v1.1.4 — `battle_started` 单一事实源（T06 第一阶段）(2026-05-06)
+
+> **范围**：以 `BattleManager` 为房间内「是否在战斗中」的**唯一持久状态**；移除 `RoomManager` 内部的 `battle_started` 双写及 `BattleService` 成功后对 `RoomManager::mark_battle_started` 的回填。**不改变**对外字符串协议（如 `battle_started:{room}:{n}`、`session_resumed:…:battle=1`）。
+>
+> 对应 `docs/development-optimization.md` §11 任务表 **T06**（第一阶段）。
+
+### 行为与设计
+
+- `RoomManager`：删除 `RoomState::battle_started`、`mark_battle_started()`、以及仅靠房间局部存储的 `battle_started(room_id)`；`RoomSnapshot::battle_started`、`join_room`/`set_ready` 的 `kRoomInBattle` 分支改为调用可选的 **`set_battle_active_query(std::function<bool(const std::string&)>)`**，由各网关装配点在启动时绑定为：`[&battle_mgr](auto& id) { return battle_mgr.battle_started(id); }`。
+- `BattleManager::battle_started(room_id)` / `active_battles_`**仍是唯一事实源**（与 `BattleService::start_battle` 成功写入一致）。
+- `BattleService`：起战成功后**不再**调用 `room_manager_.mark_battle_started`。
+- 未绑定 `set_battle_active_query` 的程序（纯房间演示）：房间侧战斗中视图恒视为未开战（与原行为在无战斗装配时等价）。
+
+### 装配点
+
+已在 `examples/*/…_main.cpp`、`tests/integration/*`（`gateway_integration_test`、`http_management_test`）、`examples/echo/server_main.cpp` 等同时具备 `RoomManager`+`BattleManager` 的入口加上述 wiring。
+
+### 测试
+
+- 单元：`RoomManagerTest.JoinAndReadyRejectedWhenBattleManagerMarksRoomInBattle`
+- `ctest`：63/63 通过。
+
+### T06 后续（仍属 roadmap，非本版必选）
+
+- 与 **`v1.1.8`/T09**：`transfer_session` 在战斗中语义、空房与 `BattleManager.remove_room` 清理顺序等仍可继续收口。
+
+---
+
 ## v1.1.3 — 入口治理前置 (2026-05-06)
 
 > **范围**：`MessageDispatcher` 增加 **ingress** 中间件层，在投递到业务线程池**之前**同步执行；`GatewayService` 的白名单与限频迁至该层。**不修改业务协议、不改变白名单消息号集合、不触碰配置结构与治理 HTTP 分层**。

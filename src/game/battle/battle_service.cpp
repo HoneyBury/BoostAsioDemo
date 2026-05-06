@@ -60,8 +60,6 @@ void BattleService::register_handlers(net::MessageDispatcher& dispatcher) const 
             const auto outcome = battle_manager_.start_battle(room_snapshot->room_id, std::move(player_ids));
             switch (outcome.result) {
                 case BattleManager::StartBattleResult::kOk: {
-                    const auto marked = room_manager_.mark_battle_started(outcome.room_id);
-                    (void)marked;
                     metrics_.on_battle_start_success();
                     push_service_.send_ok(context.session,
                                           net::protocol::kBattleStartResponse,

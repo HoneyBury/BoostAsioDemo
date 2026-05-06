@@ -51,7 +51,7 @@ std::pair<RoomManager::JoinRoomResult, RoomManager::RoomActionOutcome> RoomManag
         return {JoinRoomResult::kRoomNotFound, {}};
     }
 
-    if (room_it->second.battle_started) {
+    if (room_has_active_battle_unlocked(room_id)) {
         return {JoinRoomResult::kRoomInBattle, {.room_id = room_id, .player_count = room_it->second.members.size()}};
     }
 
@@ -105,7 +105,7 @@ std::pair<RoomManager::ReadyResult, RoomManager::RoomActionOutcome> RoomManager:
         return {ReadyResult::kNotInRoom, {}};
     }
 
-    if (room_it->second.battle_started) {
+    if (room_has_active_battle_unlocked(room_id_it->second)) {
         return {ReadyResult::kRoomInBattle, {.room_id = room_id_it->second, .player_count = room_it->second.members.size()}};
     }
 
@@ -206,21 +206,16 @@ std::size_t RoomManager::member_count(const std::string& room_id) const {
     return room_it->second.members.size();
 }
 
-bool RoomManager::mark_battle_started(const std::string& room_id) {
-    std::scoped_lock lock(mutex_);
-    auto room_it = rooms_.find(room_id);
-    if (room_it == rooms_.end()) {
+bool RoomManager::room_has_active_battle_unlocked(const std::string& room_id) const {
+    if (!battle_active_query_) {
         return false;
     }
-
-    room_it->second.battle_started = true;
-    return true;
+    return battle_active_query_(room_id);
 }
 
-bool RoomManager::battle_started(const std::string& room_id) const {
+void RoomManager::set_battle_active_query(std::function<bool(const std::string&)> query) {
     std::scoped_lock lock(mutex_);
-    const auto room_it = rooms_.find(room_id);
-    return room_it != rooms_.end() && room_it->second.battle_started;
+    battle_active_query_ = std::move(query);
 }
 
 void RoomManager::remove_from_room_unlocked(SessionKey session_key) {
@@ -259,7 +254,7 @@ std::optional<RoomManager::RoomSnapshot> RoomManager::snapshot_unlocked(const st
     RoomSnapshot snapshot;
     snapshot.room_id = room_id;
     snapshot.owner = room_it->second.owner;
-    snapshot.battle_started = room_it->second.battle_started;
+    snapshot.battle_started = room_has_active_battle_unlocked(room_id);
     snapshot.members.reserve(room_it->second.members.size());
 
     for (const auto& [_, member] : room_it->second.members) {

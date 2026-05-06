@@ -52,7 +52,7 @@
 
 - **CMake + FetchContent + 本地 third_party 内网构建（stable）**
 - **Docker + docker-compose + GitHub Actions CI（stable）**
-- **测试体系（stable）**：当前 `ctest --preset windows-msvc-debug -N` 枚举共 **62 个用例**（15 个单元测试源文件 + 2 个集成测试源文件 + `packet_fuzz_test.cpp` 模糊测试，GoogleTest `gtest_discover_tests` 展开后；请始终以 `ctest -N` 为准）
+- **测试体系（stable）**：当前 `ctest --preset windows-msvc-debug -N` 枚举共 **63 个用例**（15 个单元测试源文件 + 2 个集成测试源文件 + `packet_fuzz_test.cpp` 模糊测试，GoogleTest `gtest_discover_tests` 展开后；请始终以 `ctest -N` 为准）
 - **压测场景（stable）**：`PressureScenario` 枚举共 9 个值（echo / invalid_token / slow_echo / broadcast_storm / malicious_packet / battle_broadcast / chaos / stability / benchmark）
 - **多进程入口（experimental）**：`login_server` / `room_server` / `battle_server` 各自启动一份 `GatewayServer + SessionManager + Dispatcher`，**不是完整拆服架构**，更准确的描述是"按模块拆出的独立 demo 入口"
 

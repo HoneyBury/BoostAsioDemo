@@ -688,9 +688,37 @@
 - `tests/unit/service_registration_test.cpp`
 - `docs/runtime-playbook.md` §3、`docs/v1-maturity-matrix.md` §2.4、`docs/development-priority.md`、`CHANGELOG.md`
 
-### 下一步
+### 下一步（阶段结束时原计划）
 
-- `v1.1.4`：T06 — `battle_started` 单一事实源第一阶段，`RoomManager` / `BattleManager` 停止双写。
+- `v1.1.5` — 业务事实源校准（文档）
 
 > **强约束**：v1.x 维护期；未进入 v2.0.0 范畴。
 
+
+---
+
+## 2026-05-06 阶段 v1.1.4：`battle_started` 单一事实源（T06 第一阶段）
+
+### 目标
+
+消除 `RoomManager::RoomState::battle_started` 与 `BattleManager::active_battles_` 的并行双写。**以 `BattleManager` 为准**（`start_battle` 成功即有战斗上下文），房间层仅保留通过查询函数注入的派生视图。
+
+对应 `development-optimization.md` §11 **T06**（第一阶段）。
+
+### 完成内容
+
+- `RoomManager`：移除 `battle_started` 成员、`mark_battle_started`；新增 `set_battle_active_query`；`snapshot` / `join_room` / `set_ready` 的 `kRoomInBattle` / `battle_started` 字段均委派 query。
+- `BattleService`：删除成功后对 `room_manager_.mark_battle_started` 的调用。
+- 同时具备 `RoomManager` 与 `BattleManager` 的入口：`set_battle_active_query([&battle](const std::string& id){ return battle.battle_started(id); });`
+- `LoginService`/`session_migration` 依赖的 `RoomSnapshot::battle_started` **语义不变**，数据源已与 `BattleManager` 对齐。
+
+### 测试
+
+- `tests/unit/room_manager_test.cpp::JoinAndReadyRejectedWhenBattleManagerMarksRoomInBattle`
+- `ctest`：63/63
+
+### T06 后续（v1.1.8 / T09 候选）
+
+- 战斗中会话迁移、`transfer_session`、空房移除与战斗清理的更严顺序。
+
+> **强约束**：v1.x。

@@ -54,6 +54,9 @@ int main(int argc, char* argv[]) {
     game::gateway::SessionManager session_mgr;
     game::room::RoomManager room_mgr;
     game::battle::BattleManager battle_mgr;
+    room_mgr.set_battle_active_query([&battle_mgr](const std::string& room_id) {
+        return battle_mgr.battle_started(room_id);
+    });
     game::gateway::GatewayMetrics metrics;
     game::gateway::PushService push;
 

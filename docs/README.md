@@ -16,6 +16,7 @@
 - [v1.x 标准运行时装配与生命周期](./v1-runtime-lifecycle.md) — **`v1.1.13`–`v1.1.14` / T13**：启动 / reload / shutdown 清单；**`io_context.stop()`**；**v1.1.14** 受控 reload（**`try_load_gateway_config`**）与 shutdown 语义 **§6–§7**
 - [v1.x 横切能力定位（持久化 / 回放 / 审计）](./v1-cross-cutting-capabilities.md) — **`v1.1.15` / T14**：生命周期节点接线**事实**
 - [v1.x 横切动作生命周期绑定规范](./v1-cross-cutting-lifecycle-binding.md) — **`v1.1.16` / T15**：节点 **N1–N7** × 审计 / 持久化 / replay **应收口规范**；showcase 自检清单
+- [v1.x 横切数据格式与后端支持级别](./v1-cross-cutting-data-formats.md) — **`v1.1.17` / T16**：player JSON / SQLite / replay 载荷 / **`AUDIT_LOG`** 行格式事实与兼容边界
 - [开发优化文档（v1.0.0 维护期）](./development-optimization.md) — 模块级问题分析、整改路线图、版本批次任务表
 - [开发优先级看板](./development-priority.md)
 - [当前网关骨架运行说明](./runtime-playbook.md)

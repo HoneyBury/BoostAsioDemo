@@ -1001,6 +1001,29 @@
 
 ### 下一步
 
-- **`v1.1.17`**：**T16** — 冻结存储后端与 audit / replay **格式支持级别**（与 **`development-optimization.md`** Persistence·Audit 路线图第三步对齐）。
+- **`v1.1.17`**：**T16** — 横切数据格式文档（见后续阶段记录）。
+
+> **强约束**：未进入 v2。
+
+---
+
+## 2026-05-06 阶段 v1.1.17：横切数据格式与支持级别（T16）
+
+### 目标
+
+把 **player JSON / 条件 SQLite / replay 文件与 `ReplayPlayer` JSON 契约 / `AUDIT_LOG` 行格式** 写成 **叙述层冻结**，与 **`player_store.h`**、**`audit_log.h`**、**`replay_player.h`** 对齐，降低「头文件即协议」误读。
+
+### 完成内容
+
+- **新增** **`docs/v1-cross-cutting-data-formats.md`**；矩阵 §6 引言、§4.4、§10；**`docs/v1-runtime-lifecycle.md`** §1；`docs/README.md`、`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`v1-config-maturity.md` §5、横切 **§5 / §6** 指针、`CHANGELOG.md`。
+
+### 测试结果
+
+- **无代码变更**；`ctest` **68/68**（冒烟）。
+
+### 下一步
+
+- **`v1.2.0`**：**T21** — 结构升级 **决策点**（是否推进 typed protocol / internal bus / battle replay 闭环等）；**非默认实施**。
+- **`v1.2.1`–`v1.2.4`**：**T17–T20** — 各主线 **边界测试加固**（业务 / 治理 / 生命周期装配 / 持久化·审计·回放）。
 
 > **强约束**：未进入 v2。

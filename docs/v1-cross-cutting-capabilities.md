@@ -54,5 +54,5 @@
 |------|------|
 | **`v1.1.15`**（本文） | **T14**：三类能力 **定位 + 生命周期事实矩阵** |
 | **`v1.1.16`**（T15） | **`docs/v1-cross-cutting-lifecycle-binding.md`**：节点 **N1–N7** × 审计 / 持久化 / replay **规范矩阵** + showcase 自检清单 |
-| **`v1.1.17`**（T16） | 冻结存储后端与 audit / replay **格式支持级别** |
+| **`v1.1.17`**（T16） | **`docs/v1-cross-cutting-data-formats.md`**：后端与 audit / replay **格式与支持级别（叙述冻结）** |
 | **`v1.2.4`**（T20） | persistence / audit / replay **回归测试**加固 |

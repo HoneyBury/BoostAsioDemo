@@ -71,5 +71,5 @@
 |------|------|
 | **`v1.1.15`**（T14） | **`v1-cross-cutting-capabilities.md`**：现状事实矩阵 |
 | **`v1.1.16`**（本文 / T15） | **应收口规范矩阵** + showcase 自检清单 |
-| **`v1.1.17`**（T16） | 后端与 **audit / replay 格式** 支持级别冻结 |
+| **`v1.1.17`**（T16） | **`docs/v1-cross-cutting-data-formats.md`**：后端与 **audit / replay 格式** 支持级别冻结 |
 | **`v1.2.4`**（T20） | persistence / audit / replay **回归测试** |

@@ -66,4 +66,5 @@
 | **`v1.1.14`** | T13 后半：**`try_load_gateway_config`**；**`docs/v1-runtime-lifecycle.md` §6–§7**（矩阵 §5.2–§5.3 组件表仍为本索引） |
 | **`v1.1.15`** | **T14**：player store / replay / audit 与生命周期节点对照 — **`docs/v1-cross-cutting-capabilities.md`** |
 | **`v1.1.16`** | **T15**：横切动作 **应收口** — **`docs/v1-cross-cutting-lifecycle-binding.md`** |
+| **`v1.1.17`** | **T16**：横切 **数据格式与后端支持级别** — **`docs/v1-cross-cutting-data-formats.md`** |
 | **`v1.2.3`（T19）** | 生命周期与装配 **回归测试**加固 |

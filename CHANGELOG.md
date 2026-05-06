@@ -1,5 +1,19 @@
 # 更新日志
 
+## v1.1.17 — 横切数据格式与后端支持级别（T16）(2026-05-06)
+
+> **范围**：**文档**。新增 **`docs/v1-cross-cutting-data-formats.md`**：`JsonFilePlayerStore` / **`HAS_SQLITE`** `SqlitePlayerStore`、**`.replay` 载荷**、**`ReplayPlayer`** JSON 读侧契约、**`AUDIT_LOG`** 行模板与 **格式脆弱性**；与矩阵 §6 / §4.4 交叉引用。
+
+### 文档
+
+- **`docs/v1-cross-cutting-data-formats.md`**；`docs/v1-maturity-matrix.md` §6 引言、§4.4、§10；**`docs/v1-runtime-lifecycle.md`** §1；`docs/README.md`、`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`v1-config-maturity.md` §5、`v1-cross-cutting-capabilities.md` §5、`v1-cross-cutting-lifecycle-binding.md` §6、`CHANGELOG.md`、`development-log.md`。
+
+### 测试
+
+- **无代码变更**；`ctest` **68/68**。
+
+---
+
 ## v1.1.16 — 横切动作生命周期绑定规范（T15）(2026-05-06)
 
 > **范围**：**文档**。新增 **`docs/v1-cross-cutting-lifecycle-binding.md`**：节点 **N1–N7** × 审计 / player 持久化 / battle replay **应收口规范矩阵**；showcase 自检清单；与 **T14 事实**文档交叉引用。

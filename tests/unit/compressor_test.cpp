@@ -45,3 +45,14 @@ TEST(PacketCompressorTest, RoundTripPreservesNonAscii) {
     auto decompressed = net::packet::decompress_body(compressed);
     EXPECT_EQ(decompressed, body);
 }
+
+// v1.1.2 / T04: is_compression_available() must reflect HAS_ZLIB at build time.
+// When false, callers MUST NOT set kCompressed (the fallback compress_body is
+// length-prefix passthrough, not real compression — the flag would be a lie).
+TEST(PacketCompressorTest, IsCompressionAvailableMatchesBuildBackend) {
+#ifdef HAS_ZLIB
+    EXPECT_TRUE(net::packet::is_compression_available());
+#else
+    EXPECT_FALSE(net::packet::is_compression_available());
+#endif
+}

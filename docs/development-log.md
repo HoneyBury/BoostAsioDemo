@@ -602,3 +602,58 @@
 
 > **强约束**：在 `v1.2.0` 决策点之前不进入 v2.0.0 范畴（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面）。
 
+---
+
+## 2026-05-06 阶段 v1.1.2：主链生命周期与协议增强收口
+
+### 目标
+
+收敛主链生命周期与协议增强路径，让 `Session` 的关闭路径只有一条收口，让协议增强标志位的语义跨 build 自洽。**对应 `docs/development-optimization.md` §11 任务表的 T03 / T04**。本阶段允许动主链代码，但不引入新功能，不修改业务协议，不动配置/治理结构。
+
+### 完成内容
+
+- T03：统一 `Session` 关闭路径
+  - `src/net/session.cpp`：`Session::stop()` 不再裸调 `socket_.shutdown/close`，改为 `asio::post(strand_, [self]{ self->handle_close(asio::error::operation_aborted); })`，让主动关闭与心跳超时 / 网络异常 / 写队列溢出 / 包非法等异常关闭走同一条 `handle_close()` 路径。
+  - 后果：`close_handler_` 在主动 `stop()` 时也会被触发，`SessionManager / RoomManager / GatewayMetrics` 的引用计数与登记不再随关闭来源不同而漂移。
+  - 反复 `stop()` 仍幂等：`handle_close()` 内部的 `if (stopped_) return;` 仍是单一事实源。
+
+- T04：固定协议增强顺序 + 修正压缩标志位语义
+  - `include/net/packet_compressor.h`：新增 `inline constexpr bool is_compression_available() noexcept`，根据 `HAS_ZLIB` 静态返回真实压缩后端的存在性。
+  - `src/net/session.cpp`：
+    - 出站（`send_batch` / `enqueue_write`）固定为 `serialize body -> compress (only when zlib available) -> encode`；只在 `is_compression_available()` 为真时才设置 `packet::flags::kCompressed`。
+    - 入站（`do_read_body`）固定为 `decode -> decompress (only when zlib available) -> dispatch`；当对端把 `kCompressed` 发给一个 *没有压缩后端* 的 build 时，直接以 `invalid_argument` 关闭连接，避免 fallback `decompress_body`（长度前缀透传）把上层语义弄错。
+    - 分片（`packet::flags::kFragment*`）在 v1.x 维护期内仍为 `reserved`：`Session` 主链既不分片也不组帧，相关注释指向 `docs/v1-maturity-matrix.md` §2.3 与 `development-optimization.md` §6.A / §8.3。
+
+### 测试
+
+- 单元（新）`tests/unit/session_close_test.cpp`：
+  - `StopFiresCloseHandlerExactlyOnce`
+  - `MultipleStopCallsAreIdempotent`
+  - `StopReceivesOperationAbortedReason`
+  - `StopWithoutCloseHandlerIsSafe`
+- 单元（新增用例）`tests/unit/compressor_test.cpp::IsCompressionAvailableMatchesBuildBackend`
+- 集成（新）`tests/integration/gateway_integration_test.cpp::CompressedFlagWithoutBackendIsRejected` — 在没有压缩后端的 build 下，发送伪造 `kCompressed` 包必须导致服务端关闭连接；有压缩后端的 build 自动 `GTEST_SKIP`。
+- 全量测试：`ctest`：60/60 通过（v1.1.1 基线 54 + v1.1.2 新增 6）。
+
+### 影响范围
+
+- `include/net/packet_compressor.h`
+- `src/net/session.cpp`
+- `tests/unit/CMakeLists.txt`
+- `tests/unit/session_close_test.cpp`（新）
+- `tests/unit/compressor_test.cpp`
+- `tests/integration/gateway_integration_test.cpp`
+
+### 风险与问题
+
+- 现有调用 `replaced_session->stop()`（`src/game/login/login_service.cpp`）的代码路径，在本版本生效后会触发 `close_handler_`，进而经过 `gateway_server.cpp` 的 close 闭环执行 `session_manager_.remove_session` / `metrics_.on_session_closed()` / `active_connection_count_-=1`。这条链路本来就是“被踢号在断链时该走的清理”，v1.0.0 因为 `stop()` 绕开了 close_handler 而漏减——本版本顺带修复了这条隐性引用计数漂移。集成测试 `DuplicateLoginKicksOldSessionAndResumesRoomState` 通过，行为符合预期。
+- 没有压缩后端的 build 上，`kCompressed` 现在是“严格非法”信号；任何在 `v1.0.0` 主链外私接的旧客户端如果在没有 zlib 的 build 上误设了 `kCompressed`，将会被立即断开。这与 `docs/v1-maturity-matrix.md` 的现行约束一致——v1.x 主链就不依赖压缩。
+- 分片仍未启用，`v1.1.2` 不动它；v1.x 维护期不计划解锁。
+
+### 下一步
+
+- `v1.1.3`：T05（ingress 鉴权白名单 / 限频前置）—— 把 auth gating / rate-limit 从业务线程池**之后**前移到 `accept` 之后、`dispatch` 之前。
+- `v1.1.4`：T06（`battle_started` 单一事实源第一阶段）—— 停止 `RoomManager` / `BattleManager` 双写状态。
+
+> **强约束**：仍在 v1.x 维护期内，不进入 v2.0.0（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面）。
+

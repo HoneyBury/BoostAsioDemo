@@ -26,9 +26,9 @@
 | 项 | 状态 | 说明 |
 |---|---|---|
 | `[4B 长度][2B msgid][4B reqid][4B err][1B flags][body]` | `stable` | 当前唯一线上协议，由 `net::packet::encode` / `decode_payload` 落实 |
-| `flags::kCompressed (0x01)` | `experimental` | 仅在编译期带 zlib 时表示真正压缩；无 zlib 时 `compress_body` 实际只做 4B 长度前缀透传，标记位语义不稳定（v1.1.2 修正） |
+| `flags::kCompressed (0x01)` | `stable`（v1.1.2 起） | 仅当 `net::packet::is_compression_available()` 为真时（即 build 链接了 zlib）才允许设置；接收侧若 build 没有压缩后端，会直接拒绝带 `kCompressed` 的入包。语义跨 build 自洽 |
 | `flags::kEncrypted (0x02)` | `reserved` | 仅常量定义，主链不产出也不消费 |
-| 分片 (`packet_fragment`) | `reserved` | `fragment_packet` / `FragmentAssembler` 仅在测试与演示中存在，**`Session` 收发主链未接入**，对外不应宣称"已支持自动分片"（v1.1.2 修正） |
+| 分片 (`packet_fragment`) | `reserved` | `fragment_packet` / `FragmentAssembler` 仅在测试与演示中存在，**`Session` 收发主链未接入**，对外不应宣称"已支持自动分片"。v1.x 维护期不计划解锁 |
 
 ### 2.2 消息体协议
 
@@ -41,9 +41,9 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| 入站：解码 → 解压 → 投递 | `stable` | 当前实现顺序，分片重组**未启用** |
-| 出站：序列化 → 压缩 → 编码 | `stable` | 当前实现顺序，分片发送**未启用** |
-| 入站重组、出站分片 | `reserved` | v1.x 维护期暂不启用，详见 v1.1.2 |
+| 入站：解码 → 解压 → 投递 | `stable`（v1.1.2 固定） | 仅在 `is_compression_available()` 为真时执行解压；伪造 `kCompressed` 的对端会被关闭（`invalid_argument`） |
+| 出站：序列化 → 压缩 → 编码 | `stable`（v1.1.2 固定） | 仅在 `is_compression_available()` 为真时压缩并设置 `kCompressed`；否则不压缩、不打标志位 |
+| 入站重组、出站分片 | `reserved` | v1.x 维护期不启用，主链不分片不组帧 |
 
 ### 2.4 消息分发与服务路由
 
@@ -131,7 +131,8 @@
 |---|---|---|
 | `RateLimiter` 多维度限频（连接 / 消息类型 / 登录） | `experimental` | 接口完整，但仅"连接维度"在 `GatewayService` 中接入；消息类型限频与登录限频未接入主 `LoginService` |
 | `max_connections` / `per_ip_connection_limit` | `stable` | 主链已接入 |
-| `RateLimiter` 状态以 `const Session*` 裸指针为 key | `experimental` | 关闭路径不一定回收 `rate_limits_` 项，存在脏 entry 累积可能 |
+| `RateLimiter` 状态以 `const Session*` 裸指针为 key | `experimental` | 关闭路径不一定回收 `rate_limits_` 项，存在脏 entry 累积可能（v1.1.3 / T05 候选范围） |
+| `Session` 关闭收口（`stop()` / 异常关闭统一走 `handle_close()`，触发 `close_handler_` 仅一次） | `stable`（v1.1.2 起） | 主动关闭与心跳超时 / 网络异常 / 写队列溢出 / 包非法等异常关闭走同一条路径，`SessionManager` / `GatewayMetrics` / `active_connection_count_` 计数自洽。回归覆盖见 `tests/unit/session_close_test.cpp` |
 
 ### 4.4 审计日志（`app::audit_log`）
 
@@ -266,8 +267,8 @@
 
 | 版本 | 主题 | 范围（任务编号见 development-optimization §11.2） |
 |---|---|---|
-| `v1.1.1` | 基线校准 | T01 / T02 / T10 / T12 / T14 — **本文档所属版本** |
-| `v1.1.2` | 会话与协议收口 | T03 / T04 |
+| `v1.1.1` | 基线校准 | T01 / T02 / T10 / T12 / T14 |
+| `v1.1.2` | 会话与协议收口 | T03 / T04 — **当前版本** |
 | `v1.1.3` | 入口收敛 | T05 |
 | `v1.1.4` | 状态边界收敛 | T06 |
 | `v1.1.5` | 业务事实源校准 | （文档） |

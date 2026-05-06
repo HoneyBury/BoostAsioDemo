@@ -7,6 +7,7 @@ add_executable(project_unit_tests
     room_manager_test.cpp
     battle_manager_test.cpp
     session_manager_test.cpp
+    session_close_test.cpp
     service_registration_test.cpp
     token_validator_test.cpp
     packet_fuzz_test.cpp

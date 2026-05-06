@@ -1,5 +1,37 @@
 # 更新日志
 
+## v1.1.2 — 主链生命周期与协议增强收口 (2026-05-06)
+
+> **范围**：主链代码层面收敛 `Session` 关闭路径与协议增强标志位语义，**不引入新功能、不修改业务协议、不触碰配置/治理结构**。
+>
+> 对应 `docs/development-optimization.md` §11 任务表中的 T03 / T04。
+
+### 主链行为修正
+
+- **统一 `Session` 关闭路径（T03）**：`Session::stop()` 不再直接 `socket_.shutdown/close`，改为经由 `strand_` 上的 `handle_close(asio::error::operation_aborted)` 收口。这意味着主动关闭与心跳超时 / 网络异常 / 写队列溢出 / 包非法等异常关闭走同一条单事实源路径，`close_handler_` 一定会被触发且仅触发一次。
+  - **顺带修复**：v1.0.0 中 `LoginService` 顶号踢线时调用 `replaced_session->stop()` 实际上绕过了 `close_handler_`，导致 `SessionManager` / `GatewayMetrics::on_session_closed()` / `active_connection_count_` 没有针对被踢号执行清理。本版本随 T03 一并修复。
+- **协议增强顺序与压缩标志位语义（T04）**：
+  - 出站固定为 `serialize -> compress (only when zlib available) -> encode`；
+  - 入站固定为 `decode -> decompress (only when zlib available) -> dispatch`；
+  - 新增 `net::packet::is_compression_available()`（编译期常量，绑定 `HAS_ZLIB`）。**仅当其为真时**才允许设置 `packet::flags::kCompressed`，避免无 zlib 的 build 用 fallback 长度前缀透传冒充压缩造成跨 build 语义错乱。
+  - 当对端把 `kCompressed` 发到一个 *没有压缩后端* 的 build 上，服务端直接 `invalid_argument` 关闭连接，而不是错误地走 fallback decompress。
+  - 分片标志位（`kFragment*`）仍为 `reserved`，主链不分片不组帧，与 `docs/v1-maturity-matrix.md` §2.3 一致。
+
+### 测试
+
+- 新增 `tests/unit/session_close_test.cpp`（4 用例，覆盖 stop 收口 / 幂等 / aborted 语义 / 无 close_handler 安全性）
+- `tests/unit/compressor_test.cpp` 新增 `IsCompressionAvailableMatchesBuildBackend`
+- 新增集成回归 `tests/integration/gateway_integration_test.cpp::CompressedFlagWithoutBackendIsRejected`
+- `ctest`：60/60 通过（v1.1.1 基线 54 + 本版本新增 6）
+
+### 兼容性
+
+- 二进制协议 wire format 不变
+- 业务消息号 / `LoginService` / `RoomService` / `BattleService` / 配置字段不变
+- 没有压缩后端的客户端（含 v1.0.0 默认 build）继续工作；只有"伪造 `kCompressed`"的对端会被严格拒绝
+
+---
+
 ## v1.1.1 — 基线校准 (2026-05-06)
 
 > **范围**：纯文档基线校准，**不涉及主链协议、业务、运行时行为变更**。

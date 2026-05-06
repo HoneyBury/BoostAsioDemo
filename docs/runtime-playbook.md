@@ -70,11 +70,11 @@
 
 | 位 | 名称 | 状态 | 语义 |
 |---|---|---|---|
-| `0x01` | `kCompressed` | experimental | 包体经过压缩。**仅在编译期带 zlib 时为真**；无 zlib 时为长度前缀透传，标记位语义不稳定，v1.1.2 修正为：无 zlib 不再设置该位 |
+| `0x01` | `kCompressed` | stable（v1.1.2 起） | 包体经过压缩。**仅当 build 链接 zlib（`net::packet::is_compression_available()` 为真）时**才允许被设置；无 zlib build 上发送 `kCompressed` 包会被服务端直接断链 |
 | `0x02` | `kEncrypted` | reserved | 仅常量定义，主链不产出也不消费 |
 | 其他位 | — | reserved | 不应被任何代码 / 文档使用 |
 
-`packet_fragment.h` 中曾出现的 `kFragment = 0x10` / `kLastFragment = 0x20` / `total_fragments << 4` **不属于当前主链协议**（v1.1.2 整改前不应被任何业务依赖）。
+`packet_fragment.h` 中曾出现的 `kFragment = 0x10` / `kLastFragment = 0x20` / `total_fragments << 4` **不属于当前主链协议**，v1.1.2 之后明确：v1.x 维护期不解锁主链分片能力。
 
 ### 2.3 当前消息号
 
@@ -203,7 +203,7 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 > **观测口径警示**：
 >
 > - 字节量指标当前统计的是**业务 body 大小**，不是 socket 真实传输量；与 wire bytes 在压缩 / 批量发送时会偏离
-> - 活跃 gauge（active_sessions / active_rooms / active_battles）的可信度依赖 `Session` 关闭路径正确清理状态，但当前 `Session::stop()` 与 `handle_close()` 并非统一关闭路径（`v1.1.2` 修正）
+> - 活跃 gauge（active_sessions / active_rooms / active_battles）的可信度依赖 `Session` 关闭路径正确清理状态。`v1.1.2` 起 `Session::stop()` 与异常关闭统一经由 `handle_close()` 触发 `close_handler_`，活跃 gauge / 引用计数清理已自洽
 
 若在 `config/gateway.json` 里配置了 `gateway.metrics_prometheus_path` / `gateway.metrics_json_path`，服务端会按 `gateway.metrics_log_interval_ms` 周期把指标导出到对应文件。
 

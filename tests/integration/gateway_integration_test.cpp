@@ -12,6 +12,7 @@
 #include "game/room/room_service.h"
 #include "net/message_dispatcher.h"
 #include "net/packet_codec.h"
+#include "net/packet_compressor.h"
 #include "net/protocol.h"
 
 #include <boost/asio.hpp>
@@ -137,6 +138,9 @@ public:
             }
         }
     }
+
+    // 仅供拒绝路径 / 故意构造畸形包的测试使用，正常路径走 send/exchange/read。
+    tcp::socket& socket_for_test() { return socket_; }
 
 private:
     asio::io_context io_context_;
@@ -333,6 +337,46 @@ TEST(GatewayIntegrationTest, IdleSessionTimesOutAndDisconnects) {
     socket.read_some(asio::buffer(buffer), ec);
 
     EXPECT_TRUE(ec == asio::error::eof || ec == asio::error::connection_reset);
+
+    runtime.stop();
+}
+
+// v1.1.2 / T04 集成回归: 当客户端在一个 *没有压缩后端* 的 build 上发送
+// 带 packet::flags::kCompressed 的包时，服务端必须直接拒绝这个连接，
+// 而不是用 fallback 的 "长度前缀透传 decompress_body" 静默把语义弄错。
+//
+// 见 docs/development-optimization.md §6.A / §8.3：标志位的语义跨 build 必须自洽。
+// 本用例在 HAS_ZLIB build 下默认跳过——因为那时 kCompressed 是合法的，
+// 服务端的拒绝路径不会触发。
+TEST(GatewayIntegrationTest, CompressedFlagWithoutBackendIsRejected) {
+    if (net::packet::is_compression_available()) {
+        GTEST_SKIP() << "Compression backend is linked; rejection path is intentionally not exercised.";
+    }
+
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    runtime.start();
+
+    TestClient client;
+    client.connect(runtime.server->local_port());
+
+    // 故意把一个普通字符串体伪装成 "已压缩" 的包发出去，body 不带 4 字节长度前缀，
+    // 模拟跨 build 误传 kCompressed 的破坏路径。
+    const auto encoded =
+        net::packet::encode(net::protocol::kEchoRequest, 1, 0, "not-actually-compressed",
+                            net::packet::flags::kCompressed);
+    asio::write(client.socket_for_test(), asio::buffer(encoded));
+
+    // 服务端应当走 invalid_argument 路径关闭连接：客户端读时会拿到 EOF / reset。
+    std::array<char, 1> buffer{};
+    boost::system::error_code ec;
+    client.socket_for_test().read_some(asio::buffer(buffer), ec);
+
+    EXPECT_TRUE(ec == asio::error::eof || ec == asio::error::connection_reset)
+        << "v1.1.2 T04: 服务端必须拒绝带 kCompressed 但本端无压缩后端的包，"
+           "而不是使用 fallback 透传 decompress_body 让上层拿到错乱语义。 "
+           "实际错误码: " << ec.message();
 
     runtime.stop();
 }

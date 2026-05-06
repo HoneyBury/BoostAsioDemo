@@ -58,7 +58,7 @@
 | 版本 | 内容 |
 |------|------|
 | `v1.1.10` | 冻结治理能力成熟度与接线方式（文档与示例表述；**§6**） |
-| `v1.1.11` | T11：admin 权限与审计最小规则 |
+| `v1.1.11` | T11：**`docs/v1-admin-audit-rules.md`** — 调用前提契约 + `admin_invoke` **边界审计**（**无**运行时 ACL） |
 | `v1.2.2` | T18：治理边界测试加固 |
 
 ---
@@ -69,7 +69,7 @@
 |------|------|
 | Ingress 中间件 | `src/game/gateway/gateway_service.cpp` |
 | HTTP 管理 | `include/net/http_manager.h`，`src/net/http_manager.cpp` |
-| 二进制 Admin | `include/game/gateway/admin_service.h` |
+| 二进制 Admin | `include/game/gateway/admin_service.h`，`src/game/gateway/admin_service.cpp` |
 | 网关注册与 HTTP 启动 | `src/game/gateway/gateway_server.cpp` |
 
 ---
@@ -92,4 +92,4 @@
 - `examples/admin_demo/admin_demo_main.cpp`、`examples/login_demo/login_demo_main.cpp`：注释与日志用词与 **§6.1** 对齐。
 - **`include/game/gateway/admin_service.h`**：类前注释标明 **demo-only** 与本文引用。
 
-权限模型、审计字段、reload/kick/ban 失败语义等 **不包含**在本冻结范围 — **`v1.1.11`（T11）**。
+**`v1.1.11`（T11）** 起：L3 二进制 admin 的调用前提与 **`admin_invoke`** 必备键见 **`docs/v1-admin-audit-rules.md`**。权限运行时强制、失败细分响应、结构化审计后端等仍属 **`reserved`**，由 **`v1.2.2`（T18）** 等与该文后续章节承接。

@@ -1,5 +1,6 @@
 target_sources(project_game
     PRIVATE
+        admin_service.cpp
         gateway_metrics.cpp
         gateway_metrics_exporter.cpp
         push_service.cpp

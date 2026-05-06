@@ -29,14 +29,14 @@
 - **房间（stable）**：创建/加入/离开/准备，房主机制，房间状态广播
 - **战斗（stable / experimental）**：起战斗/输入/帧同步/结束/结算 stable；当前 `BattleManager` 是按房间组织的输入收集器，不是完整战斗领域引擎；观战、战斗回放生产链 reserved
 - **匹配（experimental）**：`MatchmakingService` 队列匹配，ELO 分差控制
-- **管理命令 5001-5005（demo-only）**：`AdminService` 仅在 `examples/admin_demo` / `examples/login_demo` 中手工接线，**默认 `GatewayServer` 不注册这组 handler**；当前**无任何权限校验**，不应在公网暴露
+- **管理命令 5001-5005（demo-only）**：`AdminService` 仅在 `examples/admin_demo` / `examples/login_demo` 中手工接线，**默认 `GatewayServer` 不注册这组 handler**；**无令牌/角色 ACL**，不应在公网暴露。**调用前提与最小审计键**：`docs/v1-admin-audit-rules.md`（**v1.1.11**；handler 边界写 **`admin_invoke`**）
 
 ### 可观测性
 
 - **Prometheus / JSON 指标导出（stable）**：累计计数器 + 每秒速率仪表盘
 - **HTTP 观测端点（`/metrics*` stable；`/health` experimental 存活桩）**：`/metrics` `/metrics/json` 为 **只读**导出；`GET /health` 固定 `{"status":"ok"}`，**不依赖**运行时真实健康；**无任何鉴权**，仅适合内网/受信网络（详见 `docs/v1-governance-layers.md` **§6** — **≠**完整 HTTP 控制面）
 - **请求链路追踪 ID（stable）**：Session → Dispatcher → Handler 贯穿
-- **审计日志（experimental）**：`logs/audit.log`，**输出格式为"近似 JSON 行"**，`details` 字段未做 JSON 转义，**不应被视为稳定结构化日志**
+- **审计日志（experimental）**：`logs/audit.log`，**输出格式为"近似 JSON 行"**，`details` 字段未做 JSON 转义，**不应被视为稳定结构化日志**；L3 admin 调用在 **`v1.1.11`** 起于 handler 入口写 **`admin_invoke`**（键约定见 **`docs/v1-admin-audit-rules.md`** §4）
 - **崩溃转储（stable）**：Windows SEH + POSIX 信号
 - **Grafana 仪表板 / Prometheus 告警规则（stable）**
 

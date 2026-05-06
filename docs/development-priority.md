@@ -113,7 +113,7 @@
 | T07 收敛重复登录恢复链 | `v1.1.7` | **done**（`login_recovery.*` + `docs/v1-cross-domain-flows.md` §A） |
 | T08 收敛空房 battle 清理链 | `v1.1.7` | **done**（`room_battle_lifecycle.*` + `docs/v1-cross-domain-flows.md` §B） |
 | T09 收紧房间态与战斗态边界，明确 `transfer_session()` 定位 | `v1.1.8` | **done**（同上 + 代码注释与矩阵 §3.2） |
-| T11 明确 admin 权限模型与审计最小规则 | `v1.1.11` | todo |
+| T11 admin **调用前提**与 **`admin_invoke`** **最小审计**（文档 + handler 边界；**无运行时 ACL**） | `v1.1.11` | **done**（见 **`docs/v1-admin-audit-rules.md`**；`admin_service.cpp`） |
 | T13 收敛标准启动 / reload / shutdown 顺序 | `v1.1.13` / `v1.1.14` | todo |
 | T15 按登录 / 结算 / 停服节点收口横切动作 | `v1.1.16` | todo |
 | T16 冻结存储后端和审计/回放数据格式支持级别 | `v1.1.17` | todo |
@@ -147,8 +147,8 @@ v1.1.6   业务协议冻结（T02 后半 / 错误码语义） ✅
 v1.1.7   跨域编排收口（T07 / T08） ✅
 v1.1.8   房间/战斗边界收紧（T09 / T06 第二阶段） ✅
 v1.1.9   治理入口分层（T10） ✅
-v1.1.10  治理成熟度冻结 ✅ 当前
-v1.1.11  admin 权限与审计规则（T11）
+v1.1.10  治理成熟度冻结 ✅
+v1.1.11  admin 权限前提与最小审计（T11） ✅ 当前
 v1.1.12  配置成熟度表（T12 后半）
 v1.1.13  标准启动 / reload / shutdown 顺序（T13）
 v1.1.14  受控生命周期流程
@@ -168,8 +168,9 @@ v1.2.4   持久化/审计/回放测试加固（T20）
 ## 5. 最近一次更新
 
 - 日期：`2026-05-06`
-- 版本：`v1.1.10` 治理成熟度冻结：`docs/v1-governance-layers.md` **§6**；`README` / `runtime-playbook` / `admin_demo` / `login_demo` / `admin_service.h` 注释与矩阵 §4 引言对齐；**无**行为变更。
+- 版本：`v1.1.11` / T11：新增 **`docs/v1-admin-audit-rules.md`**；`AdminService::register_handlers` 迁入 **`admin_service.cpp`**，handler 入口 **`AUDIT_LOG(admin_invoke)`**；矩阵 §4.2/§4.4、`v1-governance-layers` §4/§6 指针更新。
 - 历次更新：
+  - `2026-05-06` `v1.1.10` — 治理成熟度冻结 §6
   - `2026-05-06` `v1.1.9` — 治理入口分层、`v1-governance-layers.md`
   - `2026-05-06` `v1.1.8` — 房战边界、`member_user_id`
   - `2026-05-06` `v1.1.6` — 协议冻结 + `kPlayerNotInBattle`

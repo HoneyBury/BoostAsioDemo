@@ -862,6 +862,32 @@
 
 ### 下一步
 
-- **`v1.1.11`**：T11 — admin **权限与审计**最小规则。
+- **`v1.1.11`**：T11 — admin **调用前提与最小审计**。
+
+> **强约束**：未进入 v2。
+
+---
+
+## 2026-05-06 阶段 v1.1.11：二进制 Admin 最小规则（T11）
+
+### 目标
+
+落实 **`development-optimization.md`** 路线图**第三步**：为 L3 admin 补齐 **调用前提**、**动作语义与副作用**、**审计最少记什么** 的单一事实源；**不**在本版引入令牌/角色运行时 ACL，**不**拆分 `kAdminResponse` 失败码。
+
+### 完成内容
+
+- **`docs/v1-admin-audit-rules.md`**。
+- **`src/game/gateway/admin_service.cpp`**：`register_handlers` 实现；handler 入口 **`AUDIT_LOG("admin_invoke", …)`**（必备键见文档 §4）。
+- **`include/game/gateway/admin_service.h`**：声明迁移；`project_game` CMake 纳入 `admin_service.cpp`。
+- **`examples/admin_demo`**：去除与边界重复的 `kick`/`ban` 行内 `AUDIT_LOG`。
+- 矩阵 §4.2 / §4.4、§9 第 7 条、§10；`development-priority.md`；`docs/README.md`；根 `README.md`；`runtime-playbook.md`；`v1-governance-layers.md`；`v1-string-protocol.md`；`v1-cross-domain-flows.md`；`CHANGELOG.md`。
+
+### 测试结果
+
+- `ctest`：**66/66**（条目不增；行为：admin handler 多写审计行）。
+
+### 下一步
+
+- **`v1.1.12`**：配置成熟度表（T12 后半）。
 
 > **强约束**：未进入 v2。

@@ -49,7 +49,7 @@
 
 ### 1.4 演示级能力（demo-only）
 
-- `AdminService` 二进制管理命令（消息号 5001-5005）— 默认 `GatewayServer` 不注册，仅在 `examples/admin_demo` / `examples/login_demo` 中手工接线，**无任何权限校验**
+- **`v1-admin-audit-rules.md`（v1.1.11）**：`kick`/`ban`/`reload`/`status` 语义与 **`admin_invoke`** 必备审计键详见该文。**仍无运行时 ACL**。本段 **demo-only** 不变。
 
 ## 2. 当前协议事实源
 
@@ -303,4 +303,5 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - `v1.1.8` — **房/战边界**：`RoomMember.member_user_id`、`transfer_session`/战斗中语义、**`docs/v1-room-battle-boundary.md`** **已完成**
 - `v1.1.9` — **治理入口分层（T10）**：**`docs/v1-governance-layers.md`** **已完成**
 - `v1.1.10` — **治理成熟度冻结（文档 + 示例/README/playbook 用语）**：**`docs/v1-governance-layers.md` §6** **已完成**
+- `v1.1.11` — **二进制 Admin 最小规则（T11）**：**`docs/v1-admin-audit-rules.md`** + `admin_invoke` 边界审计 **已完成**
 - `v1.2.0` — 决策点：是否正式推进 typed protocol / internal bus / battle replay 闭环

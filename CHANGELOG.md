@@ -1,5 +1,24 @@
 # 更新日志
 
+## v1.1.11 — 二进制 Admin 最小规则（T11）(2026-05-06)
+
+> **范围**：**`docs/v1-admin-audit-rules.md`**（调用前提 / 动作语义 / `admin_invoke` 审计键）；`AdminService::register_handlers` 迁入 **`admin_service.cpp`** 并在每条 admin 请求上写 **`AUDIT_LOG(admin_invoke, …)`**。**不引入**令牌/角色 ACL，**不改变** `kAdminResponse` 成功/失败细分策略。
+
+### 代码
+
+- `src/game/gateway/admin_service.cpp`（新建）、`include/game/gateway/admin_service.h`、`src/game/gateway/CMakeLists.txt`。
+- `examples/admin_demo`：移除与边界重复的 kick/ban `AUDIT_LOG`。
+
+### 文档
+
+- **新增** **`docs/v1-admin-audit-rules.md`**；矩阵 §4.2 / §4.4 / §9 / §10；`docs/README.md`、`development-priority.md`、`development-log.md`、`runtime-playbook.md`、`v1-governance-layers.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、根 `README.md`。
+
+### 测试
+
+- `ctest`：**66/66**。
+
+---
+
 ## v1.1.10 — 治理成熟度冻结（文档 + 示例用语）(2026-05-06)
 
 > **范围**：落实 **`development-optimization.md`** 路线图**第二步**验收点：不再让「消息号存在 / 示例已接线」被误读为 **正式、可依赖**的治理能力；**不改变** TCP、HTTP、admin 的默认行为。

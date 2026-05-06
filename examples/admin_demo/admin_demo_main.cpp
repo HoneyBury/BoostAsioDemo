@@ -79,7 +79,6 @@ int main(int argc, char* argv[]) {
     game::gateway::AdminService admin(session_mgr, metrics);
 
     admin.set_kick_callback([&](const std::string& user_id) {
-        AUDIT_LOG("kick", "user_id=" + user_id);
         for (const auto& s : session_mgr.all_sessions()) {
             auto uid = session_mgr.user_id_of(s);
             if (uid && *uid == user_id) {
@@ -90,7 +89,6 @@ int main(int argc, char* argv[]) {
     });
 
     admin.set_ban_callback([&](const std::string& ip, std::uint32_t duration) {
-        AUDIT_LOG("ban", "ip=" + ip + " duration=" + std::to_string(duration));
         LOG_WARN("已封禁 IP: {} ({} 秒)", ip, duration);
     });
 

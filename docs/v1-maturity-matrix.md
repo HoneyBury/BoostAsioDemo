@@ -111,7 +111,7 @@
 
 ## 4. 治理与控制面
 
-> **`v1.1.9` / T10**：多层治理入口的职责划分见 **`docs/v1-governance-layers.md`** §1–§5。**`v1.1.10`** 起对「文档与示例如何描述」做了**成熟度冻结**，见同文 **§6**。下表仍为**子能力成熟度**单一事实源。
+> **`v1.1.9` / T10**：多层治理入口的职责划分见 **`docs/v1-governance-layers.md`** §1–§5。**`v1.1.10`** 起对「文档与示例如何描述」做了**成熟度冻结**，见同文 **§6**。**`v1.1.11` / T11**：L3 admin **调用前提**与 **`admin_invoke`** **最小审计**见 **`docs/v1-admin-audit-rules.md`**。下表仍为**子能力成熟度**单一事实源。
 
 ### 4.1 HTTP 管理端点（`net::HttpManager`）
 
@@ -126,8 +126,9 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| `kAdminServerStatus / kAdminReloadConfig / kAdminKickPlayer / kAdminBanIp / kAdminResponse` | `demo-only` | 仅在 `examples/admin_demo` / `examples/login_demo` 中手工接线，**默认 `GatewayServer` 不注册这组 handler**；**入口分层**见 **`docs/v1-governance-layers.md`** §L3；当前**没有任何权限校验**——任何已建立连接的客户端只要构造对应消息号即可触发管理动作 |
-| 权限模型 / 审计字段规范 | `reserved` | 当前 admin 调用只产出自由文本审计，无 `actor` / `target` / `outcome` 字段约定 |
+| `kAdminServerStatus / kAdminReloadConfig / kAdminKickPlayer / kAdminBanIp / kAdminResponse` | `demo-only` | 仅在 `examples/admin_demo` / `examples/login_demo` 中手工接线，**默认 `GatewayServer` 不注册这组 handler**；**入口分层**见 **`docs/v1-governance-layers.md`** §L3；**无令牌/角色 ACL** — 任意已建立会话只要发对应 **message_id** 即进入 handler（须在**受信链路**使用） |
+| **调用前提 / 审计最小键 / 动作语义（T11）** | `experimental`（v1.1.11） | **`docs/v1-admin-audit-rules.md`**：**进程外信任域** + 注册显式化；handler 入口统一 **`AUDIT_LOG(admin_invoke, …)`**（`layer=L3_admin`、`action`、`actor_endpoint`、`request_id`、`trace_id`、`outcome=accepted`…） |
+| **运行时鉴权（who can call）、失败细分响应、结构化审计后端** | `reserved` | 当前 `kAdminResponse` body 仍为固定 `*__ok`（或回调 JSON），**不因**回调未命中目标而改变；统一 `actor`/`target` JSON 字段与高可靠审计仍为后续项（**T18** 等） |
 
 ### 4.3 限频与连接控制
 
@@ -142,8 +143,8 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| `AUDIT_LOG(event, details)` 写入 `logs/audit.log` | `experimental` | 主链已接入登录成功 / 失败、限频、连接拒绝、配置重载等节点；**输出格式为"近似 JSON 行"**：`details` 字段未做 JSON 转义，包含引号 / 反斜杠 / 换行时不再是合法 JSON，**不应被视为稳定结构化日志** |
-| 统一审计字段（`actor` / `target` / `source_ip` / `request_id` / `outcome` / `reason_code`） | `reserved` | 当前审计模型仅 `ts` / `event` / `details`，无统一字段规范 |
+| `AUDIT_LOG(event, details)` 写入 `logs/audit.log` | `experimental` | 主链已接入登录成功 / 失败、限频、连接拒绝、配置重载等节点；Admin 二进制路径在 **`v1.1.11`** 起于 handler **入口**写 **`admin_invoke`**（键约定见 **`docs/v1-admin-audit-rules.md`** §4）；**输出格式仍为"近似 JSON 行"**：`details` **未统一转义**，**不应被视为稳定结构化日志** |
+| 统一审计字段（`actor` / `target` / `source_ip` / `request_id` / `outcome` / `reason_code`） | `reserved` | **`v1.1.11`** 仅在 `details` **字符串内**约束 **必备键=k=v**（见 **`docs/v1-admin-audit-rules.md`**）；**不包含**顶层 JSON Schema 与高可靠后端 |
 
 ### 4.5 TLS
 
@@ -255,7 +256,7 @@
 4. **登录防爆破** — `RateLimiter` 接口存在，`LoginService` 未调用
 5. **游客账号** — `max_guests` 配置存在，主链未引用
 6. **完整热更新** — `ConfigWatcher` 仅是文件变更触发器，实际生效字段仅 `max_connections` / `per_ip_connection_limit`
-7. **完整管理面 / 二进制管理命令** — `AdminService` demo-only，无权限校验
+7. **完整管理面 / 二进制管理命令** — `AdminService` demo-only；**文档契约 / 最小审计**：`docs/v1-admin-audit-rules.md`；**运行时 ACL**：仍缺位
 8. **多进程拆服架构** — `login_server` / `room_server` / `battle_server` 是各自带接入层的独立 demo 入口
 9. **服务发现** — `ServiceRegistry` 是内存注册表，无 TTL / 健康联动
 10. **战斗回放** — 读取链与存储抽象存在，生产链未闭环
@@ -280,8 +281,8 @@
 | `v1.1.7` | 跨域编排收口 | T07 / T08：`login_recovery`、`room_battle_lifecycle`、`docs/v1-cross-domain-flows.md` |
 | `v1.1.8` | 房间/战斗边界收紧 | T09 + T06②：`member_user_id`、`docs/v1-room-battle-boundary.md` |
 | `v1.1.9` | 治理入口分层 | T10：`docs/v1-governance-layers.md` §1–§5 |
-| `v1.1.10` | 治理成熟度冻结 | （文档：`docs/v1-governance-layers.md` **§6** + 示例/README/playbook 用语）— **当前版本** |
-| `v1.1.11` | admin 权限与审计 | T11 |
+| `v1.1.10` | 治理成熟度冻结 | （文档：`docs/v1-governance-layers.md` **§6** + 示例/README/playbook 用语） |
+| `v1.1.11` | admin 权限前提与最小审计规则 | （**T11**：**`docs/v1-admin-audit-rules.md`** + `admin_invoke` 边界审计）— **当前版本** |
 | `v1.1.12` | 配置成熟度表 | T12 后半 |
 | `v1.1.13` | 标准启动 / reload / shutdown 顺序 | T13 |
 | `v1.1.14` | 受控生命周期流程 | T13 后半 |

@@ -1,8 +1,18 @@
 add_executable(project_unit_tests
     hello_test.cpp
+    config_test.cpp
+    gateway_metrics_exporter_test.cpp
     packet_codec_test.cpp
     message_dispatcher_test.cpp
+    room_manager_test.cpp
+    battle_manager_test.cpp
+    session_manager_test.cpp
     service_registration_test.cpp
+    token_validator_test.cpp
+    packet_fuzz_test.cpp
+    matchmaking_test.cpp
+    compressor_test.cpp
+    admin_service_test.cpp
 )
 target_link_libraries(project_unit_tests
     PRIVATE

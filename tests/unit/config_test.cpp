@@ -83,6 +83,23 @@ TEST(ConfigTest, LoadsGatewayConfigFromJsonFile) {
     std::filesystem::remove(path);
 }
 
+TEST(ConfigTest, TryLoadGatewayConfigReturnsNulloptWhenMissing) {
+    app::logging::init("project_tests");
+    const auto path = std::filesystem::temp_directory_path() / "gateway_missing_xyz.conf";
+    EXPECT_FALSE(app::config::try_load_gateway_config(path).has_value());
+}
+
+TEST(ConfigTest, TryLoadGatewayConfigReturnsNulloptWhenJsonInvalid) {
+    app::logging::init("project_tests");
+    const auto path = std::filesystem::temp_directory_path() / "gateway_bad.json";
+    {
+        std::ofstream output(path);
+        output << "{ not json";
+    }
+    EXPECT_FALSE(app::config::try_load_gateway_config(path).has_value());
+    std::filesystem::remove(path);
+}
+
 TEST(ConfigTest, LoadsPressureConfigFromJsonFile) {
     app::logging::init("project_tests");
 

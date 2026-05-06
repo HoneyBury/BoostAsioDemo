@@ -1,5 +1,25 @@
 # 更新日志
 
+## v1.1.14 — 受控 reload / shutdown 语义（T13 后半）(2026-05-06)
+
+> **范围**：**`ConfigWatcher`** 仅在 **`try_load_gateway_config`** 成功时调用 reload 回调（失败则 WARN、**不**回调，避免默认配置误触 **`set_connection_limits`**）。**`docs/v1-runtime-lifecycle.md`**：**§6** reload 成败语义；**§7** shutdown 最小保证与仍为 **reserved** 的分界。
+
+### 代码
+
+- `include/app/config.h`、`src/app/config.cpp`：`try_load_gateway_config`、`fill_gateway_from_store`；`load_gateway_config` 失败日志文案（*not found or invalid*）。
+- `include/app/config_watcher.h`：`check_and_reload` 使用 **`try_load_gateway_config`**。
+- `tests/unit/config_test.cpp`：缺失文件 / 坏 JSON 时 **`nullopt`** 用例。
+
+### 文档
+
+- **`docs/v1-runtime-lifecycle.md`**（§5–§8 顺序与交叉引用）；矩阵 §5 / §10；`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`v1-config-maturity.md` §6、`docs/README.md`、`development-log.md`。
+
+### 测试
+
+- `ctest`：**68/68**。
+
+---
+
 ## v1.1.13 — 标准运行时装配 / shutdown 顺序（T13）(2026-05-06)
 
 > **范围**：**`docs/v1-runtime-lifecycle.md`**（启动 / reload / shutdown 清单）；**`examples/echo`**、`login_demo`、`admin_demo` 在 **`GracefulShutdown`** 回调中 **`watcher.stop()` + `server.stop()` + `io_context.stop()`**，避免信号停服后 IO 线程无法 **`join`**。

@@ -71,6 +71,7 @@ struct PressureAppConfig {
     std::uint32_t malicious_packet_size = 2 * 1024 * 1024;
 };
 
+[[nodiscard]] std::optional<GatewayAppConfig> try_load_gateway_config(const std::filesystem::path& path);
 [[nodiscard]] GatewayAppConfig load_gateway_config(const std::filesystem::path& path);
 [[nodiscard]] PressureAppConfig load_pressure_config(const std::filesystem::path& path);
 [[nodiscard]] std::string to_string(PressureScenario scenario);

@@ -934,6 +934,29 @@
 
 ### 下一步
 
-- **`v1.1.14`**：T13 后半 — 受控 reload / shutdown **语义**（矩阵 §5.2–§5.3）。
+- **`v1.1.14`**：T13 后半 — 受控 reload / shutdown **语义**（见后续阶段记录）。
+
+> **强约束**：未进入 v2。
+
+---
+
+## 2026-05-06 阶段 v1.1.14：受控 reload 与 shutdown 语义分界（T13 后半）
+
+### 目标
+
+**reload**：配置文件变更时，**仅当**磁盘可读且 JSON 解析成功才触发 **`on_reload_`**，避免失败路径误用默认 **`GatewayAppConfig`**。**shutdown**：在文档中固定 showcase **最小保证**与仍为 **reserved** 的能力分界。
+
+### 完成内容
+
+- **代码**：`try_load_gateway_config`、`fill_gateway_from_store`；**`ConfigWatcher::check_and_reload`** 用 **`try_load_gateway_config`**；`load_gateway_config` 失败日志；**`config_test`** 用例。
+- **文档**：**`docs/v1-runtime-lifecycle.md`**（§5–§8 顺序；**§6** reload 表；**§7** shutdown 表）；矩阵 §5.2 / §5.3 / §10；`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`v1-config-maturity.md` §6、`docs/README.md`、`CHANGELOG.md`。
+
+### 测试结果
+
+- `ctest`：**68/68**。
+
+### 下一步
+
+- **`v1.1.15`**：T14 后半 — 横切能力定位（`development-priority.md` 批次 A）。
 
 > **强约束**：未进入 v2。

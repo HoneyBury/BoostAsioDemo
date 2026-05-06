@@ -63,5 +63,5 @@
 |---|---|
 | **`v1.1.12`**（本文） | T12：配置字段成熟度 **单列文档** + 热更新叙事收口 |
 | **`v1.1.13`** | T13：**`docs/v1-runtime-lifecycle.md`** + showcase shutdown **`io_context.stop()`** |
-| **`v1.1.14`** | T13 后半：**受控** reload / shutdown 语义（矩阵 §5.2–§5.3） |
+| **`v1.1.14`** | T13 后半：**`try_load_gateway_config`**；**`docs/v1-runtime-lifecycle.md` §6–§7**（矩阵 §5.2–§5.3 组件表仍为本索引） |
 | **`v1.2.3`（T19）** | 生命周期与装配 **回归测试**加固 |

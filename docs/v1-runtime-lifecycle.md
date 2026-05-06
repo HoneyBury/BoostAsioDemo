@@ -1,10 +1,11 @@
-# v1.x 标准运行时装配与生命周期顺序（v1.1.13 / T13）
+# v1.x 标准运行时装配与生命周期顺序（v1.1.13–v1.1.14 / T13）
 
 ## 1. 文档定位
 
-- **任务**：落实 **`development-optimization.md`**「Runtime Assembly」路线图**第二步**：用**同一份清单**描述各 showcase / 集成样例入口的 **启动**、**ConfigWatcher reload**、**SIGINT/SIGTERM shutdown** 顺序，降低 `examples/*main.cpp` 之间的语义漂移。
+- **任务**：落实 **`development-optimization.md`**「Runtime Assembly」路线图 **第二步 + 第三步（文档化）**：用**同一份清单**描述 **启动**、**reload**、**shutdown**；并写明 **成功/失败**与 **最小保证**（**§6–§7**）。
 - **范围**：以 **`examples/echo/server_main.cpp`** 为**参考骨架**；其它入口允许缺省子步骤（例如无 `ConfigWatcher`），但**不应**在已有步骤上与清单**反向**（除非文档明示为实验例外）。
-- **`v1.1.14`（T13 后半）**：reload **成功/失败**语义、shutdown **最小保证动作**、metrics / persistence 与 session stop 的进一步收口 — 见 **`docs/v1-maturity-matrix.md` §5.2–§5.3** 与矩阵 §10。
+- **`v1.1.13`**：**步骤顺序** + showcase **`io_context.stop()`**（§2–§5；§5 为入口对照）。
+- **`v1.1.14`**：**受控语义** — **`ConfigWatcher`** 仅在 **`try_load_gateway_config` 成功**时调用回调（**§6**）；shutdown **最小保证**与「仍为预留的能力」分界（**§7**）。
 
 ---
 
@@ -34,11 +35,11 @@
 
 ## 3. 标准 reload 顺序（`ConfigWatcher` 回调）
 
-当前 **`ConfigWatcher`** 仅是 **文件 `last_write_time` 变更触发器**（矩阵 §5.2），**不**承诺校验、回滚或去抖。
+当前 **`ConfigWatcher`** 仍是 **文件 `last_write_time` 变更触发器**（矩阵 §5.2），**不**承诺去抖、并发保护或「坏配置回滚到上一份合法快照」。
 
 **Showcase 最小契约**（与 **`docs/v1-config-maturity.md` §3** 一致）：
 
-1. `load_gateway_config` 已在 **`ConfigWatcher` 内部**完成，回调收到 **`GatewayAppConfig new_cfg`**。
+1.  **`ConfigWatcher`** 内部使用 **`try_load_gateway_config(path)`**（**`v1.1.14`**）：**仅当**磁盘文件 **可读且解析成功**时才有 **`GatewayAppConfig new_cfg`**；失败则 **WARN**、**不调用** reload 回调（避免历史上 **`load_gateway_config` 失败仍塞默认配置**误触发 **`set_connection_limits`**）。
 2. 回调内 **至少**应 **`server.set_connection_limits(new_cfg.max_connections, new_cfg.per_ip_connection_limit)`** —— `echo_server`、`login_demo`、`admin_demo` 均为此模式。
 3. **禁止**在文档或运维手册中暗示「改任意 JSON 字段都会在 reload 回调中生效」— 以 **`v1-config-maturity.md` §4** 表格为准。
 
@@ -61,7 +62,7 @@
 6. **`business_pool.join()`**。
 7. **`watcher.stop()`**（幂等：若 §1 已调用，再次 `cancel` 无害）。
 
-> **`GracefulShutdown` 本体**仍只是 **SIGINT/SIGTERM → 回调**（矩阵 §5.3）；**不**等同于完整进程级生命周期框架 — **`v1.1.14`** 再继续细化「最小保证动作」与失败语义。
+> **`GracefulShutdown` 本体**仍只是 **SIGINT/SIGTERM → 回调**（矩阵 §5.3）；完整进程级编排器仍 **reserved**。
 
 ---
 
@@ -76,9 +77,48 @@
 
 ---
 
-## 6. 与 roadmap 的关系
+## 6. 受控 reload 语义（`v1.1.14`）
+
+| 概念 | 现行语义 |
+|------|----------|
+| **触发** | `mtime` 较 **`last_write_`** 变大 → 先 **推进水印** `last_write_ = current`，再尝试加载（避免对同一文件版本重复触发）。 |
+| **成功** | **`try_load_gateway_config`** 返回 **`optional` 有值** → 调用 **`on_reload_(cfg)`**；showcase 在此应用连接限额等。 |
+| **失败** | **`nullopt`**（文件瞬时不可读、JSON 解析异常、`ConfigStore::load` 失败等）→ **仅日志**，**不调用**回调；进程内 **`GatewayServer` / 会话状态**保持 **上一次成功 reload 或启动时**的配置衍生行为。 |
+| **仍非正式热更新框架** | 无 **reload 事务**、无 **活跃配置版本号**、无 **字段级 diff** — 矩阵 §5.2 **reserved** 项照旧。 |
+
+---
+
+## 7. Shutdown 最小保证 vs 仍预留（`v1.1.14`）
+
+下列针对 **带 `GracefulShutdown` + `ConfigWatcher` + `GatewayServer` 的 showcase**（**§5** 表中 ✅ 行），描述「文档承诺的最小集合」与「仍未统一收口」的分界。
+
+### 7.1 showcase 最小保证（SIGINT/SIGTERM 路径）
+
+在 **`GracefulShutdown` 回调**内，**预期**依次发生：
+
+1. **`watcher.stop()`** —— 停止下一轮 reload 轮询。
+2. **[可选] `AUDIT_LOG("shutdown", …)`**。
+3. **[可选] 演示型持久化**（如 `JsonFilePlayerStore::save`）— **best-effort**，失败未必打断后续步骤（由各 demo 自行决定）。
+4. **`server.stop()`** —— **`acceptor.close`**；**取消**周期 metrics 定时器；**停止** `HttpManager`；对 **`SessionManager::all_sessions()`** 逐个 **`Session::stop()`**（进而触发房间清理 / `clear_battle_if_room_empty` 等既有闭包）。
+5. **`io_context.stop()`** —— 所有 **`io_context.run()`** 退出，主线程得以 **`join` IO worker**。
+
+主线程末尾：**`business_pool.join()`**；**`watcher.stop()`** 幂等。
+
+### 7.2 仍为 reserved / 未承诺
+
+| 项 | 说明 |
+|----|------|
+| **最终 metrics 文件落盘 / flush 顺序** | `GatewayServer::stop()` **取消** `metrics_timer_`，**不**保证周期任务已在停服前再跑一次；与文件导出路径相关的「最后一次快照」**无统一保证**。 |
+| **业务线程池排空顺序** | **`business_pool.join()`** 等待已投递任务跑完，但 **与** `Session::stop` **的交叉顺序**依赖 Asio post 与 handler 实现，**无**框架级「先停接包再 join 池」的硬约束。 |
+| **第二路信号 / 重入** | 未定义二次 SIGINT 行为；应假定 **仅处理一次** 干净路径。 |
+| **无 `GracefulShutdown` 的 demo** | **`room_demo` / `battle_demo`** 等 — **不适用** §7.1。 |
+
+---
+
+## 8. 与 roadmap 的关系
 
 | 版本 | 内容 |
 |------|------|
-| **`v1.1.13`**（本文） | T13：**清单文档** + showcase shutdown **`io_context.stop()`** 对齐 |
-| **`v1.1.14`** | T13 后半：**受控流程**（reload 成败、shutdown 最小保证等） |
+| **`v1.1.13`** | T13：**清单** + showcase **`io_context.stop()`** |
+| **`v1.1.14`**（§6–§7） | T13 后半：**reload 成败语义**（**`try_load_gateway_config`**）+ shutdown **最小保证 / 预留分界** |
+| **`v1.2.3`（T19）** | 生命周期与装配 **自动化回归** |

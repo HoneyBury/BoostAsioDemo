@@ -116,19 +116,21 @@
 ## 3. 消息处理链路
 
 ```text
-客户端 -> Session 读包 -> [入站：解码 -> （flags::kCompressed 时）解压 -> 投递]
-       -> MessageDispatcher -> 中间层 -> 业务线程池
-       -> Login/Room/Battle Handler -> Session 回包
+客户端 -> Session 读包 -> [入站：解码 -> （flags::kCompressed 时）解压]
+       -> MessageDispatcher
+          -> [ingress：登录前白名单 + 基础限频]   （v1.1.3 起在 Session 调用线程同步执行，早于业务池）
+       -> asio::post -> 业务线程池
+          -> [可选 post-pool middleware] -> Login/Room/Battle Handler -> Session 回包
        -> [出站：序列化 -> （需要时）压缩 -> 编码]
 ```
 
-中间层当前包含（`GatewayService::register_handlers`）：
+中间层（ingress，`GatewayService::register_handlers`）：
 
 - 登录前白名单：允许 `kHeartbeatRequest` / `kLoginRequest` / `kEchoRequest`
 - 未登录业务拦截：未登录时访问房间或战斗接口返回 `kErrorResponse: auth_required`
 - 基础限频：单连接每秒最多通过 32 条非心跳消息，超限返回 `kErrorResponse: rate_limited`
 
-> **注**：当前中间层在 dispatcher 业务线程池**之后**执行，导致非法消息会先进入业务线程池排队后才被拦截。`v1.1.3` 整改为入口前置。
+> **v1.1.3 / T05**：上述策略从“业务线程池内执行”前移到“投递到线程池之前”。无有效 `Session` 的 `dispatch(nullptr, …)`（实验性内部总线）**不**跑 ingress，详见 `include/net/message_dispatcher.h` 与 `docs/v1-maturity-matrix.md` §2.4。
 
 ## 4. 目录对应关系
 

@@ -44,5 +44,6 @@ TEST(ServiceRegistrationTest, RegistersCoreBusinessHandlersAndMiddleware) {
     EXPECT_TRUE(dispatcher.has_handler(net::protocol::kBattleStartRequest));
     EXPECT_TRUE(dispatcher.has_handler(net::protocol::kBattleInputRequest));
     EXPECT_EQ(dispatcher.handler_count(), 8U);
-    EXPECT_EQ(dispatcher.middleware_count(), 2U);
+    EXPECT_EQ(dispatcher.ingress_middleware_count(), 2U);
+    EXPECT_EQ(dispatcher.middleware_count(), 0U);
 }

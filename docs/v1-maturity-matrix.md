@@ -49,13 +49,13 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| `MessageDispatcher` handler 注册 / middleware / 线程池范围路由 | `stable` | 主链使用 |
+| `MessageDispatcher` handler 注册 / 线程池范围路由 | `stable` | 主链使用 |
+| `GatewayService`：`register_ingress_middleware`（登录前白名单 + 连接维基础限频） | `stable`（v1.1.3） | **在投递到业务线程池之前**，在调用线程（`Session::strand`）上同步运行；被拒包不占用 worker。见 `development-optimization.md` §8.4（T05） |
+| `MessageDispatcher::register_middleware`（post-pool 链） | `stable` | 保留用于兼容与未来扩展；网关入口策略已全部迁到 ingress |
+| `InternalBus` → `dispatch(nullptr, …)` | `experimental` | **不显式跑 ingress 中间件**，避免会话级策略作用于内部链路；仍会跑 post-pool `register_middleware` 链；尚无独立 envelope |
 | `ServiceRouter` | `experimental` | 仅本地 `DispatchContext` 转发，不具备跨进程路由能力 |
 | `ServiceRegistry` | `experimental` | 内存注册表，不含 TTL/订阅/健康联动 |
-| `InternalBus` | `experimental` | 与客户端 dispatcher 共用编解码与中间件链，没有独立 envelope，演示用途 |
 | `BackendRouter` | `reserved` | 号段映射 + 空 handler，未进入主链 |
-
----
 
 ## 3. 业务层
 
@@ -268,8 +268,8 @@
 | 版本 | 主题 | 范围（任务编号见 development-optimization §11.2） |
 |---|---|---|
 | `v1.1.1` | 基线校准 | T01 / T02 / T10 / T12 / T14 |
-| `v1.1.2` | 会话与协议收口 | T03 / T04 — **当前版本** |
-| `v1.1.3` | 入口收敛 | T05 |
+| `v1.1.2` | 会话与协议收口 | T03 / T04 |
+| `v1.1.3` | 入口治理前置 | T05 — **当前版本** |
 | `v1.1.4` | 状态边界收敛 | T06 |
 | `v1.1.5` | 业务事实源校准 | （文档） |
 | `v1.1.6` | 业务协议冻结 | T02 后半（错误码语义） |

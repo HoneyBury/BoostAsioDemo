@@ -105,7 +105,7 @@
 |---|---|---|
 | T03 统一 `Session` 主动关闭 / 异常关闭收口路径 | `v1.1.2` | **done** |
 | T04 固定协议增强顺序，明确分片当前未启用，修正 zlib 缺失时压缩标记位语义 | `v1.1.2` | **done** |
-| T05 前置 ingress 鉴权白名单与限频，收口入口治理 | `v1.1.3` | todo |
+| T05 前置 ingress 鉴权白名单与限频，收口入口治理 | `v1.1.3` | **done** |
 | T06 明确 `battle_started` 单一事实源，停止 room/battle 双写 | `v1.1.4` / `v1.1.8` | todo |
 | T07 收敛重复登录恢复链 | `v1.1.7` | todo |
 | T08 收敛空房 battle 清理链 | `v1.1.7` | todo |
@@ -136,8 +136,8 @@
 
 ```
 v1.1.1   基线校准                     ✅
-v1.1.2   会话与协议收口（T03 / T04）  ✅ 当前
-v1.1.3   入口收敛（T05）
+v1.1.2   会话与协议收口（T03 / T04）  ✅
+v1.1.3   入口收敛（T05）              ✅ 当前
 v1.1.4   状态边界收敛（T06 第一阶段）
 v1.1.5   业务事实源校准
 v1.1.6   业务协议冻结（T02 后半 / 错误码语义）
@@ -165,7 +165,8 @@ v1.2.4   持久化/审计/回放测试加固（T20）
 ## 5. 最近一次更新
 
 - 日期：`2026-05-06`
-- 版本：`v1.1.2` 主链生命周期与协议增强收口
-- 说明：完成 T03 / T04。`Session::stop()` 经由 `handle_close()` 统一收口，主动关闭与异常关闭走同一路径；新增 `is_compression_available()` 编译期常量，仅在压缩后端可用时才允许设置 `kCompressed`，没有压缩后端的 build 主动拒绝 `kCompressed` 包。新增 4 个 `SessionCloseTest` 单元用例 + 1 个集成回归 + 1 个 compressor 用例，`ctest` 60/60 通过。
+- 版本：`v1.1.3` 入口治理前置（T05）
+- 说明：`MessageDispatcher` 新增 `register_ingress_middleware`；`GatewayService` 的白名单与限频迁到 **asio::post(business_pool)** 之前同步执行，被拒包不占业务 worker。`dispatch(nullptr, …)`（实验性 InternalBus）跳过 ingress。单元新增 `IngressMiddlewareRunsSynchronouslyBeforeBusinessPool` / `IngressSkippedWhenSessionIsNull_InternalBusStyle`，`service_registration_test` 断言 2 条 ingress + 0 条 post-pool 链。`ctest` 62/62 通过。
 - 历次更新：
-  - `2026-05-06` `v1.1.1` 基线校准 — 完成 T01 / T02（部分）/ T10（部分）/ T12（部分）/ T14（部分），新增 `docs/v1-maturity-matrix.md` 作为维护期单一事实源。
+  - `2026-05-06` `v1.1.2` 主链生命周期与协议增强收口 — T03 / T04。
+  - `2026-05-06` `v1.1.1` 基线校准 — 完成 T01 / T02（部分）/ T10（部分）/ T12（部分）/ T14（部分），新增 `docs/v1-maturity-matrix.md`。

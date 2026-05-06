@@ -650,10 +650,47 @@
 - 没有压缩后端的 build 上，`kCompressed` 现在是“严格非法”信号；任何在 `v1.0.0` 主链外私接的旧客户端如果在没有 zlib 的 build 上误设了 `kCompressed`，将会被立即断开。这与 `docs/v1-maturity-matrix.md` 的现行约束一致——v1.x 主链就不依赖压缩。
 - 分片仍未启用，`v1.1.2` 不动它；v1.x 维护期不计划解锁。
 
+### 下一步（阶段结束时原计划）
+
+- `v1.1.3`：T05 — ingress 鉴权白名单 / 限频前置（已实现，见下文 v1.1.3 段）
+- `v1.1.4`：T06 — `battle_started` 单一事实源第一阶段
+
+---
+
+## 2026-05-06 阶段 v1.1.3：入口治理前置（T05）
+
+### 目标
+
+把网关入口策略（登录前消息白名单、未鉴权拦截、连接维基础限频）从 **`asio::post` 到业务线程池之后的中间件执行**前移为：**在投递到业务池之前**，于 `Session::packet_handler` → `MessageDispatcher::dispatch()` 的同一线程上下文（实际是 `strand`/`io_context` 上的同步调用栈）先行判定。
+
+**对应 `docs/development-optimization.md` §11 任务表的 T05 / §8.4**。本阶段不改变业务协议与白名单所列消息号集合，只改变执行位置与资源占用特征。
+
+### 完成内容
+
+- `include/net/message_dispatcher.h`：
+  - 新增 `register_ingress_middleware` + `ingress_middleware_count()`。
+  - `dispatch()`：若 `session != nullptr`，在 `boost::asio::post(*target_pool, …)` **之前**顺序执行 ingress 链；若任一层返回 `false`，立即 `return true`（与旧版“被中间件拦下”一致），**不向业务池投递**。
+  - `session == nullptr` 时**跳过** ingress（为实验性 `InternalBus` 预留：避免把“客户端会话级策略”误用到 `dispatch(nullptr, …)` 内部链路上；post-pool 的 `register_middleware` 链仍保留）。
+
+- `src/game/gateway/gateway_service.cpp`：`auth_whitelist` 与 `rate_limit` 从 `register_middleware` 迁到 `register_ingress_middleware`。
+
+### 测试
+
+- `tests/unit/message_dispatcher_test.cpp`：新增 `IngressMiddlewareRunsSynchronouslyBeforeBusinessPool`、`IngressSkippedWhenSessionIsNull_InternalBusStyle`；保留原 `MiddlewareCanBlockMessageBeforeHandlerRuns` 覆盖 **post-pool** 链行为。
+- `tests/unit/service_registration_test.cpp`：断言 `ingress_middleware_count()==2`、`middleware_count()==0`。
+- `ctest`：62/62 通过。
+
+### 影响范围
+
+- `include/net/message_dispatcher.h`
+- `src/game/gateway/gateway_service.cpp`
+- `tests/unit/message_dispatcher_test.cpp`
+- `tests/unit/service_registration_test.cpp`
+- `docs/runtime-playbook.md` §3、`docs/v1-maturity-matrix.md` §2.4、`docs/development-priority.md`、`CHANGELOG.md`
+
 ### 下一步
 
-- `v1.1.3`：T05（ingress 鉴权白名单 / 限频前置）—— 把 auth gating / rate-limit 从业务线程池**之后**前移到 `accept` 之后、`dispatch` 之前。
-- `v1.1.4`：T06（`battle_started` 单一事实源第一阶段）—— 停止 `RoomManager` / `BattleManager` 双写状态。
+- `v1.1.4`：T06 — `battle_started` 单一事实源第一阶段，`RoomManager` / `BattleManager` 停止双写。
 
-> **强约束**：仍在 v1.x 维护期内，不进入 v2.0.0（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面）。
+> **强约束**：v1.x 维护期；未进入 v2.0.0 范畴。
 

@@ -1,5 +1,29 @@
 # 更新日志
 
+## v1.1.3 — 入口治理前置 (2026-05-06)
+
+> **范围**：`MessageDispatcher` 增加 **ingress** 中间件层，在投递到业务线程池**之前**同步执行；`GatewayService` 的白名单与限频迁至该层。**不修改业务协议、不改变白名单消息号集合、不触碰配置结构与治理 HTTP 分层**。
+>
+> 对应 `docs/development-optimization.md` §11 任务表的 **T05**。
+
+### 行为变更
+
+- 新增 `net::MessageDispatcher::register_ingress_middleware` / `ingress_middleware_count()`。
+- 客户端连接的 `dispatch(session, …)`：`session != nullptr` 时先顺序执行 ingress，再 `asio::post` 到默认或按号段指定的业务线程池。被白名单拒绝或限频拒绝的请求**不会再占用业务 worker 队列槽位**。
+- `dispatch(nullptr, …)`（实验性内部总线路径，`InternalBus`）**跳过** ingress，避免会话级策略误作用于无 `Session` 的链路；沿用 post-pool 的 `register_middleware` 链（网关默认不注册该链）。
+- 保留 `register_middleware` / `middleware_count()` 表示 **post-pool** 链，供兼容与未来扩展。
+
+### 测试与验证
+
+- 单元：`MessageDispatcherTest.{IngressMiddlewareRunsSynchronouslyBeforeBusinessPool, IngressSkippedWhenSessionIsNull_InternalBusStyle}`，`ServiceRegistrationTest` 断言 ingress=2、middleware=0。
+- `ctest`：62/62 通过。
+
+### 兼容性
+
+- 对已登录客户端、合法未登录业务流程（heartbeat / login / echo）无协议层差异；被拒时的错误响应（`auth_required`、`rate_limited`）保持不变。
+
+---
+
 ## v1.1.2 — 主链生命周期与协议增强收口 (2026-05-06)
 
 > **范围**：主链代码层面收敛 `Session` 关闭路径与协议增强标志位语义，**不引入新功能、不修改业务协议、不触碰配置/治理结构**。

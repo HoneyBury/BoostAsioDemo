@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
     LOG_INFO("审计日志已启用，输出到 logs/audit.log");
 
     // =================================================================
-    // 4. 管理指令 — 支持踢人/封禁/状态查询
+    // 4. 二进制 Admin — demo-only、无权限；默认主链不注册（见 docs/v1-governance-layers.md §6）
     // =================================================================
     game::gateway::AdminService admin(session_mgr, metrics);
     admin.set_status_callback([&] {

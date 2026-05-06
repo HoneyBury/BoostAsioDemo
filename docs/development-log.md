@@ -843,3 +843,25 @@
 - **`v1.1.10`**：治理成熟度冻结（文档与示例用语，不暗示未收口能力已可依赖）。
 
 > **强约束**：未进入 v2。
+
+---
+
+## 2026-05-06 阶段 v1.1.10：治理成熟度冻结
+
+### 目标
+
+落实 **`development-optimization.md`** 路线图**第二步**：停止「协议号已存在、example 已演示、就被默认为正式能力」的扩散；与 **`v1-maturity-matrix.md` §4** 一致的表述写进 **`docs/v1-governance-layers.md` §6**，并校准 **README / playbook / showcase 示例**。
+
+### 完成内容
+
+- **`docs/v1-governance-layers.md` §6**；矩阵 §4 引言、§10 版本表 **`v1.1.10` 当前**；`development-priority.md`（新增维护行 + 节奏）；`docs/README.md`；`v1-string-protocol.md` / `v1-cross-domain-flows.md`；`runtime-playbook.md`；根 `README.md`（含 ctest **66** 与 HTTP 用词）；`examples/admin_demo`、`examples/login_demo`；`admin_service.h` 注释；`CHANGELOG.md`。
+
+### 测试结果
+
+- `ctest`：**66/66**。
+
+### 下一步
+
+- **`v1.1.11`**：T11 — admin **权限与审计**最小规则。
+
+> **强约束**：未进入 v2。

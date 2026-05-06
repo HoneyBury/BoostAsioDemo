@@ -1,5 +1,25 @@
 # 更新日志
 
+## v1.1.10 — 治理成熟度冻结（文档 + 示例用语）(2026-05-06)
+
+> **范围**：落实 **`development-optimization.md`** 路线图**第二步**验收点：不再让「消息号存在 / 示例已接线」被误读为 **正式、可依赖**的治理能力；**不改变** TCP、HTTP、admin 的默认行为。
+
+### 文档
+
+- **`docs/v1-governance-layers.md`**：新增 **§6**（Admin / `HttpManager` / `GatewayServer` 装配的**禁止暗示**与事实表）；文首版本范围更新为 **v1.1.9–v1.1.10**。
+- `docs/v1-maturity-matrix.md` §4 引言与 §10 版本表；`development-priority.md`；`docs/README.md`；`v1-string-protocol.md` / `v1-cross-domain-flows.md` 后续版本指针；`runtime-playbook.md`（含 **HTTP 观测端点**小节标题与 **§6** 引用）；根 `README.md`。
+
+### 示例与头文件注释
+
+- `examples/admin_demo/admin_demo_main.cpp`、`examples/login_demo/login_demo_main.cpp`：注释与日志用语与 **§6** 对齐。
+- `include/game/gateway/admin_service.h`：标明 **demo-only** 与 **§6** 引用。
+
+### 测试
+
+- `ctest`：**66/66**。
+
+---
+
 ## v1.1.9 — 治理入口分层（T10）(2026-05-06)
 
 > **范围**：仅文档。**不改变** TCP ingress、`HttpManager`、二进制 `AdminService` 的默认接线或行为。

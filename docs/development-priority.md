@@ -96,7 +96,8 @@
 | （文档）login / room / battle 模块边界与四大验收问答 | `v1.1.5` | **done**（见 `docs/v1-business-fact-source.md`） |
 | T01 校准 `v1.0.0` / `develop` 能力边界与文档表述 | `v1.1.1` | **done** |
 | T02 冻结当前真实协议表，明确 1.x 主协议事实源 | `v1.1.1` / `v1.1.6` | **done**（`v1-string-protocol.md`；`kPlayerNotInBattle`/`to_string`） |
-| T10 校准治理入口分层，明确 HTTP / admin 命令成熟度 | `v1.1.1` / `v1.1.9` | **done**（`docs/v1-governance-layers.md`；**权限/审计留给 v1.1.11**） |
+| T10 校准治理入口分层，明确 HTTP / admin 命令成熟度 | `v1.1.1` / `v1.1.9` | **done**（`docs/v1-governance-layers.md` §1–§5；**权限/审计留给 v1.1.11**） |
+| （文档）治理能力成熟度冻结，禁绝示例/README 误导「已实现 = 正式能力」 | `v1.1.10` | **done**（`docs/v1-governance-layers.md` **§6**；`admin_demo`/`login_demo`/`README.md`/`runtime-playbook`） |
 | T12 给配置字段补「启动生效 / 热更新生效 / 仅预留」标记 | `v1.1.1` / `v1.1.12` | **doing**（v1.1.1 完成成熟度矩阵字段表；标准热更新流程在 v1.1.12） |
 | T14 明确 player store / replay / audit 当前定位与成熟度 | `v1.1.1` / `v1.1.15` | **doing**（v1.1.1 完成定位说明；按生命周期收口在 v1.1.15） |
 
@@ -145,8 +146,8 @@ v1.1.5   业务事实源校准（叙事文档） ✅
 v1.1.6   业务协议冻结（T02 后半 / 错误码语义） ✅
 v1.1.7   跨域编排收口（T07 / T08） ✅
 v1.1.8   房间/战斗边界收紧（T09 / T06 第二阶段） ✅
-v1.1.9   治理入口分层（T10） ✅ 当前
-v1.1.10  治理成熟度冻结
+v1.1.9   治理入口分层（T10） ✅
+v1.1.10  治理成熟度冻结 ✅ 当前
 v1.1.11  admin 权限与审计规则（T11）
 v1.1.12  配置成熟度表（T12 后半）
 v1.1.13  标准启动 / reload / shutdown 顺序（T13）
@@ -167,8 +168,9 @@ v1.2.4   持久化/审计/回放测试加固（T20）
 ## 5. 最近一次更新
 
 - 日期：`2026-05-06`
-- 版本：`v1.1.9` 治理入口分层（T10）：新增 **`docs/v1-governance-layers.md`**（L0–L3、HTTP 路径归类、Admin 定位、与 v1.1.10/v1.1.11/v1.2.2 边界）；矩阵 §4 引言与 `/health` 行交叉引用。
+- 版本：`v1.1.10` 治理成熟度冻结：`docs/v1-governance-layers.md` **§6**；`README` / `runtime-playbook` / `admin_demo` / `login_demo` / `admin_service.h` 注释与矩阵 §4 引言对齐；**无**行为变更。
 - 历次更新：
+  - `2026-05-06` `v1.1.9` — 治理入口分层、`v1-governance-layers.md`
   - `2026-05-06` `v1.1.8` — 房战边界、`member_user_id`
   - `2026-05-06` `v1.1.6` — 协议冻结 + `kPlayerNotInBattle`
   - `2026-05-06` `v1.1.4` — T06 第一阶段 `battle_started` SSOT、`set_battle_active_query`

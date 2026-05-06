@@ -111,7 +111,7 @@
 
 ## 4. 治理与控制面
 
-> **`v1.1.9` / T10**：多层治理入口的职责划分与健康/观测/二进制 admin 的定位见 **`docs/v1-governance-layers.md`**。下表仍为**子能力成熟度**单一事实源。
+> **`v1.1.9` / T10**：多层治理入口的职责划分见 **`docs/v1-governance-layers.md`** §1–§5。**`v1.1.10`** 起对「文档与示例如何描述」做了**成熟度冻结**，见同文 **§6**。下表仍为**子能力成熟度**单一事实源。
 
 ### 4.1 HTTP 管理端点（`net::HttpManager`）
 
@@ -279,8 +279,8 @@
 | `v1.1.6` | 业务协议冻结 | T02 后半：`docs/v1-string-protocol.md` + **`kPlayerNotInBattle`** |
 | `v1.1.7` | 跨域编排收口 | T07 / T08：`login_recovery`、`room_battle_lifecycle`、`docs/v1-cross-domain-flows.md` |
 | `v1.1.8` | 房间/战斗边界收紧 | T09 + T06②：`member_user_id`、`docs/v1-room-battle-boundary.md` |
-| `v1.1.9` | 治理入口分层 | T10：`docs/v1-governance-layers.md` — **当前版本** |
-| `v1.1.10` | 治理成熟度冻结 | （文档） |
+| `v1.1.9` | 治理入口分层 | T10：`docs/v1-governance-layers.md` §1–§5 |
+| `v1.1.10` | 治理成熟度冻结 | （文档：`docs/v1-governance-layers.md` **§6** + 示例/README/playbook 用语）— **当前版本** |
 | `v1.1.11` | admin 权限与审计 | T11 |
 | `v1.1.12` | 配置成熟度表 | T12 后半 |
 | `v1.1.13` | 标准启动 / reload / shutdown 顺序 | T13 |

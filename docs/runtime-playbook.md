@@ -10,7 +10,7 @@
 
 - `net::Session` — 单连接生命周期、长度头协议拆包、异步收发、心跳检测、超时断开、发包限流、最大包长校验
 - `net::MessageDispatcher` — 消息号注册、业务线程池投递、中间层执行
-- `game::gateway::GatewayServer` — TCP accept、连接限制、HTTP 管理端点装配、metrics 导出
+- `game::gateway::GatewayServer` — TCP accept、连接限制、**L2 HTTP 观测端点**装配（`/metrics*`、`/health`）、metrics 导出
 - `game::gateway::SessionManager` — 在线连接和登录态管理
 - `game::room::RoomManager` — 房间生命周期、房主、成员、ready 状态
 - `game::battle::BattleManager` — battle 上下文、输入序号、输入历史（按 `room_id` 组织）
@@ -208,9 +208,11 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 
 若在 `config/gateway.json` 里配置了 `gateway.metrics_prometheus_path` / `gateway.metrics_json_path`，服务端会按 `gateway.metrics_log_interval_ms` 周期把指标导出到对应文件。
 
-### HTTP 管理端点
+### HTTP 观测端点（L2：`net::HttpManager`）
 
-若在 `config/gateway.json` 里配置了 `gateway.http_management_port`（默认 9080），服务端启动 HTTP 管理端点：
+若在 `config/gateway.json` 里配置了 `gateway.http_management_port`（默认 9080），服务端启动 **`net::HttpManager`**（与 TCP 网关端口并列的**独立监听**）：
+
+> **`v1.1.10`**：**文档 / 示例 / 本节选词**与同目录 **`docs/v1-governance-layers.md`** **§6** 对齐：**不得**将该端口宣称为完整、已鉴权的运维控制面。
 
 | 端点 | 方法 | Content-Type | 状态 | 说明 |
 |---|---|---|---|---|
@@ -218,9 +220,9 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 | `/metrics` | GET | text/plain | stable | Prometheus 格式指标 |
 | `/metrics/json` | GET | application/json | stable | JSON 格式指标快照 |
 
-> **安全提示**：HTTP 管理端点**当前无任何鉴权**，监听全网卡，**仅适合内网 / 受信网络**。
+> **安全提示**：`http_management_port` **当前无任何鉴权**，监听全网卡，**仅适合内网 / 受信网络**（**不是**已认证控制面；见 **`docs/v1-governance-layers.md` §6**）。
 
-设置 `http_management_port = 0` 则禁用 HTTP 管理端点。
+设置 `http_management_port = 0` 则禁用 **L2 HTTP** 端点。
 
 ## 8. 当前主链已闭环的能力清单
 
@@ -246,7 +248,7 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 ### 可观测性
 - `GatewayMetrics` 10 类累计 counter
 - `GatewayMetricsExporter` Prometheus 文本 + JSON 快照
-- HTTP 管理端点 `/metrics` / `/metrics/json`
+- L2 HTTP：`/metrics` / `/metrics/json`（只读导出；另见 `/health` stub）
 - 慢连接检测：写队列 > 50% 上限 WARN
 - 崩溃转储：`runtime/crashes/crash_*.txt`
 
@@ -300,5 +302,5 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - `v1.1.7` — **跨域编排收口（T07/T08）**：`docs/v1-cross-domain-flows.md`；`login_recovery`、`clear_battle_if_room_empty` **已完成**
 - `v1.1.8` — **房/战边界**：`RoomMember.member_user_id`、`transfer_session`/战斗中语义、**`docs/v1-room-battle-boundary.md`** **已完成**
 - `v1.1.9` — **治理入口分层（T10）**：**`docs/v1-governance-layers.md`** **已完成**
-- `v1.1.10` — 治理成熟度冻结（文档）
+- `v1.1.10` — **治理成熟度冻结（文档 + 示例/README/playbook 用语）**：**`docs/v1-governance-layers.md` §6** **已完成**
 - `v1.2.0` — 决策点：是否正式推进 typed protocol / internal bus / battle replay 闭环

@@ -11,6 +11,8 @@
 
 namespace game::gateway {
 
+// TCP 消息号 5001–5005：演示/示例用（demo-only）；默认 GatewayServer **不注册**。
+// **无权限模型**——任意已连线客户端皆可触发。成熟度冻结见 docs/v1-governance-layers.md §6。
 class AdminService {
 public:
     using KickCallback = std::function<void(const std::string& user_id)>;

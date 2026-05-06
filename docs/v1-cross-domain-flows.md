@@ -59,6 +59,7 @@
 ## C. 与后续版本的关系
 
 - **`v1.1.8` / T09 / T06②**（房战边界、`transfer_session`、`member_user_id`）：**`docs/v1-room-battle-boundary.md`**
-- **`v1.1.9` / T10** — 治理入口分层：**`docs/v1-governance-layers.md`**
-- **`v1.1.10`** — 治理成熟度冻结（文档）
+- **`v1.1.9` / T10** — 治理入口分层：**`docs/v1-governance-layers.md`** §1–§5
+- **`v1.1.10`** — 治理成熟度冻结（文档与示例用语）：同文 **§6**
+- **`v1.1.11`** — T11：admin 权限与审计最小规则
 - **开战编排链**：仍主要在 `BattleService` + `RoomService`/`RoomManager`；若将来提取独立助手，再追加专节并指向实现文件。

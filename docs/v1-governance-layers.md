@@ -1,11 +1,11 @@
-# v1.x 治理入口分层（v1.1.9 / T10）
+# v1.x 治理入口分层与成熟度冻结（v1.1.9 / v1.1.10 / T10）
 
 ## 文档定位
 
-本文对应 **`development-optimization.md`**「Gateway / Admin / Management 维护整改路线图」**第一步：先划清治理入口分层**，维护任务表 **T10** 在 **`v1.1.9`** 的交付物。
+本文对应 **`development-optimization.md`**「Gateway / Admin / Management 维护整改路线图」**第一步：先划清治理入口分层**（**`v1.1.9`** / **T10**），以及 **第二步：冻结治理能力成熟度与接线方式**（**`v1.1.10`**）。
 
-- **本版（v1.1.9）**：用文字 + 表格固定**分层与职责**，并指向代码位置；**不新增**鉴权、不修改行为。
-- **成熟度冻结**：**`v1.1.10`**（见 `development-priority.md`）。
+- **分层划定（v1.1.9）**：用文字 + 表格固定 **L0–L3** 与职责，并指向代码位置；**不新增**鉴权、不修改行为。
+- **成熟度冻结（v1.1.10）**：见 **§6** — 对齐文档、README、`runtime-playbook`、showcase **示例源码注释**，**禁止**将「示例已接线」「消息号已实现」推导为正式、可依赖的治理能力。
 - **权限与审计约束**：**`v1.1.11`**（T11）。
 - **治理边界测试**：**`v1.2.2`**（T18）。
 
@@ -57,7 +57,7 @@
 
 | 版本 | 内容 |
 |------|------|
-| `v1.1.10` | 冻结治理能力成熟度与接线方式（文档与示例表述） |
+| `v1.1.10` | 冻结治理能力成熟度与接线方式（文档与示例表述；**§6**） |
 | `v1.1.11` | T11：admin 权限与审计最小规则 |
 | `v1.2.2` | T18：治理边界测试加固 |
 
@@ -71,3 +71,25 @@
 | HTTP 管理 | `include/net/http_manager.h`，`src/net/http_manager.cpp` |
 | 二进制 Admin | `include/game/gateway/admin_service.h` |
 | 网关注册与 HTTP 启动 | `src/game/gateway/gateway_server.cpp` |
+
+---
+
+## 6. 治理能力成熟度冻结（`v1.1.10`）
+
+对应 **`development-optimization.md`** 路线图**第二步**验收点：**文档与示例不再暗示**未正式收口的治理能力已经可稳定依赖。下列表述在 **v1.1.10** 起视为 **维护期约束**（与 `docs/v1-maturity-matrix.md` §4 一致；冲突时以矩阵为准）。
+
+### 6.1 必须写清的事实（不得用语义偷换）
+
+| 对象 | 正式结论 | 禁止 / 需避免的暗示 |
+|------|----------|---------------------|
+| **`AdminService`（5001–5005）** | **demo-only**；**默认主链不注册**；仅 `examples/admin_demo`、`examples/login_demo` 等**手工** `register_handlers`；**无**调用方身份模型 | 「管理面已就绪」「生产级运维 API」「已鉴权的管理指令」 |
+| **`net::HttpManager`（L2）** | **只读**观测导出（`/metrics` / `/metrics/json` **stable**）+ **`GET /health` liveness stub**（**experimental**，固定 `{"status":"ok"}`；**不接**真实 `HealthProvider`） | 「HTTP 管理面 = 完整控制面」「/health = 就绪/业务健康」「已认证运维 HTTP API」 |
+| **`GatewayServer`（装配）** | Accept、连接/IP 限额、`Session` 生命周期回调、`http_management_port > 0` 时拉起 **L2**、周期 metrics — **不包含**二进制 admin、**不包含**内置权限审计 | 「网关自带完整治理能力」「开箱即用的运维后端」 |
+
+### 6.2 文档与源码落点（本版本已校对）
+
+- `README.md`、`docs/runtime-playbook.md`：**HTTP** 用词与 `/health` 语义与上表对齐。
+- `examples/admin_demo/admin_demo_main.cpp`、`examples/login_demo/login_demo_main.cpp`：注释与日志用词与 **§6.1** 对齐。
+- **`include/game/gateway/admin_service.h`**：类前注释标明 **demo-only** 与本文引用。
+
+权限模型、审计字段、reload/kick/ban 失败语义等 **不包含**在本冻结范围 — **`v1.1.11`（T11）**。

@@ -34,7 +34,7 @@
 ### 可观测性
 
 - **Prometheus / JSON 指标导出（stable）**：累计计数器 + 每秒速率仪表盘
-- **HTTP 管理端点（stable / experimental）**：`/metrics` `/metrics/json` stable；`/health` 当前固定返回 `{"status":"ok"}`，**不依赖运行时真实健康状态**；HTTP 端点**无任何鉴权**，仅适合内网/受信网络
+- **HTTP 观测端点（`/metrics*` stable；`/health` experimental 存活桩）**：`/metrics` `/metrics/json` 为 **只读**导出；`GET /health` 固定 `{"status":"ok"}`，**不依赖**运行时真实健康；**无任何鉴权**，仅适合内网/受信网络（详见 `docs/v1-governance-layers.md` **§6** — **≠**完整 HTTP 控制面）
 - **请求链路追踪 ID（stable）**：Session → Dispatcher → Handler 贯穿
 - **审计日志（experimental）**：`logs/audit.log`，**输出格式为"近似 JSON 行"**，`details` 字段未做 JSON 转义，**不应被视为稳定结构化日志**
 - **崩溃转储（stable）**：Windows SEH + POSIX 信号
@@ -52,7 +52,7 @@
 
 - **CMake + FetchContent + 本地 third_party 内网构建（stable）**
 - **Docker + docker-compose + GitHub Actions CI（stable）**
-- **测试体系（stable）**：当前 `ctest --preset windows-msvc-debug -N` 枚举共 **63 个用例**（15 个单元测试源文件 + 2 个集成测试源文件 + `packet_fuzz_test.cpp` 模糊测试，GoogleTest `gtest_discover_tests` 展开后；请始终以 `ctest -N` 为准）
+- **测试体系（stable）**：当前 `ctest --preset windows-msvc-debug -N` 枚举共 **66** 个用例（单元 + 集成 + `packet_fuzz_test.cpp`，GoogleTest `gtest_discover_tests` 展开后；请始终以 `ctest -N` 为准）
 - **压测场景（stable）**：`PressureScenario` 枚举共 9 个值（echo / invalid_token / slow_echo / broadcast_storm / malicious_packet / battle_broadcast / chaos / stability / benchmark）
 - **多进程入口（experimental）**：`login_server` / `room_server` / `battle_server` 各自启动一份 `GatewayServer + SessionManager + Dispatcher`，**不是完整拆服架构**，更准确的描述是"按模块拆出的独立 demo 入口"
 
@@ -67,7 +67,7 @@ ctest --preset windows-msvc-debug
 # 启动网关
 ./build/windows-msvc-debug/examples/echo/Debug/echo_server.exe config/gateway.json
 
-# 健康检查（注意：当前 /health 是固定 ok，不反映真实运行健康状态）
+# `/health` 存活探测桩（固定 ok；不反映业务/就绪健康；见 docs/v1-governance-layers.md §6）
 curl http://localhost:9080/health
 
 # 压力测试

@@ -547,3 +547,58 @@
 - protobuf/flatbuffers 跨语言协作评估
 - 持久化层（战斗回放落盘、玩家数据）
 
+---
+
+## 2026-05-06 阶段 v1.1.1：基线校准
+
+### 目标
+
+将仓库从"v1.0.0 发布版 + develop 持续叠加能力"的混合状态，校准为一份"单一事实源、成熟度表述准确"的维护期基线。**对应 `docs/development-optimization.md` §11 任务表的 T01 / T02 / T10 / T12 / T14**。本阶段为**纯文档基线校准**，不修改任何主链协议 / 业务 / 运行时行为。
+
+### 完成内容
+
+- 新增 `docs/v1-maturity-matrix.md` — `v1.x` 维护期能力成熟度**单一事实源**：
+  - 网络与协议层、业务层、治理与控制面、配置与运行时装配、持久化与回放、可观测性、工程能力，每项标注 `stable` / `experimental` / `reserved` / `demo-only`
+  - `GatewayAppConfig` 字段表（启动生效 / 热更新生效 / 主链接入）
+  - "不应被宣称为完成态的能力（汇总）"清单
+  - `v1.x` 维护版本节奏表
+- `README.md`：
+  - 新增"版本基线说明"区分 `v1.0.0` 发布版（tag `v1.0.0`，commit `22defe8`）与 `develop` 维护期
+  - 全量补成熟度标记，纠正自动分片、TLS 接入主链、Token 生命周期失效、登录防爆破、游客账号、完整热更新、完整管理面、多进程拆服等过度承诺
+- `CHANGELOG.md`：新增 `v1.1.1` 条目；为 `v1.0.0` 段补"维护期补注"
+- `docs/runtime-playbook.md`：
+  - 第 1 节按成熟度分级重写
+  - 新增第 2 节"当前协议事实源"，明确字符串 body 是 `v1.x` 唯一线上协议主契约，`net::msg` / `message_serializer` 为草案
+  - 第 3 节注明中间层当前在业务线程池**之后**执行（`v1.1.3` 前置）
+  - 第 6 节列出已知测试覆盖盲点
+  - 第 7 节注明字节量指标统计的是业务 body，不是 wire bytes；`/health` 当前为固定字符串
+- `docs/development-priority.md`：从"扩展/优化/测试方向"散列优先级，重写为按 `development-optimization.md` §11 任务表 + 版本批次（A 基线 / B 主链 / C 测试 / D 升级决策）组织
+- `docs/README.md`：重组文档导航，按"v1.x 维护期 / v2.0.0 路线"分组
+
+### 影响范围
+
+- `README.md`
+- `CHANGELOG.md`
+- `docs/v1-maturity-matrix.md`（新）
+- `docs/runtime-playbook.md`
+- `docs/development-priority.md`
+- `docs/development-log.md`
+- `docs/README.md`
+
+### 风险与问题
+
+- 本版本不修改任何代码或测试，所有现有测试用例保持通过
+- 部分历史文档（`docs/architecture-roadmap.md`）仍保留过往措辞，作为历史路线参考；与维护期实际能力冲突时以矩阵为准
+
+### 测试结果
+
+- 不涉及代码改动，沿用 v1.0.0 测试基线（实际 ctest 用例数以 `ctest -N` 为准）
+
+### 下一步
+
+- `v1.1.2`：T03（统一 `Session::stop()` 与 `handle_close()` 收口）+ T04（固定协议增强顺序、明确分片当前未启用、修正无 zlib 时 `kCompressed` 标记位语义）
+- `v1.1.3`：T05（ingress 鉴权白名单 / 限频前置）
+- `v1.1.4`：T06（`battle_started` 单一事实源第一阶段）
+
+> **强约束**：在 `v1.2.0` 决策点之前不进入 v2.0.0 范畴（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面）。
+

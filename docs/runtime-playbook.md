@@ -310,4 +310,5 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - `v1.1.15` — **横切能力定位（T14）**：**`docs/v1-cross-cutting-capabilities.md`** **已完成**
 - `v1.1.16` — **横切动作生命周期绑定（T15）**：**`docs/v1-cross-cutting-lifecycle-binding.md`** **已完成**
 - `v1.1.17` — **横切数据格式与支持级别（T16）**：**`docs/v1-cross-cutting-data-formats.md`** **已完成**
+- `v1.2.1` — **业务边界测试加固（T17）**：**`battle_manager_test` / `room_manager_test` / `gateway_integration_test`** **已完成**
 - `v1.2.0` — 决策点：是否正式推进 typed protocol / internal bus / battle replay 闭环

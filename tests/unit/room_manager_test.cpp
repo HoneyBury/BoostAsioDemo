@@ -72,6 +72,44 @@ TEST(RoomManagerTest, JoinAndReadyRejectedWhenBattleManagerMarksRoomInBattle) {
     EXPECT_TRUE(room_manager.room_snapshot("battle_room")->battle_started);
 }
 
+// T17 / v1.2.1 — 房间入口边界（与 RoomService 错误码对齐）
+TEST(RoomManagerTest, JoinRoomNotFound) {
+    boost::asio::io_context io_context;
+    game::room::RoomManager room_manager;
+
+    auto guest = make_session(io_context);
+    const auto join = room_manager.join_room(guest, "no_such_room");
+    EXPECT_EQ(join.first, game::room::RoomManager::JoinRoomResult::kRoomNotFound);
+}
+
+TEST(RoomManagerTest, JoinRoomInvalidId) {
+    boost::asio::io_context io_context;
+    game::room::RoomManager room_manager;
+
+    auto guest = make_session(io_context);
+    EXPECT_EQ(room_manager.join_room(guest, "").first, game::room::RoomManager::JoinRoomResult::kInvalidRoomId);
+}
+
+TEST(RoomManagerTest, CreateRoomRejectsDuplicateId) {
+    boost::asio::io_context io_context;
+    game::room::RoomManager room_manager;
+
+    auto owner_a = make_session(io_context);
+    auto owner_b = make_session(io_context);
+
+    ASSERT_EQ(room_manager.create_room(owner_a, "dup_room").first, game::room::RoomManager::CreateRoomResult::kOk);
+    EXPECT_EQ(room_manager.create_room(owner_b, "dup_room").first,
+              game::room::RoomManager::CreateRoomResult::kRoomAlreadyExists);
+}
+
+TEST(RoomManagerTest, CreateRoomRejectsEmptyId) {
+    boost::asio::io_context io_context;
+    game::room::RoomManager room_manager;
+
+    auto owner = make_session(io_context);
+    EXPECT_EQ(room_manager.create_room(owner, "").first, game::room::RoomManager::CreateRoomResult::kInvalidRoomId);
+}
+
 TEST(RoomManagerTest, TransferSessionPreservesMemberUserId) {
     boost::asio::io_context io_context;
     game::room::RoomManager room_manager;

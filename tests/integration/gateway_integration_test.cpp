@@ -151,6 +151,19 @@ private:
     tcp::socket socket_;
 };
 
+// RoomService 通过 PushService 下发 kRoomStatePush，业务 handler 在 thread_pool 上完成；
+// 响应包与推送的到达顺序在个别步骤上可能交错，集成测试应跳过中间的推送再断言响应。
+net::packet::DecodedPacket read_until_message(TestClient& client, std::uint16_t message_id) {
+    for (;;) {
+        const auto packet = client.read();
+        if (packet.message_id == message_id) {
+            return packet;
+        }
+        EXPECT_EQ(packet.message_id, net::protocol::kRoomStatePush)
+            << "unexpected message_id=" << packet.message_id;
+    }
+}
+
 }  // namespace
 
 TEST(GatewayIntegrationTest, EchoRequestRoundTrip) {
@@ -406,6 +419,136 @@ TEST(GatewayIntegrationTest, RateLimitMiddlewareBlocksBurstTraffic) {
     EXPECT_EQ(response.error_code, static_cast<std::int32_t>(net::protocol::ErrorCode::kRateLimited));
     EXPECT_EQ(response.body, "rate_limited");
     EXPECT_GT(runtime.metrics.snapshot().blocked_packets, 0U);
+
+    runtime.stop();
+}
+
+// --- T17 / v1.2.1：login / room / battle 业务边界（集成回归）---
+
+TEST(GatewayIntegrationTest, BattleStartRejectedForNonOwner) {
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    runtime.start();
+
+    TestClient owner;
+    TestClient member;
+    owner.connect(runtime.server->local_port());
+    member.connect(runtime.server->local_port());
+
+    ASSERT_EQ(owner.exchange(net::protocol::kLoginRequest, 1201, "p_own|token:p_own|Own").message_id,
+              net::protocol::kLoginResponse);
+    ASSERT_EQ(member.exchange(net::protocol::kLoginRequest, 1202, "p_mem|token:p_mem|Mem").message_id,
+              net::protocol::kLoginResponse);
+
+    ASSERT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 1203, "room_owner_gate").message_id,
+              net::protocol::kRoomCreateResponse);
+    ASSERT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 1204, "room_owner_gate").message_id,
+              net::protocol::kRoomJoinResponse);
+
+    owner.send(net::protocol::kRoomReadyRequest, 1205, "true");
+    EXPECT_EQ(read_until_message(owner, net::protocol::kRoomReadyResponse).request_id, 1205U);
+    member.send(net::protocol::kRoomReadyRequest, 1206, "true");
+    EXPECT_EQ(read_until_message(member, net::protocol::kRoomReadyResponse).request_id, 1206U);
+
+    member.send(net::protocol::kBattleStartRequest, 1207, "");
+    const auto battle = read_until_message(member, net::protocol::kErrorResponse);
+    EXPECT_EQ(battle.request_id, 1207U);
+    EXPECT_EQ(battle.error_code, static_cast<std::int32_t>(net::protocol::ErrorCode::kNotRoomOwner));
+    EXPECT_EQ(battle.body, "not_room_owner");
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, BattleStartRejectedWhenNotAllReady) {
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    runtime.start();
+
+    TestClient owner;
+    TestClient member;
+    owner.connect(runtime.server->local_port());
+    member.connect(runtime.server->local_port());
+
+    ASSERT_EQ(owner.exchange(net::protocol::kLoginRequest, 1211, "r_a|token:r_a|Ra").message_id,
+              net::protocol::kLoginResponse);
+    ASSERT_EQ(member.exchange(net::protocol::kLoginRequest, 1212, "r_b|token:r_b|Rb").message_id,
+              net::protocol::kLoginResponse);
+
+    ASSERT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 1213, "room_ready_gate").message_id,
+              net::protocol::kRoomCreateResponse);
+    ASSERT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 1214, "room_ready_gate").message_id,
+              net::protocol::kRoomJoinResponse);
+
+    owner.send(net::protocol::kRoomReadyRequest, 1215, "true");
+    EXPECT_EQ(read_until_message(owner, net::protocol::kRoomReadyResponse).request_id, 1215U);
+    // member 保持未 ready — owner 开战应失败
+
+    owner.send(net::protocol::kBattleStartRequest, 1216, "");
+    const auto battle = read_until_message(owner, net::protocol::kErrorResponse);
+    EXPECT_EQ(battle.request_id, 1216U);
+    EXPECT_EQ(battle.error_code, static_cast<std::int32_t>(net::protocol::ErrorCode::kNotAllReady));
+    EXPECT_EQ(battle.body, "not_all_ready");
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, BattleStartRejectedWhenOnlyOnePlayer) {
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    runtime.start();
+
+    TestClient solo;
+    solo.connect(runtime.server->local_port());
+
+    ASSERT_EQ(solo.exchange(net::protocol::kLoginRequest, 1221, "solo|token:solo").message_id,
+              net::protocol::kLoginResponse);
+    ASSERT_EQ(solo.exchange(net::protocol::kRoomCreateRequest, 1222, "room_solo").message_id,
+              net::protocol::kRoomCreateResponse);
+    EXPECT_EQ(solo.exchange(net::protocol::kRoomReadyRequest, 1223, "true").message_id,
+              net::protocol::kRoomReadyResponse);
+
+    const auto battle = solo.exchange(net::protocol::kBattleStartRequest, 1224, "");
+    EXPECT_EQ(battle.message_id, net::protocol::kErrorResponse);
+    EXPECT_EQ(battle.error_code, static_cast<std::int32_t>(net::protocol::ErrorCode::kNotEnoughPlayers));
+    EXPECT_EQ(battle.body, "not_enough_players");
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, BattleInputRejectedWhenBattleNotStarted) {
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    runtime.start();
+
+    TestClient a;
+    TestClient b;
+    a.connect(runtime.server->local_port());
+    b.connect(runtime.server->local_port());
+
+    ASSERT_EQ(a.exchange(net::protocol::kLoginRequest, 1231, "ia|token:ia|Ia").message_id,
+              net::protocol::kLoginResponse);
+    ASSERT_EQ(b.exchange(net::protocol::kLoginRequest, 1232, "ib|token:ib|Ib").message_id,
+              net::protocol::kLoginResponse);
+
+    ASSERT_EQ(a.exchange(net::protocol::kRoomCreateRequest, 1233, "room_no_battle").message_id,
+              net::protocol::kRoomCreateResponse);
+    ASSERT_EQ(b.exchange(net::protocol::kRoomJoinRequest, 1234, "room_no_battle").message_id,
+              net::protocol::kRoomJoinResponse);
+
+    a.send(net::protocol::kRoomReadyRequest, 1235, "true");
+    EXPECT_EQ(read_until_message(a, net::protocol::kRoomReadyResponse).request_id, 1235U);
+    b.send(net::protocol::kRoomReadyRequest, 1236, "true");
+    EXPECT_EQ(read_until_message(b, net::protocol::kRoomReadyResponse).request_id, 1236U);
+
+    a.send(net::protocol::kBattleInputRequest, 1237, "early_move");
+    const auto input = read_until_message(a, net::protocol::kErrorResponse);
+    EXPECT_EQ(input.request_id, 1237U);
+    EXPECT_EQ(input.error_code, static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted));
+    EXPECT_EQ(input.body, "battle_not_started");
 
     runtime.stop();
 }

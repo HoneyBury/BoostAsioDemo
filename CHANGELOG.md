@@ -1,5 +1,23 @@
 # 更新日志
 
+## v1.2.1 — 业务边界测试加固（T17）(2026-05-07)
+
+> **范围**：**`BattleManager` / `RoomManager` 单元测试** + **`gateway_integration_test`** 集成路径；覆盖房主开战、全员就绪、单人房间 **`not_enough_players`**、未开战 **`battle_input`**；辅助函数 **`read_until_message`** 跳过 **`kRoomStatePush`** 与就绪响应的交错到达。
+
+### 代码
+
+- `tests/unit/battle_manager_test.cpp`、`tests/unit/room_manager_test.cpp`、`tests/integration/gateway_integration_test.cpp`。
+
+### 文档
+
+- 矩阵 §8 / §10；`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`CHANGELOG.md`、`development-log.md`。
+
+### 测试
+
+- `ctest`：**81/81**。
+
+---
+
 ## v1.1.17 — 横切数据格式与后端支持级别（T16）(2026-05-06)
 
 > **范围**：**文档**。新增 **`docs/v1-cross-cutting-data-formats.md`**：`JsonFilePlayerStore` / **`HAS_SQLITE`** `SqlitePlayerStore`、**`.replay` 载荷**、**`ReplayPlayer`** JSON 读侧契约、**`AUDIT_LOG`** 行模板与 **格式脆弱性**；与矩阵 §6 / §4.4 交叉引用。

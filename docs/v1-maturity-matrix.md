@@ -226,7 +226,7 @@
 |---|---|---|
 | CMake + FetchContent + 本地 third_party 内网构建 | `stable` | 主链可用 |
 | Docker / docker-compose / GitHub Actions CI | `stable` | 主链可用 |
-| 测试规模：14 个单元测试源文件 + 2 个集成测试源文件 + `packet_fuzz_test.cpp` 模糊测试 | `stable` | `ctest --preset windows-msvc-debug -N` 当前枚举共 **54 个用例**（GoogleTest `gtest_discover_tests` 展开后），其中：1 hello + 5 config + 2 metrics_exporter + 2 packet_codec + 3 dispatcher + 1 room_manager + 1 battle_manager + 2 session_manager + 1 service_registration + 3 token_validator + 9 packet_fuzz + 4 matchmaking + 5 packet_compressor + 2 admin_service + 8 gateway_integration + 4 http_management |
+| 测试规模：14 个单元测试源文件 + 2 个集成测试源文件 + `packet_fuzz_test.cpp` 模糊测试 | `stable` | `ctest`（GoogleTest `gtest_discover_tests` 展开）当前 **81** 项；**`v1.2.1` / T17** 起在 **`battle_manager_test`** / **`room_manager_test`** / **`gateway_integration_test`** 加固 room / battle 错误路径与 **`RoomStatePush`** 与响应交错顺序（见 `read_until_message` 辅助函数） |
 | 9 种压测场景（echo / invalid_token / slow_echo / broadcast_storm / malicious_packet / battle_broadcast / chaos / stability / benchmark） | `stable` | `PressureScenario` 枚举共 9 个值，README/CHANGELOG 早期"6 种 / 8 种"表述需以 `PressureScenario` 枚举为准 |
 | `BufferPool` / `ObjectPool` | `stable` | 主链可用 |
 | `Session::send_batch` | `stable` | 主链可用，但批量发送的逐消息观测语义未拆，见 development-optimization §6.A.2 |
@@ -275,8 +275,11 @@
 | `v1.1.14` | 受控生命周期流程 | **T13** 后半：**`try_load_gateway_config`** + **`v1-runtime-lifecycle.md` §6–§7** |
 | `v1.1.15` | 横切能力定位 | **T14**：**`docs/v1-cross-cutting-capabilities.md`** |
 | `v1.1.16` | 横切动作按生命周期收口 | **T15**：**`docs/v1-cross-cutting-lifecycle-binding.md`** |
-| `v1.1.17` | 数据格式冻结 | **T16**：**`docs/v1-cross-cutting-data-formats.md`** — **当前版本** |
+| `v1.1.17` | 数据格式冻结 | **T16**：**`docs/v1-cross-cutting-data-formats.md`** |
 | `v1.2.0` | 结构升级决策点 | T21（仅在前面收口完成后） |
-| `v1.2.1 - v1.2.4` | 各主线回归面加固 | T17 / T18 / T19 / T20 |
+| `v1.2.1` | 业务边界测试加固 | **T17**：**`battle_manager_test`** / **`room_manager_test`** / **`gateway_integration_test`** — **当前版本** |
+| `v1.2.2` | 治理边界测试加固 | T18 |
+| `v1.2.3` | 生命周期与装配测试加固 | T19 |
+| `v1.2.4` | 持久化 / 审计 / 回放测试加固 | T20 |
 
 **严格约束**：在 `v1.2.0` 决策点之前，**不进入 v2.0.0 范畴的开发**（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面，详见 `docs/v2-roadmap.md` 与 `docs/v2-design.md`）。

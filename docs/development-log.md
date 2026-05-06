@@ -1024,6 +1024,30 @@
 ### 下一步
 
 - **`v1.2.0`**：**T21** — 结构升级 **决策点**（是否推进 typed protocol / internal bus / battle replay 闭环等）；**非默认实施**。
-- **`v1.2.1`–`v1.2.4`**：**T17–T20** — 各主线 **边界测试加固**（业务 / 治理 / 生命周期装配 / 持久化·审计·回放）。
+- **`v1.2.1`–`v1.2.4`**：**T17–T20** — 各主线 **边界测试加固**（业务已完成见后续阶段记录；治理 / 生命周期装配 / 持久化·审计·回放仍 todo）。
+
+> **强约束**：未进入 v2。
+
+---
+
+## 2026-05-07 阶段 v1.2.1：业务边界测试加固（T17）
+
+### 目标
+
+为 **login / room / battle** 主链补齐 **错误路径与状态边界** 的自动化回归，贴近 **`development-optimization.md` §11 T17**（依赖 T06–T09 已收口）。
+
+### 完成内容
+
+- **单元**：**`BattleManager`** — 未开战输入、`start_battle` 人数 / 空 `room_id`、`end_battle` 清理；**`RoomManager`** — 加入不存在房间、空 room id、重复创建。
+- **集成**：非房主 **`kBattleStartRequest`**、未全员 ready、单人 **`kNotEnoughPlayers`**、未开战 **`kBattleInputRequest`**；**`read_until_message`** 处理 **`kRoomStatePush`** 与 **`kRoomReadyResponse`** 异步交错。
+- **文档**：矩阵 §8 / §10；`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`CHANGELOG.md`。
+
+### 测试结果
+
+- `ctest`：**81/81**。
+
+### 下一步
+
+- **`v1.2.2`**：**T18** — 治理边界测试加固。
 
 > **强约束**：未进入 v2。

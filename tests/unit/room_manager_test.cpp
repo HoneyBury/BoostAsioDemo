@@ -71,3 +71,23 @@ TEST(RoomManagerTest, JoinAndReadyRejectedWhenBattleManagerMarksRoomInBattle) {
     ASSERT_TRUE(room_manager.room_snapshot("battle_room"));
     EXPECT_TRUE(room_manager.room_snapshot("battle_room")->battle_started);
 }
+
+TEST(RoomManagerTest, TransferSessionPreservesMemberUserId) {
+    boost::asio::io_context io_context;
+    game::room::RoomManager room_manager;
+
+    auto old_session = make_session(io_context);
+    auto new_session = make_session(io_context);
+
+    ASSERT_EQ(room_manager.create_room(old_session, "transfer_room").first,
+              game::room::RoomManager::CreateRoomResult::kOk);
+    room_manager.set_member_user_id(old_session, "sticky_uid");
+
+    ASSERT_TRUE(room_manager.transfer_session(old_session, new_session));
+
+    const auto snap = room_manager.room_snapshot_of(new_session);
+    ASSERT_TRUE(snap);
+    ASSERT_EQ(snap->members.size(), 1U);
+    EXPECT_EQ(snap->members.front().member_user_id, "sticky_uid");
+    EXPECT_EQ(snap->members.front().session.get(), new_session.get());
+}

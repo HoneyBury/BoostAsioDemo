@@ -206,6 +206,31 @@ std::size_t RoomManager::member_count(const std::string& room_id) const {
     return room_it->second.members.size();
 }
 
+void RoomManager::set_member_user_id(const SessionPtr& session, std::string user_id) {
+    std::scoped_lock lock(mutex_);
+    const auto key = session.get();
+    if (key == nullptr) {
+        return;
+    }
+
+    const auto sr = session_rooms_.find(key);
+    if (sr == session_rooms_.end()) {
+        return;
+    }
+
+    auto room_it = rooms_.find(sr->second);
+    if (room_it == rooms_.end()) {
+        return;
+    }
+
+    auto mit = room_it->second.members.find(key);
+    if (mit == room_it->second.members.end()) {
+        return;
+    }
+
+    mit->second.member_user_id = std::move(user_id);
+}
+
 bool RoomManager::room_has_active_battle_unlocked(const std::string& room_id) const {
     if (!battle_active_query_) {
         return false;

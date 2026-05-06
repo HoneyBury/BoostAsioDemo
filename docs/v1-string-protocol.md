@@ -130,7 +130,7 @@ session_resumed:{room_id}:battle=1
 
 - 请求 body：**当前实现未解析 body**，以会话当前房间为准。
 - 成功：`room_left:{room_id}`。
-- 若离队后人数为 0：`BattleManager::remove_room` 由 `RoomService` 调用。
+- 若离队后人数为 0：经 **`clear_battle_if_room_empty`**（`v1.1.7` / T08）摘除 `BattleManager` 中对应战斗上下文。
 
 ### 6.4 `kRoomReadyRequest` (3007) / `kRoomReadyResponse` (3008)
 
@@ -143,7 +143,9 @@ session_resumed:{room_id}:battle=1
 room_state:{room_id}:owner={owner_user_id}:battle={0|1}:members={user_id}:{0|1};...
 ```
 
-`owner` / `members` 中的 `user_id` 由 `RoomService::build_room_state_body` **回查 `SessionManager::login_context_of`** 补全；缺登录上下文时为字面值 `unknown`。`battle` 为派生字段（`set_battle_active_query` 未绑定时恒为 0）。
+`owner` / `members` 中的 `user_id`：自 **`v1.1.8`** 起，`RoomService` 在 create/join 成功后将当前 `LoginContext.user_id` 写入 **`RoomMember.member_user_id`**，`build_room_state_body` **优先使用该缓存**；仅在缓存为空时回退 **`SessionManager::login_context_of`**（未走 `RoomService` 写入的装配兜底 `unknown`）。`battle` 仍为派生字段（`set_battle_active_query` 未绑定时恒为 0）。
+
+> 房/战状态机与 `transfer_session` 契约见 **`docs/v1-room-battle-boundary.md`**。
 
 ---
 
@@ -152,6 +154,7 @@ room_state:{room_id}:owner={owner_user_id}:battle={0|1}:members={user_id}:{0|1};
 ### 7.1 `kBattleStartRequest` (4001) / `kBattleStartResponse` (4002)
 
 - 前置：`kAuthRequired`、`kNotInRoom`、`kNotRoomOwner`、全员 `ready` 检查失败 → `kNotAllReady`。
+- **`player_ids`** 来源：与 **`v1.1.8`** 的 `RoomMember.member_user_id` 对齐——**非空则优先**，否则回退 `login_context_of`。
 - 成功：`battle_started:{room_id}:{player_count}`。
 - 失败：`kNotEnoughPlayers`、`kBattleAlreadyStarted`、`kNotInRoom`（`BattleManager` 侧）。
 
@@ -183,4 +186,4 @@ battle_input:{room_id}:{user_id}:{sequence}:{payload}
 
 - **对应维护任务**：`development-optimization.md` §11 **T02**（`v1.1.1` 明确字符串为主契约；**`v1.1.6` 冻结表 + 错误码语义**）。
 - **前一版相关**：`v1.1.5` `docs/v1-business-fact-source.md`（职责边界）。
-- **下一维护版**：`v1.1.8` 房间/战斗边界收紧（T09）。**`v1.1.7`** 跨域编排收口见 `docs/v1-cross-domain-flows.md`（T07/T08 流程与代码入口；不改变本节协议表）。
+- **下一维护版**：`v1.1.9` 治理入口分层（T10 后半）。**房/战边界与 `transfer_session`** 见 `docs/v1-room-battle-boundary.md`（**v1.1.8**）。

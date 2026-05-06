@@ -18,6 +18,13 @@ std::pair<std::string, std::optional<std::string>> split_once(const std::string&
     return {body.substr(0, separator), body.substr(separator + 1)};
 }
 
+void tag_room_member_user_id(gateway::SessionManager& sessions, RoomManager& rooms, const RoomManager::SessionPtr& s) {
+    const auto ctx = sessions.login_context_of(s);
+    if (ctx) {
+        rooms.set_member_user_id(s, ctx->user_id);
+    }
+}
+
 }  // namespace
 
 RoomService::RoomService(gateway::SessionManager& session_manager,
@@ -44,6 +51,7 @@ void RoomService::register_handlers(net::MessageDispatcher& dispatcher) const {
             const auto [result, outcome] = room_manager_.create_room(context.session, context.body);
             switch (result) {
                 case RoomManager::CreateRoomResult::kOk:
+                    tag_room_member_user_id(session_manager_, room_manager_, context.session);
                     push_service_.send_ok(
                         context.session, net::protocol::kRoomCreateResponse, context.request_id, "room_created:" + outcome.room_id);
                     broadcast_room_state(outcome.room_id, net::protocol::kRoomStatePush, context.session);
@@ -79,6 +87,7 @@ void RoomService::register_handlers(net::MessageDispatcher& dispatcher) const {
             switch (result) {
                 case RoomManager::JoinRoomResult::kOk:
                     metrics_.on_room_join_success();
+                    tag_room_member_user_id(session_manager_, room_manager_, context.session);
                     push_service_.send_ok(context.session,
                                           net::protocol::kRoomJoinResponse,
                                           context.request_id,
@@ -173,21 +182,33 @@ void RoomService::register_handlers(net::MessageDispatcher& dispatcher) const {
 }
 
 std::string RoomService::build_room_state_body(const RoomManager::RoomSnapshot& room_snapshot) const {
+    auto resolve_user_id = [this](const RoomManager::RoomMember& m) -> std::string {
+        if (!m.member_user_id.empty()) {
+            return m.member_user_id;
+        }
+        const auto login_context = session_manager_.login_context_of(m.session);
+        return login_context ? login_context->user_id : "unknown";
+    };
+
     std::string members;
     bool first = true;
     for (const auto& member : room_snapshot.members) {
-        const auto login_context = session_manager_.login_context_of(member.session);
-        const auto user_id = login_context ? login_context->user_id : "unknown";
         if (!first) {
             members += ';';
         }
-        members += fmt::format("{}:{}", user_id, member.ready ? 1 : 0);
+        members += fmt::format("{}:{}", resolve_user_id(member), member.ready ? 1 : 0);
         first = false;
     }
 
-    const auto owner_context = room_snapshot.owner ? session_manager_.login_context_of(room_snapshot.owner)
-                                                   : std::optional<gateway::SessionManager::LoginContext>{};
-    const auto owner_user_id = owner_context ? owner_context->user_id : "unknown";
+    std::string owner_user_id = "unknown";
+    if (room_snapshot.owner) {
+        for (const auto& m : room_snapshot.members) {
+            if (m.session.get() == room_snapshot.owner.get()) {
+                owner_user_id = resolve_user_id(m);
+                break;
+            }
+        }
+    }
 
     return fmt::format("room_state:{}:owner={}:battle={}:members={}",
                        room_snapshot.room_id,

@@ -795,3 +795,28 @@
 - **`v1.1.8`**：房间态与战斗态边界收紧（T09 等）。
 
 > **强约束**：未进入 v2。
+
+---
+
+## 2026-05-06 阶段 v1.1.8：房间/战斗边界收紧（T09 + T06②）
+
+### 目标
+
+落实 **`development-optimization.md`** §「第四步」与 §11 **T06**（第二阶段）/ **T09**：缩小房战耦合的模糊地带；`room_state` / 开战 **`player_ids`** 尽量**不依赖**广播时回查 `SessionManager`；**明确 `transfer_session` 在战斗中的合法性**（以 `user_id` 为战斗键）。
+
+### 完成内容
+
+- `RoomMember.member_user_id`、`RoomManager::set_member_user_id`；`RoomService` create/join 后回填；`transfer_session` 随成员迁缓存。
+- `RoomService::build_room_state_body`、`BattleService` 开战收集 **优先** `member_user_id`。
+- **`docs/v1-room-battle-boundary.md`**；`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`README.md`、矩阵 §3.2、`development-priority.md`、`runtime-playbook.md`、`CHANGELOG.md`。
+- **`RoomManagerTest.TransferSessionPreservesMemberUserId`**。
+
+### 测试结果
+
+- `ctest`：**66/66**（在 `v1.1.7` 基线 +1）。
+
+### 下一步
+
+- **`v1.1.9`**：治理入口分层（T10 后半）。
+
+> **强约束**：未进入 v2。

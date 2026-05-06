@@ -78,9 +78,9 @@
 | 项 | 状态 | 说明 |
 |---|---|---|
 | 创建 / 加入 / 离开 / 准备 / 房主切换 | `stable` | 主链闭环 |
-| `RoomManager::transfer_session` | `stable` | 顶号场景的会话迁移已闭环；定位为兼容性桥接，不是房间核心职责 |
+| `RoomManager::transfer_session` | `stable`（v1.1.8 叙述补强） | 顶号桥接；战斗中允许迁移（战斗以 `user_id` 为键）。契约见 `docs/v1-room-battle-boundary.md` §2 |
 | `RoomManager::broadcast_to_room()` (COW 快照接口) | `experimental` | 接口存在，但 `RoomService` 实际广播仍走 `room_snapshot()` + 循环 `send`，主链未统一 |
-| 房间快照成员身份 | `experimental` | 广播 body 构造时仍需回查 `SessionManager::login_context_of()` 才能补齐 `user_id` / `display_name`，房间快照不自洽 |
+| 房间快照成员 **`user_id`**（`member_user_id`） | `stable`（v1.1.8） | **`RoomService`** 在进入房间（create/join）后写入 `RoomMember.member_user_id`；**`room_state` 与开战 `player_ids` 优先使用该字段**，空时回退 **`SessionManager::login_context_of`**（未走 `RoomService` 的演示装配） |
 
 ### 3.3 战斗
 
@@ -275,8 +275,8 @@
 | `v1.1.4` | `battle_started` 单一事实源（T06 第一阶段） | T06 |
 | `v1.1.5` | 业务事实源校准（文档） | （`v1-business-fact-source.md`） |
 | `v1.1.6` | 业务协议冻结 | T02 后半：`docs/v1-string-protocol.md` + **`kPlayerNotInBattle`** |
-| `v1.1.7` | 跨域编排收口 | T07 / T08：`login_recovery` + `room_battle_lifecycle`、`docs/v1-cross-domain-flows.md` — **当前版本** |
-| `v1.1.8` | 房间/战斗边界收紧 | T09 |
+| `v1.1.7` | 跨域编排收口 | T07 / T08：`login_recovery`、`room_battle_lifecycle`、`docs/v1-cross-domain-flows.md` |
+| `v1.1.8` | 房间/战斗边界收紧 | T09 + T06②：`member_user_id`、`docs/v1-room-battle-boundary.md` — **当前版本** |
 | `v1.1.9` | 治理入口分层 | T10 后半 |
 | `v1.1.10` | 治理成熟度冻结 | （文档） |
 | `v1.1.11` | admin 权限与审计 | T11 |

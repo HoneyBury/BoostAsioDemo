@@ -52,11 +52,12 @@
 | 客户端主动离队 | `RoomService`：`leave_room` 成功且已更新 `RoomManager` 后 |
 | TCP 会话关闭 | `GatewayServer`：`room_manager.remove_session` **之后**，对离开的会话曾所在的 `room_id` 调用 |
 
-**禁止**：在其它路径手写 `battle_manager.remove_room(room_id)` 的「member_count == 0」分支而与上述策略并行（应保持单一入口，便于审计与后续 T09）。
+**禁止**：在其它路径手写 `battle_manager.remove_room(room_id)` 的「member_count == 0」分支而与上述策略并行（应保持单一入口，便于审计与 **T09** 之后的边界迭代）。
 
 ---
 
 ## C. 与后续版本的关系
 
-- **`v1.1.8` / T09**：房间快照自洽、`transfer_session` 边界进一步收紧 — 不改变本节 A/B 的流程级语义，除非另发迁移说明。
-- **开战编排链**：仍主要在 `BattleService` + `RoomService`/`RoomManager`；若将来提取独立助手，追加「流程 C」并指向实现文件。
+- **`v1.1.8` / T09 / T06②**（房战边界、`transfer_session`、`member_user_id`）：**`docs/v1-room-battle-boundary.md`**
+- **`v1.1.9+`** — 治理入口分层（T10）等
+- **开战编排链**：仍主要在 `BattleService` + `RoomService`/`RoomManager`；若将来提取独立助手，再追加专节并指向实现文件。

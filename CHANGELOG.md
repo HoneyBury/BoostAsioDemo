@@ -1,5 +1,25 @@
 # 更新日志
 
+## v1.1.8 — 房间/战斗边界收紧（T09 + T06②）(2026-05-06)
+
+> **范围**：**不改变**对外 body 形状；增强 **Room 侧身份缓存** 与 **房战状态文档**。战斗仍以 `user_id` 为主键（与 `Session` 解耦）。
+
+### 核心变更
+
+- `RoomManager::RoomMember::member_user_id` + `set_member_user_id`；**`RoomService`** 在 create/join 成功后写入当前登录 `user_id`。
+- **`RoomService::build_room_state_body`**、**`BattleService` 开战 `player_ids`**：**优先** `member_user_id`，空则回退 `login_context_of`（兼容未走 `RoomService` 的装配）。
+- **`transfer_session`**：注释明确**战斗中允许**迁移；单测 **`TransferSessionPreservesMemberUserId`**。
+
+### 文档
+
+- **`docs/v1-room-battle-boundary.md`**（状态表、`transfer_session` 契约、`end_battle` 与房间关系）；导航与 `v1-string-protocol.md` / `v1-cross-domain-flows.md` / 矩阵 §3.2 同步。
+
+### 测试
+
+- `ctest`：**66/66**。
+
+---
+
 ## v1.1.7 — 跨域编排收口（T07 / T08）(2026-05-06)
 
 > **范围**：**不修改**对外冻结的字符串协议（`docs/v1-string-protocol.md`）。将「顶号房间恢复」与「空房即清战斗」收口为**可查文档 + 单一策略函数**，避免 `GatewayServer` 与 `RoomService` 各写一份 battle 清理条件。

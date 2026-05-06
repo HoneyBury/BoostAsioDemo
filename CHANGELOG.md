@@ -1,5 +1,19 @@
 # 更新日志
 
+## v1.1.15 — 横切能力定位：持久化 / 回放 / 审计（T14）(2026-05-06)
+
+> **范围**：**文档**。新增 **`docs/v1-cross-cutting-capabilities.md`**：三类横切能力与业务生命周期节点的 **当前接线事实矩阵**（不等同于 T15「收口」）；矩阵 **§6**、**§4.4** 增加指针。
+
+### 文档
+
+- **`docs/v1-cross-cutting-capabilities.md`**；`docs/v1-maturity-matrix.md` §6 引言、§4.4、§10；`docs/v1-config-maturity.md` §5；`docs/README.md`、`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`CHANGELOG.md`、`development-log.md`。
+
+### 测试
+
+- **无代码变更**；`ctest` **68/68**（与 **v1.1.14** 二进制一致，冒烟确认）。
+
+---
+
 ## v1.1.14 — 受控 reload / shutdown 语义（T13 后半）(2026-05-06)
 
 > **范围**：**`ConfigWatcher`** 仅在 **`try_load_gateway_config`** 成功时调用 reload 回调（失败则 WARN、**不**回调，避免默认配置误触 **`set_connection_limits`**）。**`docs/v1-runtime-lifecycle.md`**：**§6** reload 成败语义；**§7** shutdown 最小保证与仍为 **reserved** 的分界。

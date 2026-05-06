@@ -957,6 +957,28 @@
 
 ### 下一步
 
-- **`v1.1.15`**：T14 后半 — 横切能力定位（`development-priority.md` 批次 A）。
+- **`v1.1.15`**：T14 — 横切能力定位（见后续阶段记录）。
+
+> **强约束**：未进入 v2。
+
+---
+
+## 2026-05-06 阶段 v1.1.15：横切能力定位文档（T14）
+
+### 目标
+
+在矩阵 **§6** / **§4.4** 之外，提供单一可读叙事：**player store**、**battle replay**、**`AUDIT_LOG`** 各在哪些生命周期节点 **实际接线**，避免与 **v1.1.16（T15）**「按节点收口动作」混淆。
+
+### 完成内容
+
+- **新增** **`docs/v1-cross-cutting-capabilities.md`**；矩阵 §6 引言、§4.4 指针、§10；`docs/README.md`、`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`v1-config-maturity.md` §5、`CHANGELOG.md`。
+
+### 测试结果
+
+- **无代码变更**；`ctest` **68/68**（冒烟）。
+
+### 下一步
+
+- **`v1.1.16`**：**T15** — 按登录 / 结算 / 停服等节点 **定义应收口的横切动作**（规划文档项）。
 
 > **强约束**：未进入 v2。

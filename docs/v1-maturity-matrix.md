@@ -141,9 +141,11 @@
 
 ### 4.4 审计日志（`app::audit_log`）
 
+与 **持久化 / 回放** 的横向对照见 **`docs/v1-cross-cutting-capabilities.md` §3**。
+
 | 项 | 状态 | 说明 |
 |---|---|---|
-| `AUDIT_LOG(event, details)` 写入 `logs/audit.log` | `experimental` | 主链已接入登录成功 / 失败、限频、连接拒绝、配置重载等节点；Admin 二进制路径在 **`v1.1.11`** 起于 handler **入口**写 **`admin_invoke`**（键约定见 **`docs/v1-admin-audit-rules.md`** §4）；**输出格式仍为"近似 JSON 行"**：`details` **未统一转义**，**不应被视为稳定结构化日志** |
+| `AUDIT_LOG(event, details)` 写入 `logs/audit.log` | `experimental` | 主链已接入登录成功 / 失败、限频、连接拒绝；**`config_reload` / `shutdown` 等多为部分 showcase 回调**，见 **`docs/v1-cross-cutting-capabilities.md` §3**；Admin 二进制路径在 **`v1.1.11`** 起于 handler **入口**写 **`admin_invoke`**（键约定见 **`docs/v1-admin-audit-rules.md`** §4）；**输出格式仍为"近似 JSON 行"**：`details` **未统一转义**，**不应被视为稳定结构化日志** |
 | 统一审计字段（`actor` / `target` / `source_ip` / `request_id` / `outcome` / `reason_code`） | `reserved` | **`v1.1.11`** 仅在 `details` **字符串内**约束 **必备键=k=v**（见 **`docs/v1-admin-audit-rules.md`**）；**不包含**顶层 JSON Schema 与高可靠后端 |
 
 ### 4.5 TLS
@@ -192,6 +194,8 @@
 ---
 
 ## 6. 持久化与回放
+
+运维向「三类横切能力（player store / replay / audit）接在哪些生命周期节点」优先读 **`docs/v1-cross-cutting-capabilities.md`**（**v1.1.15** / **T14**）；本节仍为 **子能力成熟度** 单一事实源。
 
 | 项 | 状态 | 说明 |
 |---|---|---|
@@ -268,8 +272,8 @@
 | `v1.1.11` | admin 权限前提与最小审计规则 | （**T11**：**`docs/v1-admin-audit-rules.md`** + `admin_invoke` 边界审计） |
 | `v1.1.12` | 配置字段成熟度（单列文档） | **T12**：**`docs/v1-config-maturity.md`** + 矩阵 §5.1 指针 |
 | `v1.1.13` | 标准启动 / reload / shutdown 顺序 | **T13**：**`docs/v1-runtime-lifecycle.md`** + showcase **`io_context.stop()`** |
-| `v1.1.14` | 受控生命周期流程 | **T13** 后半：**`try_load_gateway_config`** + **`v1-runtime-lifecycle.md` §6–§7** — **当前版本** |
-| `v1.1.15` | 横切能力定位 | T14 后半 |
+| `v1.1.14` | 受控生命周期流程 | **T13** 后半：**`try_load_gateway_config`** + **`v1-runtime-lifecycle.md` §6–§7** |
+| `v1.1.15` | 横切能力定位 | **T14**：**`docs/v1-cross-cutting-capabilities.md`** — **当前版本** |
 | `v1.1.16` | 横切动作按生命周期收口 | T15 |
 | `v1.1.17` | 数据格式冻结 | T16 |
 | `v1.2.0` | 结构升级决策点 | T21（仅在前面收口完成后） |

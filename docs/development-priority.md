@@ -99,7 +99,7 @@
 | T10 校准治理入口分层，明确 HTTP / admin 命令成熟度 | `v1.1.1` / `v1.1.9` | **done**（`docs/v1-governance-layers.md` §1–§5；**权限/审计留给 v1.1.11**） |
 | （文档）治理能力成熟度冻结，禁绝示例/README 误导「已实现 = 正式能力」 | `v1.1.10` | **done**（`docs/v1-governance-layers.md` **§6**；`admin_demo`/`login_demo`/`README.md`/`runtime-playbook`） |
 | T12 给配置字段补「启动生效 / 热更新生效 / 仅预留」标记 | `v1.1.1` / `v1.1.12` | **done**（矩阵 §5.1 指针 + **`docs/v1-config-maturity.md`**；标准 reload/shutdown 与 **v1.1.14** 受控语义见 **`v1-runtime-lifecycle.md`**） |
-| T14 明确 player store / replay / audit 当前定位与成熟度 | `v1.1.1` / `v1.1.15` | **doing**（v1.1.1 完成定位说明；按生命周期收口在 v1.1.15） |
+| T14 明确 player store / replay / audit 当前定位与成熟度 | `v1.1.1` / `v1.1.15` | **done**（**v1.1.1** 矩阵基线；**v1.1.15** **`docs/v1-cross-cutting-capabilities.md`** 生命周期事实矩阵） |
 
 ### 批次 B：主链生命周期与边界收口
 
@@ -151,8 +151,8 @@ v1.1.10  治理成熟度冻结 ✅
 v1.1.11  admin 权限前提与最小审计（T11） ✅
 v1.1.12  配置字段成熟度（T12） ✅
 v1.1.13  标准启动 / reload / shutdown 顺序（T13） ✅
-v1.1.14  受控生命周期流程（T13 后半） ✅ 当前
-v1.1.15  横切能力定位（T14 后半）
+v1.1.14  受控生命周期流程（T13 后半） ✅
+v1.1.15  横切能力定位（T14） ✅ 当前
 v1.1.16  横切动作按生命周期收口（T15）
 v1.1.17  数据格式冻结（T16）
 ─────────────────────────────────────
@@ -168,8 +168,9 @@ v1.2.4   持久化/审计/回放测试加固（T20）
 ## 5. 最近一次更新
 
 - 日期：`2026-05-06`
-- 版本：`v1.1.14` / T13 后半：**`try_load_gateway_config`**、**`ConfigWatcher`** 失败不回调；**`docs/v1-runtime-lifecycle.md` §6–§7**；矩阵 §5 / §10；`ctest` **68/68**。
+- 版本：`v1.1.15` / **T14**：**`docs/v1-cross-cutting-capabilities.md`**（player store / replay / audit × 生命周期节点）；矩阵 §6 引言、§4.4、§10。
 - 历次更新：
+  - `2026-05-06` `v1.1.14` — **`try_load_gateway_config`**、`v1-runtime-lifecycle` §6–§7
   - `2026-05-06` `v1.1.13` — 装配清单 + showcase **`io_context.stop()`**
   - `2026-05-06` `v1.1.12` — `v1-config-maturity.md`、`v2-design.md` 入库
   - `2026-05-06` `v1.1.11` — admin 规则、`admin_invoke`

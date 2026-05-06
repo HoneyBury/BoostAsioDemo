@@ -64,4 +64,5 @@
 | **`v1.1.12`**（本文） | T12：配置字段成熟度 **单列文档** + 热更新叙事收口 |
 | **`v1.1.13`** | T13：**`docs/v1-runtime-lifecycle.md`** + showcase shutdown **`io_context.stop()`** |
 | **`v1.1.14`** | T13 后半：**`try_load_gateway_config`**；**`docs/v1-runtime-lifecycle.md` §6–§7**（矩阵 §5.2–§5.3 组件表仍为本索引） |
+| **`v1.1.15`** | **T14**：player store / replay / audit 与生命周期节点对照 — **`docs/v1-cross-cutting-capabilities.md`** |
 | **`v1.2.3`（T19）** | 生命周期与装配 **回归测试**加固 |

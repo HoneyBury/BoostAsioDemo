@@ -12,10 +12,13 @@ GatewayService::GatewayService(SessionManager& session_manager, GatewayMetrics& 
     : session_manager_(session_manager), metrics_(metrics) {}
 
 void GatewayService::register_handlers(net::MessageDispatcher& dispatcher) const {
-    dispatcher.register_middleware(
+    // v1.1.3 / T05: 白名单与限频必须是 client ingress 层策略，在投递到 business_pool
+    // 之前在调用线程（Session strand）上同步执行，避免未鉴权/超限流量仍占用业务线程。
+    // nullptr session 的 dispatch（实验性 InternalBus）不跑这套中间件 —— 见 message_dispatcher.h。
+    dispatcher.register_ingress_middleware(
         "auth_whitelist",
         [this](const net::DispatchContext& context) { return should_allow_message(context); });
-    dispatcher.register_middleware(
+    dispatcher.register_ingress_middleware(
         "rate_limit",
         [this](const net::DispatchContext& context) { return check_rate_limit(context); });
 

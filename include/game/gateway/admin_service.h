@@ -2,15 +2,22 @@
 
 #include "game/gateway/gateway_metrics.h"
 #include "game/gateway/session_manager.h"
-#include "net/message_dispatcher.h"
-#include "net/protocol.h"
 
 #include <cstdint>
 #include <functional>
 #include <string>
 
+namespace net {
+
+class MessageDispatcher;
+
+}  // namespace net
+
 namespace game::gateway {
 
+// TCP 消息号 5001–5005：演示/示例用（demo-only）；默认 GatewayServer **不注册**。
+// **无令牌/角色 ACL**——任意已连线会话皆可触发（须在受信链路使用）。成熟度冻结：docs/v1-governance-layers.md §6。
+// **v1.1.11**：调用前提与最小审计口径见 **`docs/v1-admin-audit-rules.md`**；边界侧在 `AdminService::register_handlers` 写 **`admin_invoke`**。
 class AdminService {
 public:
     using KickCallback = std::function<void(const std::string& user_id)>;
@@ -26,31 +33,7 @@ public:
     void set_status_callback(StatusCallback cb) { on_status_ = std::move(cb); }
     void set_reload_callback(ReloadCallback cb) { on_reload_ = std::move(cb); }
 
-    void register_handlers(net::MessageDispatcher& dispatcher) {
-        dispatcher.register_handler(net::protocol::kAdminServerStatus,
-            [this](const net::DispatchContext& ctx) {
-                auto status = on_status_ ? on_status_() : "{}";
-                ctx.session->send(net::protocol::kAdminResponse, ctx.request_id, 0, std::move(status));
-            });
-
-        dispatcher.register_handler(net::protocol::kAdminReloadConfig,
-            [this](const net::DispatchContext& ctx) {
-                if (on_reload_) on_reload_();
-                ctx.session->send(net::protocol::kAdminResponse, ctx.request_id, 0, "reload_ok");
-            });
-
-        dispatcher.register_handler(net::protocol::kAdminKickPlayer,
-            [this](const net::DispatchContext& ctx) {
-                if (on_kick_) on_kick_(ctx.body);
-                ctx.session->send(net::protocol::kAdminResponse, ctx.request_id, 0, "kick_ok");
-            });
-
-        dispatcher.register_handler(net::protocol::kAdminBanIp,
-            [this](const net::DispatchContext& ctx) {
-                if (on_ban_) on_ban_(ctx.body, 3600);
-                ctx.session->send(net::protocol::kAdminResponse, ctx.request_id, 0, "ban_ok");
-            });
-    }
+    void register_handlers(net::MessageDispatcher& dispatcher);
 
 private:
     SessionManager& session_manager_;

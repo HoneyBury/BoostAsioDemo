@@ -88,4 +88,17 @@ inline bool should_compress(std::size_t body_size) {
     return body_size >= kCompressionThreshold;
 }
 
+// True iff the build links a real compression backend (currently zlib).
+// See docs/development-optimization.md §6.3 / §8.3 (T04): when this is
+// false, callers MUST NOT set packet::flags::kCompressed, otherwise the
+// flag's meaning across builds becomes ambiguous (the fallback
+// compress_body() is a length-prefixed passthrough, not real compression).
+inline constexpr bool is_compression_available() noexcept {
+#ifdef HAS_ZLIB
+    return true;
+#else
+    return false;
+#endif
+}
+
 }  // namespace net::packet

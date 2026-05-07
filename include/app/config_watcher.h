@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/config.h"
+#include "app/logging.h"
 
 #include <boost/asio/steady_timer.hpp>
 
@@ -45,8 +46,11 @@ private:
 
         if (current > last_write_) {
             last_write_ = current;
-            auto new_config = load_gateway_config(path_);
-            if (on_reload_) on_reload_(new_config);
+            if (auto new_config = try_load_gateway_config(path_)) {
+                if (on_reload_) on_reload_(*new_config);
+            } else {
+                LOG_WARN("ConfigWatcher: reload skipped for {} (missing or invalid config)", path_.string());
+            }
         }
     }
 

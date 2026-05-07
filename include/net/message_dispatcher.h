@@ -63,9 +63,26 @@ public:
         return handlers_.size();
     }
 
+    /// Runs on the caller thread **before** the message is posted to `business_pool`.
+    /// Intended for gateway ingress policies (auth whitelist, per-connection rate limiting).
+    /// When `dispatch()` is invoked with `session == nullptr` (for example experimental
+    /// `InternalBus` backends), ingress middleware is **skipped** — client-session rules
+    /// must not apply to internal dispatches. See docs/development-optimization.md §8.4 (T05).
+    void register_ingress_middleware(std::string name, Middleware middleware) {
+        std::unique_lock lock(mutex_);
+        ingress_middlewares_.push_back({std::move(name), std::move(middleware)});
+    }
+
+    /// Runs **after** `asio::post` to the selected thread pool (legacy chain; prefer ingress
+    /// for client-facing guards). Kept for compatibility and incremental migration.
     void register_middleware(std::string name, Middleware middleware) {
         std::unique_lock lock(mutex_);
         middlewares_.push_back({std::move(name), std::move(middleware)});
+    }
+
+    [[nodiscard]] std::size_t ingress_middleware_count() const {
+        std::shared_lock lock(mutex_);
+        return ingress_middlewares_.size();
     }
 
     [[nodiscard]] std::size_t middleware_count() const {
@@ -81,7 +98,8 @@ public:
                   std::uint64_t trace_id = 0,
                   std::uint8_t flags = 0) const {
         Handler handler;
-        std::vector<MiddlewareEntry> middlewares;
+        std::vector<MiddlewareEntry> inbound_middlewares;
+        std::vector<MiddlewareEntry> post_pool_middlewares;
         {
             std::shared_lock lock(mutex_);
             const auto it = handlers_.find(message_id);
@@ -97,7 +115,8 @@ public:
             }
 
             handler = it->second;
-            middlewares = middlewares_;
+            inbound_middlewares = ingress_middlewares_;
+            post_pool_middlewares = middlewares_;
         }
 
         DispatchContext context{
@@ -122,9 +141,23 @@ public:
             }
         }
 
+        // Client ingress: run synchronously on the Session strand (or any caller) before
+        // consuming a business-thread slot for blocked unauthenticated/rate-limited packets.
+        if (session) {
+            for (const auto& middleware_entry : inbound_middlewares) {
+                if (!middleware_entry.middleware(context)) {
+                    LOG_DEBUG("Message {} blocked by ingress middleware {} [trace={}]",
+                              context.message_id,
+                              middleware_entry.name,
+                              context.trace_id);
+                    return true;
+                }
+            }
+        }
+
         boost::asio::post(*target_pool, [context = std::move(context),
                                            handler = std::move(handler),
-                                           middlewares = std::move(middlewares)]() mutable {
+                                           middlewares = std::move(post_pool_middlewares)]() mutable {
             for (const auto& middleware_entry : middlewares) {
                 if (!middleware_entry.middleware(context)) {
                     LOG_DEBUG("Message {} blocked by middleware {} [trace={}]",
@@ -158,6 +191,7 @@ private:
     boost::asio::thread_pool& business_pool_;
     mutable std::shared_mutex mutex_;
     std::unordered_map<std::uint16_t, Handler> handlers_;
+    std::vector<MiddlewareEntry> ingress_middlewares_;
     std::vector<MiddlewareEntry> middlewares_;
     std::vector<PoolRange> pool_ranges_;
 };

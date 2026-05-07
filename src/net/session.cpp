@@ -47,10 +47,13 @@ void Session::send_batch(std::vector<PacketMessage> messages) {
     asio::post(strand_, [self, messages = std::move(messages)]() mutable {
         if (self->stopped_) return;
 
-        // Encode all messages into a single contiguous buffer
+        // 出站协议增强顺序（v1.1.2 / T04 固定为）：
+        //   serialize body -> compress (only when zlib available) -> encode
+        // 分片在 v1.x 维护期内属于 reserved 能力，主链不接入。
+        // 见 docs/development-optimization.md §6.A / §8.3 与 docs/v1-maturity-matrix.md §2.3。
         std::string combined;
         for (auto& msg : messages) {
-            if (packet::should_compress(msg.body.size())) {
+            if (packet::is_compression_available() && packet::should_compress(msg.body.size())) {
                 msg.body = packet::compress_body(msg.body);
                 msg.flags |= packet::flags::kCompressed;
             }
@@ -91,18 +94,12 @@ void Session::send_batch(std::vector<PacketMessage> messages) {
 }
 
 void Session::stop() {
+    // 主动关闭路径：复用 handle_close 这一条统一收口，确保 close_handler_ 一定被触发，
+    // 与因网络错误 / 心跳超时 / 包非法 / 写队列溢出等异常关闭走同一路径。
+    // 见 docs/development-optimization.md §6.A.3 / §8.2 (T03)。
     auto self = shared_from_this();
     asio::post(strand_, [self]() {
-        if (self->stopped_) {
-            return;
-        }
-
-        self->stopped_ = true;
-        self->heartbeat_timer_.cancel();
-
-        error_code ignored_ec;
-        self->socket_.shutdown(tcp::socket::shutdown_both, ignored_ec);
-        self->socket_.close(ignored_ec);
+        self->handle_close(asio::error::operation_aborted);
     });
 }
 
@@ -202,8 +199,18 @@ void Session::do_read_body() {
                                 try {
                                     auto packet = packet::decode_payload(self->read_body_);
 
-                                    // Auto-decompress if flagged
+                                    // 入站协议增强顺序（v1.1.2 / T04 固定为）：
+                                    //   decode -> decompress (only when zlib available) -> dispatch
+                                    // 当对端发送了 kCompressed 但本端未链接 zlib 时直接拒绝包，
+                                    // 以避免 fallback decompress_body 在不同构建间产出错乱语义。
                                     if (packet.flags & packet::flags::kCompressed) {
+                                        if (!packet::is_compression_available()) {
+                                            LOG_WARN("Session {} received compressed packet but build "
+                                                     "has no compression backend",
+                                                     self->remote_endpoint());
+                                            self->handle_close(asio::error::invalid_argument);
+                                            return;
+                                        }
                                         packet.body = packet::decompress_body(packet.body);
                                         packet.flags &= ~packet::flags::kCompressed;
                                     }
@@ -260,10 +267,13 @@ void Session::enqueue_write(PacketMessage message, bool high_priority) {
             return;
         }
 
-        // Auto-compress large bodies
+        // 出站协议增强顺序（v1.1.2 / T04 固定为）：
+        //   serialize body -> compress (only when zlib available) -> encode
+        // 分片在 v1.x 维护期内属于 reserved 能力，主链不接入。
+        // 见 docs/development-optimization.md §6.A / §8.3 与 docs/v1-maturity-matrix.md §2.3。
         auto body = message.body;
         auto flags = message.flags;
-        if (packet::should_compress(body.size())) {
+        if (packet::is_compression_available() && packet::should_compress(body.size())) {
             body = packet::compress_body(body);
             flags |= packet::flags::kCompressed;
         }

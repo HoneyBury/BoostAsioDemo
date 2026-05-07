@@ -9,6 +9,7 @@
 #include <charconv>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string_view>
 
 namespace app::config {
@@ -115,63 +116,7 @@ std::optional<std::filesystem::path> get_path_value(const ConfigStore& store, co
     return std::filesystem::path(*value);
 }
 
-}  // namespace
-
-bool ConfigStore::load(const std::filesystem::path& path) {
-    values_.clear();
-
-    try {
-        if (path.extension() == ".json") {
-            return load_json_file(path, values_);
-        }
-        return load_key_value_file(path, values_);
-    } catch (const std::exception& ex) {
-        LOG_WARN("Failed to parse config file {}: {}", path.string(), ex.what());
-        values_.clear();
-        return false;
-    }
-}
-
-std::optional<std::string> ConfigStore::get_string(const std::string& key) const {
-    const auto it = values_.find(key);
-    if (it == values_.end()) {
-        return std::nullopt;
-    }
-    return it->second;
-}
-
-std::optional<std::uint16_t> ConfigStore::get_uint16(const std::string& key) const {
-    const auto value = get_string(key);
-    return value ? parse_integer<std::uint16_t>(*value) : std::nullopt;
-}
-
-std::optional<std::uint32_t> ConfigStore::get_uint32(const std::string& key) const {
-    const auto value = get_string(key);
-    return value ? parse_integer<std::uint32_t>(*value) : std::nullopt;
-}
-
-std::optional<std::size_t> ConfigStore::get_size(const std::string& key) const {
-    const auto value = get_string(key);
-    return value ? parse_integer<std::size_t>(*value) : std::nullopt;
-}
-
-std::optional<std::chrono::milliseconds> ConfigStore::get_milliseconds(const std::string& key) const {
-    const auto value = get_string(key);
-    const auto parsed = value ? parse_integer<std::uint64_t>(*value) : std::nullopt;
-    if (!parsed) {
-        return std::nullopt;
-    }
-    return std::chrono::milliseconds(*parsed);
-}
-
-GatewayAppConfig load_gateway_config(const std::filesystem::path& path) {
-    GatewayAppConfig config;
-    ConfigStore store;
-    if (!store.load(path)) {
-        LOG_WARN("Gateway config file {} not found, using defaults", path.string());
-        return config;
-    }
-
+void fill_gateway_from_store(const ConfigStore& store, GatewayAppConfig& config) {
     if (const auto value = store.get_uint16("gateway.port")) {
         config.port = *value;
     }
@@ -227,9 +172,74 @@ GatewayAppConfig load_gateway_config(const std::filesystem::path& path) {
     if (const auto value = store.get_string("tls.private_key_path")) {
         config.tls.private_key_path = *value;
     }
+}
 
-    LOG_INFO("Loaded gateway config from {} (TLS: {})", path.string(), config.tls.enabled ? "on" : "off");
+}  // namespace
+
+bool ConfigStore::load(const std::filesystem::path& path) {
+    values_.clear();
+
+    try {
+        if (path.extension() == ".json") {
+            return load_json_file(path, values_);
+        }
+        return load_key_value_file(path, values_);
+    } catch (const std::exception& ex) {
+        LOG_WARN("Failed to parse config file {}: {}", path.string(), ex.what());
+        values_.clear();
+        return false;
+    }
+}
+
+std::optional<std::string> ConfigStore::get_string(const std::string& key) const {
+    const auto it = values_.find(key);
+    if (it == values_.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+std::optional<std::uint16_t> ConfigStore::get_uint16(const std::string& key) const {
+    const auto value = get_string(key);
+    return value ? parse_integer<std::uint16_t>(*value) : std::nullopt;
+}
+
+std::optional<std::uint32_t> ConfigStore::get_uint32(const std::string& key) const {
+    const auto value = get_string(key);
+    return value ? parse_integer<std::uint32_t>(*value) : std::nullopt;
+}
+
+std::optional<std::size_t> ConfigStore::get_size(const std::string& key) const {
+    const auto value = get_string(key);
+    return value ? parse_integer<std::size_t>(*value) : std::nullopt;
+}
+
+std::optional<std::chrono::milliseconds> ConfigStore::get_milliseconds(const std::string& key) const {
+    const auto value = get_string(key);
+    const auto parsed = value ? parse_integer<std::uint64_t>(*value) : std::nullopt;
+    if (!parsed) {
+        return std::nullopt;
+    }
+    return std::chrono::milliseconds(*parsed);
+}
+
+std::optional<GatewayAppConfig> try_load_gateway_config(const std::filesystem::path& path) {
+    ConfigStore store;
+    if (!store.load(path)) {
+        return std::nullopt;
+    }
+    GatewayAppConfig config{};
+    fill_gateway_from_store(store, config);
     return config;
+}
+
+GatewayAppConfig load_gateway_config(const std::filesystem::path& path) {
+    if (auto cfg = try_load_gateway_config(path)) {
+        LOG_INFO("Loaded gateway config from {} (TLS: {})", path.string(), cfg->tls.enabled ? "on" : "off");
+        return *cfg;
+    }
+    LOG_WARN("Gateway config file {} not found or invalid, using defaults", path.string());
+    return GatewayAppConfig{};
 }
 
 PressureAppConfig load_pressure_config(const std::filesystem::path& path) {

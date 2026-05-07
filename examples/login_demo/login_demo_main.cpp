@@ -54,6 +54,9 @@ int main(int argc, char* argv[]) {
     game::gateway::SessionManager session_mgr;
     game::room::RoomManager room_mgr;
     game::battle::BattleManager battle_mgr;
+    room_mgr.set_battle_active_query([&battle_mgr](const std::string& room_id) {
+        return battle_mgr.battle_started(room_id);
+    });
     game::gateway::GatewayMetrics metrics;
     game::gateway::PushService push;
 
@@ -93,7 +96,7 @@ int main(int argc, char* argv[]) {
     LOG_INFO("审计日志已启用，输出到 logs/audit.log");
 
     // =================================================================
-    // 4. 管理指令 — 支持踢人/封禁/状态查询
+    // 4. 二进制 Admin — demo-only、无权限；默认主链不注册（见 docs/v1-governance-layers.md §6）
     // =================================================================
     game::gateway::AdminService admin(session_mgr, metrics);
     admin.set_status_callback([&] {
@@ -134,6 +137,7 @@ int main(int argc, char* argv[]) {
     std::atomic<bool> shutdown{false};
     app::GracefulShutdown sig_handler(io.get_executor(), [&] {
         shutdown.store(true);
+        watcher.stop();
         AUDIT_LOG("shutdown", "优雅关闭");
         std::size_t saved = 0;
         for (const auto& s : session_mgr.all_sessions()) {
@@ -147,6 +151,7 @@ int main(int argc, char* argv[]) {
         }
         LOG_INFO("关闭时保存了 {} 条玩家记录", saved);
         server.stop();
+        io.stop();
     });
     sig_handler.start();
 
@@ -157,5 +162,6 @@ int main(int argc, char* argv[]) {
     for (auto& w : workers) w = std::thread([&] { io.run(); });
     for (auto& w : workers) w.join();
     pool.join();
+    watcher.stop();
     return 0;
 }

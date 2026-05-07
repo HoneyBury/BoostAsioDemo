@@ -340,6 +340,10 @@
 
 ## 8. 当前建议的近期任务清单
 
+> **历史路线**。`v1.x` 维护期实际任务以 `docs/development-optimization.md` §11 任务表与 `docs/development-priority.md` §3 为准，不再以本节为执行依据。
+
+> **维护期补注**：本节列出的"多进程拆分实战 / 内部消息总线 / 服务发现 / 战斗回放系统"等条目，依赖前置事实源、生命周期与边界收口（参见 §10.5、§10.6 development-optimization.md），**当前不应直接进入开发**。这些任务在 `v1.2.0` 决策点之后才会被重新评估。
+
 按优先级推进：
 
 1. **多进程拆分实战** — 独立 login_server / room_server / battle_server 可执行文件

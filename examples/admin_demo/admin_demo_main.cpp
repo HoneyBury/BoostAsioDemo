@@ -1,4 +1,4 @@
-// 管理工具演示：Admin 指令、健康检查、指标采集、审计日志
+// 管理工具演示：Admin 二进制消息（demo-only）、HTTP 存活桩/指标、审计日志
 //
 // 运行方式：
 //   admin_demo.exe [config/gateway.json] [端口号]
@@ -10,8 +10,8 @@
 //   - 消息号 5004: 重载配置
 //   - 消息号 5005: 接收管理指令响应
 //
-// HTTP 管理端点 (默认 9080):
-//   curl http://localhost:9080/health       → 健康检查
+// HTTP 端口 (默认 9080) — L2 观测导出 + /health 存活桩（固定 ok；非就绪/业务健康）：
+//   curl http://localhost:9080/health       → liveness stub
 //   curl http://localhost:9080/metrics      → Prometheus 指标
 //   curl http://localhost:9080/metrics/json → JSON 指标
 
@@ -63,9 +63,13 @@ int main(int argc, char* argv[]) {
     game::gateway::PushService push;
     game::room::RoomManager room_mgr;
     game::battle::BattleManager battle_mgr;
+    room_mgr.set_battle_active_query([&battle_mgr](const std::string& room_id) {
+        return battle_mgr.battle_started(room_id);
+    });
 
     // =================================================================
-    // 1. Admin 管理指令 — 消息号 5001-5005
+    // 1. Admin 二进制「管理」消息 — 消息号 5001-5005（demo-only，无任何权限校验）
+    //    默认 GatewayServer **不注册**；本示例手工 register_handlers。
     //    - kick_player (5001):  踢出指定用户，body=user_id
     //    - ban_ip (5002):       封禁指定 IP，body=ip_addr
     //    - server_status (5003): 查询服务器运行状态 (JSON)
@@ -75,7 +79,6 @@ int main(int argc, char* argv[]) {
     game::gateway::AdminService admin(session_mgr, metrics);
 
     admin.set_kick_callback([&](const std::string& user_id) {
-        AUDIT_LOG("kick", "user_id=" + user_id);
         for (const auto& s : session_mgr.all_sessions()) {
             auto uid = session_mgr.user_id_of(s);
             if (uid && *uid == user_id) {
@@ -86,7 +89,6 @@ int main(int argc, char* argv[]) {
     });
 
     admin.set_ban_callback([&](const std::string& ip, std::uint32_t duration) {
-        AUDIT_LOG("ban", "ip=" + ip + " duration=" + std::to_string(duration));
         LOG_WARN("已封禁 IP: {} ({} 秒)", ip, duration);
     });
 
@@ -103,11 +105,11 @@ int main(int argc, char* argv[]) {
     admin.register_handlers(dispatcher);
 
     // =================================================================
-    // 2. HTTP 管理端点 — /health /metrics /metrics/json
+    // 2. L2 HTTP：/metrics*（观测）与 /health（存活桩）；无鉴权，非完整控制面
     //    配置 gateway.http_management_port = 9080
     //    可被 Prometheus 直接 scrape
     // =================================================================
-    LOG_INFO("HTTP 管理端点: http://localhost:{}/health", config.http_management_port);
+    LOG_INFO("HTTP 观测端点: http://localhost:{}/health (stub)", config.http_management_port);
 
     // =================================================================
     // 3. 速率限制 — RateLimiter 连接预热 + 用户维度 + 消息类型维度
@@ -154,6 +156,7 @@ int main(int argc, char* argv[]) {
     std::atomic<bool> shutdown{false};
     app::GracefulShutdown sig_handler(io.get_executor(), [&] {
         shutdown.store(true);
+        watcher.stop();
         AUDIT_LOG("shutdown", "signal");
         std::size_t saved = 0;
         for (const auto& s : session_mgr.all_sessions()) {
@@ -167,15 +170,17 @@ int main(int argc, char* argv[]) {
         }
         LOG_INFO("关闭时保存 {} 条记录", saved);
         server.stop();
+        io.stop();
     });
     sig_handler.start();
 
     LOG_INFO("=== 管理演示服务器已启动 :{} ===", server.local_port());
-    LOG_INFO("功能展示: Admin指令 | /health /metrics | 速率限制 | 审计日志 | 优雅关闭 | 配置热加载");
+    LOG_INFO("功能展示（均为演示拼装）: Admin(5001-5005,demo-only) | /health(stub)+/metrics | 速率限制 | 审计日志 | 优雅关闭 | 配置热加载");
 
     std::vector<std::thread> workers(config.io_threads);
     for (auto& w : workers) w = std::thread([&] { io.run(); });
     for (auto& w : workers) w.join();
     pool.join();
+    watcher.stop();
     return 0;
 }

@@ -43,6 +43,9 @@ int main(int argc, char* argv[]) {
     game::gateway::PushService push;
     game::room::RoomManager room_mgr;
     game::battle::BattleManager battle_mgr;
+    room_mgr.set_battle_active_query([&battle_mgr](const std::string& room_id) {
+        return battle_mgr.battle_started(room_id);
+    });
 
     std::unique_ptr<game::login::TokenValidator> validator;
     if (config.auth_provider == "http") {

@@ -43,9 +43,13 @@ void BattleService::register_handlers(net::MessageDispatcher& dispatcher) const 
             std::vector<std::string> player_ids;
             player_ids.reserve(room_snapshot->members.size());
             for (const auto& member : room_snapshot->members) {
-                const auto login_context = session_manager_.login_context_of(member.session);
-                if (!login_context) {
-                    continue;
+                std::string uid = member.member_user_id;
+                if (uid.empty()) {
+                    const auto login_context = session_manager_.login_context_of(member.session);
+                    if (!login_context) {
+                        continue;
+                    }
+                    uid = login_context->user_id;
                 }
 
                 if (!member.ready) {
@@ -54,14 +58,12 @@ void BattleService::register_handlers(net::MessageDispatcher& dispatcher) const 
                     return;
                 }
 
-                player_ids.push_back(login_context->user_id);
+                player_ids.push_back(std::move(uid));
             }
 
             const auto outcome = battle_manager_.start_battle(room_snapshot->room_id, std::move(player_ids));
             switch (outcome.result) {
                 case BattleManager::StartBattleResult::kOk: {
-                    const auto marked = room_manager_.mark_battle_started(outcome.room_id);
-                    (void)marked;
                     metrics_.on_battle_start_success();
                     push_service_.send_ok(context.session,
                                           net::protocol::kBattleStartResponse,
@@ -127,7 +129,7 @@ void BattleService::register_handlers(net::MessageDispatcher& dispatcher) const 
 
                 case BattleManager::SubmitInputResult::kPlayerNotInBattle:
                     push_service_.send_error(
-                        context.session, context.request_id, net::protocol::ErrorCode::kAuthRequired, "player_not_in_battle");
+                        context.session, context.request_id, net::protocol::ErrorCode::kPlayerNotInBattle);
                     return;
             }
         });

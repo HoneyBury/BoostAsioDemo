@@ -160,16 +160,18 @@ v1.2.0   结构升级决策（T21） ✅ 结论：维护分支不转正
 v1.2.1   业务边界测试加固（T17） ✅
 v1.2.2   治理边界测试加固（T18） ✅
 v1.2.3   生命周期与装配测试加固（T19） ✅
-v1.2.4   持久化/审计/回放测试加固（T20） ✅ 当前
+v1.2.4   持久化/审计/回放测试加固（T20） ✅
+v1.2.5   CI / Docker / 发布链路稳定性修复 ✅ 当前
 ```
 
 > **强约束**：在 `v1.2.0` 决策点之前**不进入 v2.0.0 范畴**（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面，详见 `docs/v2-roadmap.md` 与 `docs/v2-design.md`）。
 
 ## 5. 最近一次更新
 
-- 日期：`2026-05-07`
-- 版本：`v1.2.4` / **T18–T20 + T21 决策记录**：治理 / 生命周期装配 / 持久化·审计·回放测试已补齐；结构升级决策见 **`docs/v1-structure-upgrade-decision.md`**（维持 `v1.x` 维护边界，不提前进入 `v2`）。
+- 日期：`2026-05-08`
+- 版本：`v1.2.5` / 发布链路稳定性修复：CI、Docker 与测试发现可靠性已补强；`v1.2.4` 的 **T18–T20 + T21** 结论保持不变，结构升级决策仍见 **`docs/v1-structure-upgrade-decision.md`**。
 - 历次更新：
+  - `2026-05-08` `v1.2.5` — Windows CI 稳定性、Docker 依赖获取与 `gtest_discover_tests` timeout 修复
   - `2026-05-07` `v1.2.4` — **`persistence_replay_audit_test.cpp`**、**`docs/v1-structure-upgrade-decision.md`**
   - `2026-05-07` `v1.2.3` — **`lifecycle_assembly_test.cpp`**：`ConfigWatcher` 与 `GatewayServer::stop()`
   - `2026-05-07` `v1.2.2` — **`admin_service_test.cpp`**、**`http_management_test.cpp`**、**`gateway_integration_test.cpp`**：治理边界回归

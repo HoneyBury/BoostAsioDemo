@@ -12,7 +12,7 @@
 
 - 日常集成：`develop`
 - 稳定发布：`main`
-- 当前维护发布版：`v1.2.4`
+- 当前维护发布版：`v1.2.5`
 - `v2.0.0` 相关设计仍停留在文档草案，不进入当前发布流程
 
 ## 发布前检查
@@ -67,7 +67,7 @@
 1. 在 `develop` 完成收束并提交
 2. `git switch main`
 3. `git merge --no-ff develop`
-4. `git tag -a v1.2.4 -m "Release v1.2.4"`
+4. `git tag -a v1.2.5 -m "Release v1.2.5"`
 5. `git push origin main develop --follow-tags`
 
 push tag 后，GitHub Release 流水线会自动生成正式发布产物。

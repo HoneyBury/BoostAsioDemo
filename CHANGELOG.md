@@ -1,5 +1,29 @@
 # 更新日志
 
+## v1.2.5 — CI / Docker / 发布链路稳定性修复（2026-05-08）
+
+> **范围**：不扩展 `v1.x` 业务能力，不进入 `v2.0.0` 开发；仅补齐稳定发布所需的 CI、Docker 与测试发现可靠性问题。
+
+### 代码
+
+- 暂无业务主链结构变更。
+
+### 文档
+
+- `README.md`、`docs/README.md`、`docs/release-process.md`：统一当前版本口径到 `v1.2.5`。
+- **新增** `docs/releases/v1.2.5.md`：记录稳定性补丁版定位。
+- **新增** `docs/v2-startup-checklist.md`：整理从当前 `develop` 启动 `v2.0` 的清单。
+
+### 发布工程
+
+- CI：稳定 Windows runner 与 GoogleTest discovery timeout。
+- Docker：修正依赖下载与 Boost 压缩包 locale 处理。
+- `CMakeLists.txt`：版本升至 `1.2.5`，安装包携带 `docs/releases/v1.2.5.md`。
+
+### 测试
+
+- 本版以既有回归面为基线，重点提升 CI 环境稳定性。
+
 ## v1.2.4 — 生命周期/横切测试闭环 + T21 决策记录（2026-05-07）
 
 > **范围**：完成 `T18`–`T20` 测试收口，并记录 `T21` 结构升级决策。**不进入 `v2.0.0` 开发**；当前维护分支仅补齐治理、生命周期装配、持久化/审计/回放的回归护栏。

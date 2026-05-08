@@ -280,6 +280,7 @@
 | `v1.2.1` | 业务边界测试加固 | **T17**：`battle_manager_test` / `room_manager_test` / `gateway_integration_test` |
 | `v1.2.2` | 治理边界测试加固 | **T18**：`admin_service_test` / `http_management_test` / 默认装配不注册 admin |
 | `v1.2.3` | 生命周期与装配测试加固 | **T19**：`lifecycle_assembly_test`、`ConfigWatcher` / `GatewayServer::stop()` |
-| `v1.2.4` | 持久化 / 审计 / 回放测试加固 | **T20**：`persistence_replay_audit_test` — **当前版本** |
+| `v1.2.4` | 持久化 / 审计 / 回放测试加固 | **T20**：`persistence_replay_audit_test` |
+| `v1.2.5` | CI / Docker / 发布链路稳定性修复 | 不改变能力成熟度，仅修复发布与 CI 稳定性问题 — **当前版本** |
 
 **严格约束**：在 `v1.2.0` 决策点之前，**不进入 v2.0.0 范畴的开发**（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面，详见 `docs/v2-roadmap.md` 与 `docs/v2-design.md`）。

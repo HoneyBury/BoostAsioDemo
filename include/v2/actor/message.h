@@ -31,7 +31,8 @@ using MessagePayload = std::variant<std::monostate,
                                     v2::room::JoinRoomMsg,
                                     v2::room::SetReadyMsg,
                                     v2::room::StartBattleMsg,
-                                    v2::battle::CreateBattleMsg>;
+                                    v2::battle::CreateBattleMsg,
+                                    v2::battle::SubmitBattleInputMsg>;
 
 struct MessageHeader {
     MessageKind kind = MessageKind::kUnknown;

@@ -4,7 +4,7 @@
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 
-TEST(V2ConnectedFlowTest, LoginCreateJoinReadyAndStartBattleFlowsThroughActors) {
+TEST(V2ConnectedFlowTest, LoginCreateJoinReadyStartAndInputFlowThroughActors) {
     v2::runtime::ActorSystem actor_system;
     v2::gateway::SessionAdapter adapter(actor_system);
     v2::gateway::Runtime runtime(actor_system, adapter);
@@ -70,7 +70,21 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyAndStartBattleFlowsThroughActors) 
         .request_id = 7,
         .body = "room_alpha",
     });
-    ASSERT_EQ(battle_start.size(), 1U);
+    ASSERT_EQ(battle_start.size(), 3U);
     EXPECT_EQ(battle_start.front().envelope.protocol_message_id, net::protocol::kBattleStartResponse);
     EXPECT_EQ(battle_start.front().envelope.body, "battle_started:room_alpha:battle_0001");
+    EXPECT_EQ(battle_start[1].envelope.protocol_message_id, net::protocol::kBattleStatePush);
+    EXPECT_EQ(battle_start[2].envelope.protocol_message_id, net::protocol::kBattleStatePush);
+
+    auto battle_input = adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kBattleInputRequest,
+        .request_id = 8,
+        .body = "move:1,2",
+    });
+    ASSERT_EQ(battle_input.size(), 2U);
+    EXPECT_EQ(battle_input[0].envelope.protocol_message_id, net::protocol::kBattleInputResponse);
+    EXPECT_EQ(battle_input[0].envelope.body, "input_seq:1");
+    EXPECT_EQ(battle_input[1].envelope.protocol_message_id, net::protocol::kBattleInputPush);
+    EXPECT_EQ(battle_input[1].envelope.session_id, 200U);
 }

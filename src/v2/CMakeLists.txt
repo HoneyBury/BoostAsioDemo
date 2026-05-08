@@ -3,6 +3,7 @@ add_library(project_v2 STATIC
     actor/actor_ref.cpp
     battle/battle_actor.cpp
     common/module_marker.cpp
+    gateway/demo_server.cpp
     gateway/gateway_actor.cpp
     gateway/runtime.cpp
     gateway/session_adapter.cpp

@@ -22,6 +22,7 @@ public:
     [[nodiscard]] const BattleRuntimeState& state() const noexcept { return state_; }
 
 private:
+    std::uint64_t next_input_seq_ = 1;
     BattleEventSink& sink_;
     BattleRuntimeState state_;
 };

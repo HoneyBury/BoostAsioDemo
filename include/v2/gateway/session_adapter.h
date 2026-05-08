@@ -10,8 +10,9 @@ namespace v2::gateway {
 
 class SessionAdapter final : public SessionWriteSink {
 public:
-    explicit SessionAdapter(v2::runtime::ActorSystem& actor_system)
-        : actor_system_(actor_system) {}
+    explicit SessionAdapter(v2::runtime::ActorSystem& actor_system,
+                            DownstreamSessionWriteSink* downstream = nullptr)
+        : actor_system_(actor_system), downstream_(downstream) {}
 
     void bind_gateway(v2::actor::ActorRef gateway_actor) noexcept;
     [[nodiscard]] std::vector<SessionWrite> handle_incoming(ClientEnvelope envelope);
@@ -22,6 +23,7 @@ private:
     v2::runtime::ActorSystem& actor_system_;
     v2::actor::ActorRef gateway_actor_;
     std::vector<SessionWrite> outbox_;
+    DownstreamSessionWriteSink* downstream_ = nullptr;
 };
 
 }  // namespace v2::gateway

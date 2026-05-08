@@ -24,6 +24,9 @@ std::vector<SessionWrite> SessionAdapter::handle_incoming(ClientEnvelope envelop
 
 void SessionAdapter::push(SessionWrite write) {
     outbox_.push_back(std::move(write));
+    if (downstream_ != nullptr) {
+        downstream_->deliver(outbox_.back());
+    }
 }
 
 }  // namespace v2::gateway

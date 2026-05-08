@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -21,6 +22,7 @@ public:
 
     [[nodiscard]] v2::actor::ActorRef create_gateway_actor();
     [[nodiscard]] bool is_authenticated(const GatewayCommand& command) const;
+    void on_session_closed(SessionId session_id);
 
     bool handle(const GatewayCommand& command) override;
     void push(v2::battle::BattleEvent event) override;
@@ -37,6 +39,7 @@ private:
     [[nodiscard]] std::string parse_login_user_id(const std::string& body) const;
     [[nodiscard]] std::string parse_display_name(const std::string& body) const;
     [[nodiscard]] std::string session_user_id(SessionId session_id) const;
+    [[nodiscard]] std::optional<SessionId> session_id_for_user(const std::string& user_id) const;
 
     void emit(std::uint16_t message_id,
               SessionId session_id,
@@ -56,6 +59,7 @@ private:
     std::unordered_map<std::string, PendingResponse> pending_room_join_;
     std::unordered_map<std::string, PendingResponse> pending_room_ready_;
     std::unordered_map<std::string, PendingResponse> pending_battle_start_;
+    std::unordered_map<SessionId, PendingResponse> pending_battle_input_;
     std::uint64_t next_battle_id_ = 1;
 };
 

@@ -44,3 +44,35 @@ TEST(V2BattleActorTest, CreateBattleMarksStartedAndEmitsCreatedEvent) {
     ASSERT_NE(created, nullptr);
     EXPECT_EQ(created->room_id, "room_alpha");
 }
+
+TEST(V2BattleActorTest, SubmitInputEmitsAcceptedEvent) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingBattleSink sink;
+    auto actor = std::make_unique<v2::battle::BattleActor>(sink);
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    v2::actor::Message create;
+    create.header.kind = v2::actor::MessageKind::kUser;
+    create.payload = v2::battle::CreateBattleMsg{
+        .battle_id = "battle_0001",
+        .room_id = "room_alpha",
+        .player_ids = {"owner", "member"},
+    };
+    actor_ref.tell(std::move(create));
+
+    v2::actor::Message input;
+    input.header.kind = v2::actor::MessageKind::kUser;
+    input.payload = v2::battle::SubmitBattleInputMsg{
+        .user_id = "owner",
+        .request_id = 77,
+        .input_data = "move:1,2",
+    };
+    actor_ref.tell(std::move(input));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 2U);
+    ASSERT_EQ(sink.events.size(), 2U);
+    const auto* accepted = std::get_if<v2::battle::BattleInputAcceptedMsg>(&sink.events[1]);
+    ASSERT_NE(accepted, nullptr);
+    EXPECT_EQ(accepted->request_id, 77U);
+    EXPECT_EQ(accepted->input_seq, 1U);
+}

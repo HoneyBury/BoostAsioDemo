@@ -35,6 +35,22 @@ bool Runtime::is_authenticated(const GatewayCommand& command) const {
     return users_by_session_id_.contains(command.session_id);
 }
 
+void Runtime::on_session_closed(SessionId session_id) {
+    const auto user_id = session_user_id(session_id);
+    if (!user_id.empty()) {
+        auto player_it = players_by_user_id_.find(user_id);
+        if (player_it != players_by_user_id_.end()) {
+            v2::actor::Message closed;
+            closed.header.kind = v2::actor::MessageKind::kUser;
+            closed.payload = v2::player::SessionClosedMsg{.session_id = session_id};
+            player_it->second.tell(std::move(closed));
+            actor_system_.dispatch_all();
+        }
+    }
+    users_by_session_id_.erase(session_id);
+    rooms_by_session_id_.erase(session_id);
+}
+
 bool Runtime::handle(const GatewayCommand& command) {
     switch (command.type) {
         case GatewayCommandType::kLogin: {
@@ -203,6 +219,36 @@ bool Runtime::handle(const GatewayCommand& command) {
             actor_system_.dispatch_all();
             return true;
         }
+        case GatewayCommandType::kBattleInput: {
+            const auto user_id = session_user_id(command.session_id);
+            auto room_name_it = rooms_by_session_id_.find(command.session_id);
+            if (user_id.empty() || room_name_it == rooms_by_session_id_.end()) {
+                return false;
+            }
+            auto battle_it = battles_by_room_id_.find(room_name_it->second);
+            if (battle_it == battles_by_room_id_.end()) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted),
+                     net::protocol::to_string(net::protocol::ErrorCode::kBattleNotStarted));
+                return true;
+            }
+            pending_battle_input_[command.session_id] = PendingResponse{
+                .session_id = command.session_id,
+                .request_id = command.request_id,
+            };
+            v2::actor::Message input;
+            input.header.kind = v2::actor::MessageKind::kUser;
+            input.payload = v2::battle::SubmitBattleInputMsg{
+                .user_id = user_id,
+                .request_id = command.request_id,
+                .input_data = command.body,
+            };
+            battle_it->second.tell(std::move(input));
+            actor_system_.dispatch_all();
+            return true;
+        }
         case GatewayCommandType::kHeartbeat:
         case GatewayCommandType::kEcho:
         case GatewayCommandType::kUnknown:
@@ -255,6 +301,40 @@ void Runtime::push(v2::battle::BattleEvent event) {
                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                  fmt::format("battle_started:{}:{}", created->room_id, created->battle_id));
             pending_battle_start_.erase(pending);
+        }
+        for (const auto& [session_id, room_id] : rooms_by_session_id_) {
+            if (room_id == created->room_id) {
+                emit(net::protocol::kBattleStatePush,
+                     session_id,
+                     0,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                     fmt::format("battle_state:{}:{}", created->room_id, created->battle_id));
+            }
+        }
+        return;
+    }
+
+    if (const auto* input = std::get_if<v2::battle::BattleInputAcceptedMsg>(&event)) {
+        const auto session_id = session_id_for_user(input->user_id);
+        if (session_id.has_value()) {
+            auto pending = pending_battle_input_.find(*session_id);
+            if (pending != pending_battle_input_.end()) {
+                emit(net::protocol::kBattleInputResponse,
+                     pending->second.session_id,
+                     pending->second.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                     fmt::format("input_seq:{}", input->input_seq));
+                pending_battle_input_.erase(pending);
+            }
+        }
+        for (const auto& [session_id, room_id] : rooms_by_session_id_) {
+            if (room_id == input->room_id && session_user_id(session_id) != input->user_id) {
+                emit(net::protocol::kBattleInputPush,
+                     session_id,
+                     0,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                     fmt::format("{}:{}:{}", input->user_id, input->input_seq, input->input_data));
+            }
         }
     }
 }
@@ -330,6 +410,15 @@ std::string Runtime::session_user_id(SessionId session_id) const {
         return {};
     }
     return it->second;
+}
+
+std::optional<SessionId> Runtime::session_id_for_user(const std::string& user_id) const {
+    for (const auto& [session_id, mapped_user_id] : users_by_session_id_) {
+        if (mapped_user_id == user_id) {
+            return session_id;
+        }
+    }
+    return std::nullopt;
 }
 
 void Runtime::emit(std::uint16_t message_id,

@@ -52,4 +52,11 @@ private:
     AuthorizePolicy authorize_policy_;
 };
 
+class DownstreamSessionWriteSink {
+public:
+    virtual ~DownstreamSessionWriteSink() = default;
+
+    virtual void deliver(SessionWrite write) = 0;
+};
+
 }  // namespace v2::gateway

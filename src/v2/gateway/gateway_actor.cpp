@@ -99,6 +99,14 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
                        static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
                        "unmodeled_message");
             return;
+        case GatewayCommandType::kBattleInput:
+            if (command_sink_ != nullptr && command_sink_->handle(*command)) {
+                return;
+            }
+            emit_error(*envelope,
+                       static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                       "unmodeled_message");
+            return;
         case GatewayCommandType::kUnknown:
             break;
     }
@@ -148,6 +156,9 @@ std::optional<GatewayCommand> GatewayActor::to_command(const ClientEnvelope& env
             return command;
         case net::protocol::kBattleStartRequest:
             command.type = GatewayCommandType::kBattleStart;
+            return command;
+        case net::protocol::kBattleInputRequest:
+            command.type = GatewayCommandType::kBattleInput;
             return command;
         default:
             return std::nullopt;

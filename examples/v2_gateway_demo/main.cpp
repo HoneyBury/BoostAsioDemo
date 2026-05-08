@@ -1,8 +1,17 @@
-#include <array>
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+#include <thread>
+#include <vector>
 
+#include <boost/asio.hpp>
 #include <fmt/core.h>
 
+#include "app/crash_handler.h"
+#include "app/graceful_shutdown.h"
+#include "app/logging.h"
 #include "net/protocol.h"
+#include "v2/gateway/demo_server.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 
@@ -23,58 +32,91 @@ void print_exchange(v2::gateway::SessionAdapter& adapter,
     }
 }
 
+bool is_script_mode(int argc, char* argv[]) {
+    return argc > 1 && std::string(argv[1]) == "--script";
+}
+
 }  // namespace
 
-int main() {
-    v2::runtime::ActorSystem actor_system;
-    v2::gateway::SessionAdapter adapter(actor_system);
-    v2::gateway::Runtime runtime(actor_system, adapter);
-    adapter.bind_gateway(runtime.create_gateway_actor());
+int main(int argc, char* argv[]) {
+    app::logging::init("v2_gateway_demo");
+    app::crash::install_crash_handler();
 
-    fmt::print("v2 gateway demo bootstrap\n");
+    try {
+        // Local scripted run remains useful for quick smoke checks without sockets.
+        if (is_script_mode(argc, argv)) {
+            v2::runtime::ActorSystem actor_system;
+            v2::gateway::SessionAdapter adapter(actor_system);
+            v2::gateway::Runtime runtime(actor_system, adapter);
+            adapter.bind_gateway(runtime.create_gateway_actor());
 
-    print_exchange(adapter,
-                   {.session_id = 100,
-                    .protocol_message_id = net::protocol::kLoginRequest,
-                    .request_id = 1,
-                    .body = "owner|token:owner|Owner"},
-                   "owner login");
-    print_exchange(adapter,
-                   {.session_id = 200,
-                    .protocol_message_id = net::protocol::kLoginRequest,
-                    .request_id = 2,
-                    .body = "member|token:member|Member"},
-                   "member login");
-    print_exchange(adapter,
-                   {.session_id = 100,
-                    .protocol_message_id = net::protocol::kRoomCreateRequest,
-                    .request_id = 3,
-                    .body = "room_alpha"},
-                   "create room");
-    print_exchange(adapter,
-                   {.session_id = 200,
-                    .protocol_message_id = net::protocol::kRoomJoinRequest,
-                    .request_id = 4,
-                    .body = "room_alpha"},
-                   "join room");
-    print_exchange(adapter,
-                   {.session_id = 100,
-                    .protocol_message_id = net::protocol::kRoomReadyRequest,
-                    .request_id = 5,
-                    .body = "true"},
-                   "owner ready");
-    print_exchange(adapter,
-                   {.session_id = 200,
-                    .protocol_message_id = net::protocol::kRoomReadyRequest,
-                    .request_id = 6,
-                    .body = "true"},
-                   "member ready");
-    print_exchange(adapter,
-                   {.session_id = 100,
-                    .protocol_message_id = net::protocol::kBattleStartRequest,
-                    .request_id = 7,
-                    .body = "room_alpha"},
-                   "battle start");
+            fmt::print("v2 gateway demo bootstrap\n");
 
-    return 0;
+            print_exchange(adapter,
+                           {.session_id = 100,
+                            .protocol_message_id = net::protocol::kLoginRequest,
+                            .request_id = 1,
+                            .body = "owner|token:owner|Owner"},
+                           "owner login");
+            print_exchange(adapter,
+                           {.session_id = 200,
+                            .protocol_message_id = net::protocol::kLoginRequest,
+                            .request_id = 2,
+                            .body = "member|token:member|Member"},
+                           "member login");
+            print_exchange(adapter,
+                           {.session_id = 100,
+                            .protocol_message_id = net::protocol::kRoomCreateRequest,
+                            .request_id = 3,
+                            .body = "room_alpha"},
+                           "create room");
+            print_exchange(adapter,
+                           {.session_id = 200,
+                            .protocol_message_id = net::protocol::kRoomJoinRequest,
+                            .request_id = 4,
+                            .body = "room_alpha"},
+                           "join room");
+            print_exchange(adapter,
+                           {.session_id = 100,
+                            .protocol_message_id = net::protocol::kRoomReadyRequest,
+                            .request_id = 5,
+                            .body = "true"},
+                           "owner ready");
+            print_exchange(adapter,
+                           {.session_id = 200,
+                            .protocol_message_id = net::protocol::kRoomReadyRequest,
+                            .request_id = 6,
+                            .body = "true"},
+                           "member ready");
+            print_exchange(adapter,
+                           {.session_id = 100,
+                            .protocol_message_id = net::protocol::kBattleStartRequest,
+                            .request_id = 7,
+                            .body = "room_alpha"},
+                           "battle start");
+            print_exchange(adapter,
+                           {.session_id = 100,
+                            .protocol_message_id = net::protocol::kBattleInputRequest,
+                            .request_id = 8,
+                            .body = "move:1,2"},
+                           "owner battle input");
+            return 0;
+        }
+
+        boost::asio::io_context io_context;
+        v2::gateway::DemoServer server(io_context, 9201);
+        server.start();
+        app::GracefulShutdown shutdown(io_context.get_executor(), [&]() {
+            server.stop();
+            io_context.stop();
+        });
+        shutdown.start();
+
+        fmt::print("v2 gateway demo listening on port {}\n", server.local_port());
+        io_context.run();
+        return 0;
+    } catch (const std::exception& ex) {
+        fmt::print(stderr, "v2_gateway_demo failed: {}\n", ex.what());
+        return EXIT_FAILURE;
+    }
 }

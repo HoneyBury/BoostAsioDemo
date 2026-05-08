@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(boost_gateway
-    VERSION 1.2.4
+    VERSION 1.2.5
     DESCRIPTION "A high-performance C++ game server framework"
     LANGUAGES CXX
 )
@@ -45,6 +45,7 @@ install(TARGETS
     room_demo
     battle_demo
     admin_demo
+    v2_gateway_demo
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
@@ -68,6 +69,6 @@ install(FILES
 )
 
 install(FILES
-    docs/releases/v1.2.4.md
+    docs/releases/v1.2.5.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/releases"
 )

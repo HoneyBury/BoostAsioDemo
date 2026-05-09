@@ -24,21 +24,21 @@ std::optional<v2::battle::BattleFinishReason> parse_battle_finish_request(std::s
 }
 
 std::string format_battle_started_body(std::string_view room_id, std::string_view battle_id) {
-    return fmt::format("battle_started:{}:{}", room_id, battle_id);
+    return fmt::format("battle_started:room_id={}:battle_id={}", room_id, battle_id);
 }
 
 std::string format_battle_state_body(std::string_view room_id, std::string_view battle_id) {
-    return fmt::format("battle_state:{}:{}", room_id, battle_id);
+    return fmt::format("battle_state:kind=started:room_id={}:battle_id={}", room_id, battle_id);
 }
 
 std::string format_battle_input_response_body(std::uint64_t input_seq) {
-    return fmt::format("input_seq:{}", input_seq);
+    return fmt::format("input_seq:seq={}", input_seq);
 }
 
 std::string format_battle_input_push_body(std::string_view user_id,
                                           std::uint64_t input_seq,
                                           std::string_view input_data) {
-    return fmt::format("{}:{}:{}", user_id, input_seq, input_data);
+    return fmt::format("battle_input:user_id={}:seq={}:input={}", user_id, input_seq, input_data);
 }
 
 std::string format_battle_end_accepted_body(v2::battle::BattleFinishReason reason) {
@@ -46,7 +46,7 @@ std::string format_battle_end_accepted_body(v2::battle::BattleFinishReason reaso
 }
 
 std::string format_battle_frame_body(const v2::battle::BattleFrameAdvancedMsg& frame) {
-    return fmt::format("battle_frame:{}:{}:{}:{}",
+    return fmt::format("battle_state:kind=frame:room_id={}:battle_id={}:frame={}:trigger={}",
                        frame.room_id,
                        frame.battle_id,
                        frame.frame_number,
@@ -54,7 +54,7 @@ std::string format_battle_frame_body(const v2::battle::BattleFrameAdvancedMsg& f
 }
 
 std::string format_battle_finished_body(const v2::battle::BattleFinishedMsg& finished) {
-    return fmt::format("battle_finished:{}:{}:{}:{}",
+    return fmt::format("battle_state:kind=finished:room_id={}:battle_id={}:reason={}:user_id={}",
                        finished.room_id,
                        finished.battle_id,
                        v2::battle::to_string(finished.reason),

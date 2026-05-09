@@ -72,7 +72,8 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyStartAndInputFlowThroughActors) {
     });
     ASSERT_EQ(battle_start.size(), 3U);
     EXPECT_EQ(battle_start.front().envelope.protocol_message_id, net::protocol::kBattleStartResponse);
-    EXPECT_EQ(battle_start.front().envelope.body, "battle_started:room_alpha:battle_0001");
+    EXPECT_EQ(battle_start.front().envelope.body,
+              "battle_started:room_id=room_alpha:battle_id=battle_0001");
     EXPECT_EQ(battle_start[1].envelope.protocol_message_id, net::protocol::kBattleStatePush);
     EXPECT_EQ(battle_start[2].envelope.protocol_message_id, net::protocol::kBattleStatePush);
 
@@ -84,11 +85,13 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyStartAndInputFlowThroughActors) {
     });
     ASSERT_EQ(battle_input.size(), 4U);
     EXPECT_EQ(battle_input[0].envelope.protocol_message_id, net::protocol::kBattleInputResponse);
-    EXPECT_EQ(battle_input[0].envelope.body, "input_seq:1");
+    EXPECT_EQ(battle_input[0].envelope.body, "input_seq:seq=1");
     EXPECT_EQ(battle_input[1].envelope.protocol_message_id, net::protocol::kBattleInputPush);
     EXPECT_EQ(battle_input[1].envelope.session_id, 200U);
+    EXPECT_EQ(battle_input[1].envelope.body, "battle_input:user_id=owner:seq=1:input=move:1,2");
     EXPECT_EQ(battle_input[2].envelope.protocol_message_id, net::protocol::kBattleStatePush);
-    EXPECT_EQ(battle_input[2].envelope.body, "battle_frame:room_alpha:battle_0001:1:input:owner:1");
+    EXPECT_EQ(battle_input[2].envelope.body,
+              "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=1:trigger=input:owner:1");
     EXPECT_EQ(battle_input[3].envelope.protocol_message_id, net::protocol::kBattleStatePush);
 
     auto second_input = adapter.handle_incoming(v2::gateway::ClientEnvelope{
@@ -98,7 +101,10 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyStartAndInputFlowThroughActors) {
         .body = "move:2,2",
     });
     ASSERT_EQ(second_input.size(), 4U);
-    EXPECT_EQ(second_input[2].envelope.body, "battle_frame:room_alpha:battle_0001:2:input:owner:2");
+    EXPECT_EQ(second_input[0].envelope.body, "input_seq:seq=2");
+    EXPECT_EQ(second_input[1].envelope.body, "battle_input:user_id=owner:seq=2:input=move:2,2");
+    EXPECT_EQ(second_input[2].envelope.body,
+              "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=2:trigger=input:owner:2");
 
     auto third_input = adapter.handle_incoming(v2::gateway::ClientEnvelope{
         .session_id = 100,
@@ -107,10 +113,13 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyStartAndInputFlowThroughActors) {
         .body = "move:3,2",
     });
     ASSERT_EQ(third_input.size(), 6U);
-    EXPECT_EQ(third_input[2].envelope.body, "battle_frame:room_alpha:battle_0001:3:input:owner:3");
+    EXPECT_EQ(third_input[0].envelope.body, "input_seq:seq=3");
+    EXPECT_EQ(third_input[1].envelope.body, "battle_input:user_id=owner:seq=3:input=move:3,2");
+    EXPECT_EQ(third_input[2].envelope.body,
+              "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=3:trigger=input:owner:3");
     EXPECT_EQ(third_input[4].envelope.protocol_message_id, net::protocol::kBattleStatePush);
     EXPECT_EQ(third_input[4].envelope.body,
-              "battle_finished:room_alpha:battle_0001:frame_limit_reached:input:owner:3");
+              "battle_state:kind=finished:room_id=room_alpha:battle_id=battle_0001:reason=frame_limit_reached:user_id=input:owner:3");
 }
 
 TEST(V2ConnectedFlowTest, BattleCanFinishByRequestedReason) {
@@ -172,7 +181,8 @@ TEST(V2ConnectedFlowTest, BattleCanFinishByRequestedReason) {
     EXPECT_EQ(finish[0].envelope.protocol_message_id, net::protocol::kBattleInputResponse);
     EXPECT_EQ(finish[0].envelope.body, "battle_end_accepted:surrender");
     EXPECT_EQ(finish[1].envelope.protocol_message_id, net::protocol::kBattleStatePush);
-    EXPECT_EQ(finish[1].envelope.body, "battle_finished:room_alpha:battle_0001:surrender:owner");
+    EXPECT_EQ(finish[1].envelope.body,
+              "battle_state:kind=finished:room_id=room_alpha:battle_id=battle_0001:reason=surrender:user_id=owner");
 
     auto after_finish = adapter.handle_incoming(v2::gateway::ClientEnvelope{
         .session_id = 200,

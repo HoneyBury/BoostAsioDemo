@@ -83,12 +83,13 @@ GatewayServer
 
 当前仍使用字符串 body，但已经统一收口到 `v2::gateway::battle_protocol_codec`，主要约定如下：
 
-- `battle_started:{room_id}:{battle_id}`
-- `battle_state:{room_id}:{battle_id}`
-- `input_seq:{seq}`
-- `{user_id}:{seq}:{input_data}`
+- `battle_started:room_id={room_id}:battle_id={battle_id}`
+- `battle_state:kind=started:room_id={room_id}:battle_id={battle_id}`
+- `input_seq:seq={seq}`
+- `battle_input:user_id={user_id}:seq={seq}:input={payload}`
 - `battle_end_accepted:{reason}`
-- `battle_finished:{room_id}:{battle_id}:{reason}:{user_id}`
+- `battle_state:kind=frame:room_id={room_id}:battle_id={battle_id}:frame={n}:trigger={source}`
+- `battle_state:kind=finished:room_id={room_id}:battle_id={battle_id}:reason={reason}:user_id={user_id}`
 
 当前用于主动结束 battle 的请求约定：
 

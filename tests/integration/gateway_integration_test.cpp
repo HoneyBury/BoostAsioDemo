@@ -17,11 +17,15 @@
 #include "v2/gateway/gateway_server_bridge.h"
 
 #include <boost/asio.hpp>
+#include <boost/process/v1.hpp>
 #include <boost/asio/thread_pool.hpp>
 
 #include <array>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -31,6 +35,7 @@
 namespace {
 
 namespace asio = boost::asio;
+namespace bp = boost::process::v1;
 using tcp = asio::ip::tcp;
 
 struct GatewayTestRuntime {
@@ -155,6 +160,18 @@ public:
         }
     }
 
+    std::optional<net::packet::DecodedPacket> try_read_for(std::chrono::milliseconds timeout) {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        boost::system::error_code ec;
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (socket_.available(ec) >= sizeof(net::packet::LengthHeader) && !ec) {
+                return read();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        return std::nullopt;
+    }
+
     // 仅供拒绝路径 / 故意构造畸形包的测试使用，正常路径走 send/exchange/read。
     tcp::socket& socket_for_test() { return socket_; }
 
@@ -191,6 +208,76 @@ public:
 
     std::vector<net::Session::PacketMessage> packets;
     std::size_t close_count = 0;
+};
+
+std::optional<std::uint16_t> reserve_free_port() {
+    try {
+        asio::io_context io_context;
+        tcp::acceptor acceptor(io_context, tcp::endpoint(asio::ip::make_address("127.0.0.1"), 0));
+        const auto port = acceptor.local_endpoint().port();
+        acceptor.close();
+        return port;
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+bool wait_for_tcp_server(std::uint16_t port, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        try {
+            asio::io_context io_context;
+            tcp::socket socket(io_context);
+            socket.connect(tcp::endpoint(asio::ip::make_address("127.0.0.1"), port));
+            boost::system::error_code ignored_ec;
+            socket.shutdown(tcp::socket::shutdown_both, ignored_ec);
+            socket.close(ignored_ec);
+            return true;
+        } catch (const std::exception&) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+    }
+    return false;
+}
+
+class EchoServerProcess {
+public:
+    explicit EchoServerProcess(const std::filesystem::path& config_path)
+        : config_path_(config_path) {}
+
+    ~EchoServerProcess() { stop(); }
+
+    bool start() {
+        try {
+            child_ = std::make_unique<bp::child>(
+                PROJECT_ECHO_SERVER_PATH,
+                config_path_.string(),
+                bp::std_out > bp::null,
+                bp::std_err > bp::null);
+            return true;
+        } catch (const std::exception& ex) {
+            startup_error_ = ex.what();
+            return false;
+        }
+    }
+
+    void stop() {
+        if (!child_) {
+            return;
+        }
+        if (child_->running()) {
+            child_->terminate();
+            child_->wait();
+        }
+        child_.reset();
+    }
+
+    [[nodiscard]] const std::string& startup_error() const noexcept { return startup_error_; }
+
+private:
+    std::filesystem::path config_path_;
+    std::unique_ptr<bp::child> child_;
+    std::string startup_error_;
 };
 
 }  // namespace
@@ -357,6 +444,114 @@ TEST(GatewayIntegrationTest, ShadowBridgePolicyCanDisableRoomAndEchoMirroring) {
     EXPECT_TRUE(bridge->should_forward(net::protocol::kBattleStartRequest));
 
     runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, EchoServerConfigEnablesEchoShadowBridgeResponses) {
+    app::logging::init("project_tests");
+
+    const auto path = std::filesystem::temp_directory_path() / "echo_server_shadow_on.json";
+    const auto port = reserve_free_port();
+    if (!port.has_value()) {
+        GTEST_SKIP() << "socket bind unavailable in this environment";
+    }
+    {
+        std::ofstream output(path);
+        output << "{\n";
+        output << "  \"gateway\": {\n";
+        output << "    \"port\": " << *port << ",\n";
+        output << "    \"io_threads\": 1,\n";
+        output << "    \"business_threads\": 1,\n";
+        output << "    \"http_management_port\": 0,\n";
+        output << "    \"v2_shadow_bridge_enabled\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_responses\": true,\n";
+        output << "    \"v2_shadow_bridge_login\": false,\n";
+        output << "    \"v2_shadow_bridge_room\": false,\n";
+        output << "    \"v2_shadow_bridge_battle\": false,\n";
+        output << "    \"v2_shadow_bridge_echo\": true,\n";
+        output << "    \"auth\": {\n";
+        output << "      \"provider\": \"dev\"\n";
+        output << "    }\n";
+        output << "  }\n";
+        output << "}\n";
+    }
+
+    EchoServerProcess server(path);
+    if (!server.start()) {
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "failed to start echo_server process: " << server.startup_error();
+    }
+    if (!wait_for_tcp_server(*port, std::chrono::milliseconds(1500))) {
+        server.stop();
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "echo_server did not start listening in time";
+    }
+
+    TestClient client;
+    client.connect(*port);
+    const auto first = client.exchange(net::protocol::kEchoRequest, 310, "shadow_echo");
+    EXPECT_EQ(first.message_id, net::protocol::kEchoResponse);
+    EXPECT_EQ(first.body, "shadow_echo");
+
+    const auto second = client.try_read_for(std::chrono::milliseconds(300));
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(second->message_id, net::protocol::kEchoResponse);
+    EXPECT_EQ(second->body, "shadow_echo");
+
+    server.stop();
+    std::filesystem::remove(path);
+}
+
+TEST(GatewayIntegrationTest, EchoServerConfigCanDisableEchoShadowBridgeResponses) {
+    app::logging::init("project_tests");
+
+    const auto path = std::filesystem::temp_directory_path() / "echo_server_shadow_off.json";
+    const auto port = reserve_free_port();
+    if (!port.has_value()) {
+        GTEST_SKIP() << "socket bind unavailable in this environment";
+    }
+    {
+        std::ofstream output(path);
+        output << "{\n";
+        output << "  \"gateway\": {\n";
+        output << "    \"port\": " << *port << ",\n";
+        output << "    \"io_threads\": 1,\n";
+        output << "    \"business_threads\": 1,\n";
+        output << "    \"http_management_port\": 0,\n";
+        output << "    \"v2_shadow_bridge_enabled\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_responses\": true,\n";
+        output << "    \"v2_shadow_bridge_login\": false,\n";
+        output << "    \"v2_shadow_bridge_room\": false,\n";
+        output << "    \"v2_shadow_bridge_battle\": false,\n";
+        output << "    \"v2_shadow_bridge_echo\": false,\n";
+        output << "    \"auth\": {\n";
+        output << "      \"provider\": \"dev\"\n";
+        output << "    }\n";
+        output << "  }\n";
+        output << "}\n";
+    }
+
+    EchoServerProcess server(path);
+    if (!server.start()) {
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "failed to start echo_server process: " << server.startup_error();
+    }
+    if (!wait_for_tcp_server(*port, std::chrono::milliseconds(1500))) {
+        server.stop();
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "echo_server did not start listening in time";
+    }
+
+    TestClient client;
+    client.connect(*port);
+    const auto first = client.exchange(net::protocol::kEchoRequest, 320, "plain_echo");
+    EXPECT_EQ(first.message_id, net::protocol::kEchoResponse);
+    EXPECT_EQ(first.body, "plain_echo");
+
+    const auto second = client.try_read_for(std::chrono::milliseconds(300));
+    EXPECT_FALSE(second.has_value());
+
+    server.stop();
+    std::filesystem::remove(path);
 }
 
 TEST(GatewayIntegrationTest, DefaultRuntimeDoesNotRegisterAdminHandlers) {

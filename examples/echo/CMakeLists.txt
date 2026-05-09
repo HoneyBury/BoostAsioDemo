@@ -4,6 +4,7 @@ add_executable(echo_server
 target_link_libraries(echo_server
     PRIVATE
         project_game
+        project_v2
 )
 apply_project_warnings(echo_server)
 

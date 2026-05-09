@@ -145,42 +145,44 @@ TEST(V2DemoServerSmokeTest, RealSocketFlowSupportsBootstrapAndDisconnectCleanup)
 
     owner.send(net::protocol::kBattleStartRequest, 7, "room_alpha");
     const auto start_response = owner.expect_message(net::protocol::kBattleStartResponse);
-    EXPECT_EQ(start_response.body, "battle_started:room_alpha:battle_0001");
+    EXPECT_EQ(start_response.body, "battle_started:room_id=room_alpha:battle_id=battle_0001");
 
     const auto owner_started = owner.expect_message(net::protocol::kBattleStatePush);
     const auto member_started = member.expect_message(net::protocol::kBattleStatePush);
-    EXPECT_EQ(owner_started.body, "battle_state:room_alpha:battle_0001");
-    EXPECT_EQ(member_started.body, "battle_state:room_alpha:battle_0001");
+    EXPECT_EQ(owner_started.body, "battle_state:kind=started:room_id=room_alpha:battle_id=battle_0001");
+    EXPECT_EQ(member_started.body, "battle_state:kind=started:room_id=room_alpha:battle_id=battle_0001");
 
     owner.send(net::protocol::kBattleInputRequest, 8, "move:1,2");
     const auto input_response = owner.expect_message(net::protocol::kBattleInputResponse);
     const auto input_push = member.expect_message(net::protocol::kBattleInputPush);
-    EXPECT_EQ(input_response.body, "input_seq:1");
-    EXPECT_EQ(input_push.body, "owner:1:move:1,2");
+    EXPECT_EQ(input_response.body, "input_seq:seq=1");
+    EXPECT_EQ(input_push.body, "battle_input:user_id=owner:seq=1:input=move:1,2");
     const auto owner_frame = owner.expect_message(net::protocol::kBattleStatePush);
     const auto member_frame = member.expect_message(net::protocol::kBattleStatePush);
-    EXPECT_EQ(owner_frame.body, "battle_frame:room_alpha:battle_0001:1:input:owner:1");
-    EXPECT_EQ(member_frame.body, "battle_frame:room_alpha:battle_0001:1:input:owner:1");
+    EXPECT_EQ(owner_frame.body,
+              "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=1:trigger=input:owner:1");
+    EXPECT_EQ(member_frame.body,
+              "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=1:trigger=input:owner:1");
 
     owner.send(net::protocol::kBattleInputRequest, 9, "move:2,2");
-    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).body, "input_seq:2");
-    EXPECT_EQ(member.expect_message(net::protocol::kBattleInputPush).body, "owner:2:move:2,2");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).body, "input_seq:seq=2");
+    EXPECT_EQ(member.expect_message(net::protocol::kBattleInputPush).body, "battle_input:user_id=owner:seq=2:input=move:2,2");
     EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,
-              "battle_frame:room_alpha:battle_0001:2:input:owner:2");
+              "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=2:trigger=input:owner:2");
     EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
-              "battle_frame:room_alpha:battle_0001:2:input:owner:2");
+              "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=2:trigger=input:owner:2");
 
     owner.send(net::protocol::kBattleInputRequest, 10, "move:3,2");
-    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).body, "input_seq:3");
-    EXPECT_EQ(member.expect_message(net::protocol::kBattleInputPush).body, "owner:3:move:3,2");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).body, "input_seq:seq=3");
+    EXPECT_EQ(member.expect_message(net::protocol::kBattleInputPush).body, "battle_input:user_id=owner:seq=3:input=move:3,2");
     EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,
-              "battle_frame:room_alpha:battle_0001:3:input:owner:3");
+              "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=3:trigger=input:owner:3");
     EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
-              "battle_frame:room_alpha:battle_0001:3:input:owner:3");
+              "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=3:trigger=input:owner:3");
     EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,
-              "battle_finished:room_alpha:battle_0001:frame_limit_reached:input:owner:3");
+              "battle_state:kind=finished:room_id=room_alpha:battle_id=battle_0001:reason=frame_limit_reached:user_id=input:owner:3");
     EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
-              "battle_finished:room_alpha:battle_0001:frame_limit_reached:input:owner:3");
+              "battle_state:kind=finished:room_id=room_alpha:battle_id=battle_0001:reason=frame_limit_reached:user_id=input:owner:3");
 
     owner.close();
 
@@ -220,7 +222,7 @@ TEST(V2DemoServerSmokeTest, RealSocketFlowSupportsRequestedBattleFinish) {
 
     owner.send(net::protocol::kBattleStartRequest, 27, "room_beta");
     EXPECT_EQ(owner.expect_message(net::protocol::kBattleStartResponse).body,
-              "battle_started:room_beta:battle_0001");
+              "battle_started:room_id=room_beta:battle_id=battle_0001");
     (void)owner.expect_message(net::protocol::kBattleStatePush);
     (void)member.expect_message(net::protocol::kBattleStatePush);
 
@@ -228,9 +230,9 @@ TEST(V2DemoServerSmokeTest, RealSocketFlowSupportsRequestedBattleFinish) {
     EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).body,
               "battle_end_accepted:surrender");
     EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,
-              "battle_finished:room_beta:battle_0001:surrender:owner");
+              "battle_state:kind=finished:room_id=room_beta:battle_id=battle_0001:reason=surrender:user_id=owner");
     EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
-              "battle_finished:room_beta:battle_0001:surrender:owner");
+              "battle_state:kind=finished:room_id=room_beta:battle_id=battle_0001:reason=surrender:user_id=owner");
 
     const auto after_finish = member.exchange(net::protocol::kBattleInputRequest, 29, "move:9,9");
     EXPECT_EQ(after_finish.message_id, net::protocol::kErrorResponse);

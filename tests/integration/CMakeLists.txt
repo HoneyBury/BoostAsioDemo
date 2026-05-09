@@ -2,6 +2,11 @@ add_executable(project_integration_tests
     gateway_integration_test.cpp
     http_management_test.cpp
 )
+add_dependencies(project_integration_tests echo_server)
+target_compile_definitions(project_integration_tests
+    PRIVATE
+        PROJECT_ECHO_SERVER_PATH="$<TARGET_FILE:echo_server>"
+)
 target_link_libraries(project_integration_tests
     PRIVATE
         project_game

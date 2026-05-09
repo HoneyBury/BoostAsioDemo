@@ -64,14 +64,17 @@ std::optional<bool> parse_room_ready_body(std::string_view body) noexcept {
 }
 
 std::optional<ParsedBattleStartCommandBody> parse_battle_start_command_body(std::string_view body) {
-    ParsedBattleStartCommandBody parsed;
-    if (!body.empty()) {
-        if (!validate_room_id_body(body)) {
-            return std::nullopt;
-        }
-        parsed.room_id = std::string(body);
+    if (body.empty()) {
+        return std::nullopt;
     }
-    return parsed;
+    if (!validate_room_id_body(body)) {
+        return std::nullopt;
+    }
+    return ParsedBattleStartCommandBody{.room_id = std::string(body)};
+}
+
+bool validate_battle_start_command_body(const ParsedBattleStartCommandBody& body) noexcept {
+    return body.room_id.has_value() && !body.room_id->empty();
 }
 
 std::optional<ParsedBattleInputCommandBody> parse_battle_input_command_body(std::string_view body) {

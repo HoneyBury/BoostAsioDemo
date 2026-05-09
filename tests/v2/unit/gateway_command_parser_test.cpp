@@ -33,13 +33,13 @@ TEST(V2GatewayCommandParserTest, ParsesAndValidatesRoomIdentifiers) {
 
 TEST(V2GatewayCommandParserTest, ParsesBattleStartAndInputBodies) {
     const auto start_empty = v2::gateway::parse_battle_start_command_body("");
-    ASSERT_TRUE(start_empty.has_value());
-    EXPECT_FALSE(start_empty->room_id.has_value());
+    EXPECT_FALSE(start_empty.has_value());
 
     const auto start_room = v2::gateway::parse_battle_start_command_body("room_alpha");
     ASSERT_TRUE(start_room.has_value());
     ASSERT_TRUE(start_room->room_id.has_value());
     EXPECT_EQ(*start_room->room_id, "room_alpha");
+    EXPECT_TRUE(v2::gateway::validate_battle_start_command_body(*start_room));
 
     const auto finish = v2::gateway::parse_battle_input_command_body("finish:surrender");
     ASSERT_TRUE(finish.has_value());
@@ -53,4 +53,32 @@ TEST(V2GatewayCommandParserTest, ParsesBattleStartAndInputBodies) {
     EXPECT_EQ(input->input_data, "move:left");
     EXPECT_TRUE(v2::gateway::validate_battle_input_command_body(*input));
     EXPECT_FALSE(v2::gateway::parse_battle_input_command_body("").has_value());
+}
+
+TEST(V2GatewayCommandParserTest, RejectsBattleStartWithoutRoomId) {
+    EXPECT_FALSE(v2::gateway::parse_battle_start_command_body("").has_value());
+    EXPECT_FALSE(v2::gateway::validate_battle_start_command_body(
+        v2::gateway::ParsedBattleStartCommandBody{}));
+}
+
+TEST(V2GatewayCommandParserTest, ParsesFinishVariantsAsStructuredReasons) {
+    const auto surrender = v2::gateway::parse_battle_input_command_body("finish:surrender");
+    ASSERT_TRUE(surrender.has_value());
+    EXPECT_TRUE(surrender->is_finish_request);
+    EXPECT_EQ(surrender->finish_reason, v2::battle::BattleFinishReason::kSurrender);
+
+    const auto timeout = v2::gateway::parse_battle_input_command_body("finish:timeout");
+    ASSERT_TRUE(timeout.has_value());
+    EXPECT_TRUE(timeout->is_finish_request);
+    EXPECT_EQ(timeout->finish_reason, v2::battle::BattleFinishReason::kTimeout);
+
+    const auto custom = v2::gateway::parse_battle_input_command_body("finish:custom_reason");
+    ASSERT_TRUE(custom.has_value());
+    EXPECT_TRUE(custom->is_finish_request);
+    EXPECT_EQ(custom->finish_reason, v2::battle::BattleFinishReason::kFinished);
+}
+
+TEST(V2GatewayCommandParserTest, RejectsInvalidBattleInputBody) {
+    EXPECT_FALSE(v2::gateway::validate_battle_input_command_body(
+        v2::gateway::ParsedBattleInputCommandBody{}));
 }

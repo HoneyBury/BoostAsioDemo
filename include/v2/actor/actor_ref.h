@@ -25,14 +25,20 @@ public:
 
     ActorId actor_id() const noexcept { return actor_id_; }
     bool is_valid() const noexcept { return system_ != nullptr && actor_id_ != 0; }
+    v2::runtime::ActorSystem* system() const noexcept { return system_; }
 
     void tell(Message message) const;
     void tell_after(Message message, std::size_t dispatch_delay) const;
     void tell_after(Message message, std::chrono::steady_clock::duration delay) const;
     [[nodiscard]] ScheduleId schedule_after(Message message, std::chrono::steady_clock::duration delay) const;
+    [[nodiscard]] ScheduleId schedule_after(Message message, std::chrono::steady_clock::time_point ready_at) const;
     [[nodiscard]] ScheduleId schedule_every(Message message,
                                            std::chrono::steady_clock::duration initial_delay,
                                            std::chrono::steady_clock::duration interval) const;
+    [[nodiscard]] ScheduleId schedule_every(Message message,
+                                           std::chrono::steady_clock::duration initial_delay,
+                                           std::chrono::steady_clock::duration interval,
+                                           std::size_t max_repetitions) const;
     bool cancel_schedule(ScheduleId schedule_id) const;
 
 private:

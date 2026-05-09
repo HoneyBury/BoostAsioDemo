@@ -16,6 +16,34 @@ void BattleActor::finish_battle(BattleFinishReason reason, std::string triggerin
     for (const auto& participant : state_.participants) {
         participant_user_ids.push_back(participant.user_id);
     }
+
+    std::vector<BattleScore> scores;
+    scores.reserve(state_.participants.size());
+    std::optional<std::string> winner_user_id;
+    std::int64_t high_score = 0;
+    for (const auto& participant : state_.participants) {
+        std::int64_t score = 0;
+        for (const auto& input : state_.replay_inputs) {
+            if (input.user_id == participant.user_id) {
+                score += static_cast<std::int64_t>(input.input_data.size());
+            }
+        }
+        scores.push_back(BattleScore{.user_id = participant.user_id, .score = score});
+        if (score > high_score) {
+            high_score = score;
+            winner_user_id = participant.user_id;
+        }
+    }
+
+    BattleResultSummary result{
+        .battle_id = state_.battle_id,
+        .room_id = state_.room_id,
+        .reason = reason,
+        .winner_user_id = winner_user_id,
+        .scores = std::move(scores),
+        .total_frames = state_.frame_number,
+    };
+
     sink_.push(BattleSettlementPreparedMsg{
         .battle_id = state_.battle_id,
         .room_id = state_.room_id,
@@ -24,6 +52,7 @@ void BattleActor::finish_battle(BattleFinishReason reason, std::string triggerin
         .total_frames = state_.frame_number,
         .participant_user_ids = std::move(participant_user_ids),
         .replay_inputs = state_.replay_inputs,
+        .result = std::move(result),
     });
     sink_.push(BattleFinishedMsg{
         .battle_id = state_.battle_id,

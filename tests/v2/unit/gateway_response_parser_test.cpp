@@ -27,3 +27,65 @@ TEST(V2GatewayResponseParserTest, ParsesSessionPushBodies) {
     EXPECT_EQ(resumed->room_id, "room_resume");
     EXPECT_FALSE(resumed->in_battle);
 }
+
+TEST(V2GatewayResponseParserTest, ParsesRoomStatePushColonFormat) {
+    const auto state = v2::gateway::parse_room_state_push_body(
+        "room_state:room_alpha:owner_id:mem1,mem2,mem3:mem3:in_battle");
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ(state->room_id, "room_alpha");
+    EXPECT_EQ(state->owner_user_id, "owner_id");
+    ASSERT_EQ(state->member_ids.size(), 3U);
+    EXPECT_EQ(state->member_ids[0], "mem1");
+    EXPECT_EQ(state->member_ids[1], "mem2");
+    EXPECT_EQ(state->member_ids[2], "mem3");
+    ASSERT_EQ(state->ready_ids.size(), 1U);
+    EXPECT_EQ(state->ready_ids[0], "mem3");
+    EXPECT_TRUE(state->in_battle);
+}
+
+TEST(V2GatewayResponseParserTest, ParsesRoomStatePushAltKeyValueFormat) {
+    const auto state = v2::gateway::parse_room_state_push_body_alt(
+        "room_state:room_id=room_beta:owner_id=owner:members=mem1,mem2:ready=mem1,mem2:in_battle=1");
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ(state->room_id, "room_beta");
+    EXPECT_EQ(state->owner_user_id, "owner");
+    ASSERT_EQ(state->member_ids.size(), 2U);
+    EXPECT_EQ(state->member_ids[0], "mem1");
+    EXPECT_EQ(state->member_ids[1], "mem2");
+    ASSERT_EQ(state->ready_ids.size(), 2U);
+    EXPECT_TRUE(state->in_battle);
+}
+
+TEST(V2GatewayResponseParserTest, ParsesRoomStatePushAltMinimalFormat) {
+    const auto state = v2::gateway::parse_room_state_push_body_alt(
+        "room_state:room_id=room_min:owner_id=owner");
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ(state->room_id, "room_min");
+    EXPECT_EQ(state->owner_user_id, "owner");
+    EXPECT_TRUE(state->member_ids.empty());
+    EXPECT_TRUE(state->ready_ids.empty());
+    EXPECT_FALSE(state->in_battle);
+}
+
+TEST(V2GatewayResponseParserTest, RejectsInvalidRoomStateBodies) {
+    EXPECT_FALSE(v2::gateway::parse_room_state_push_body("invalid:data").has_value());
+    EXPECT_FALSE(v2::gateway::parse_room_state_push_body("room_state:").has_value());
+    EXPECT_FALSE(v2::gateway::parse_room_state_push_body_alt("not_room_state:...").has_value());
+    EXPECT_FALSE(v2::gateway::parse_room_state_push_body_alt("room_state:room_id=:owner_id=owner").has_value());
+}
+
+TEST(V2GatewayResponseParserTest, ParsesErrorResponseBodies) {
+    const auto error = v2::gateway::parse_error_response_body("invalid_user_id");
+    ASSERT_TRUE(error.has_value());
+    EXPECT_EQ(error->reason, "invalid_user_id");
+
+    EXPECT_FALSE(v2::gateway::parse_error_response_body("").has_value());
+}
+
+TEST(V2GatewayResponseParserTest, RejectsMalformedLoginAndRoomResponses) {
+    EXPECT_FALSE(v2::gateway::parse_login_response_body("bad_prefix:user").has_value());
+    EXPECT_FALSE(v2::gateway::parse_login_response_body("login_ok:").has_value());
+    EXPECT_FALSE(v2::gateway::parse_room_create_response_body("bad:room").has_value());
+    EXPECT_FALSE(v2::gateway::parse_room_create_response_body("room_created:").has_value());
+    EXPECT_FALSE(v2::gateway::parse_room_join_response_body("room_joined:").has_value());
+}

@@ -120,3 +120,43 @@ TEST(V2ShadowBridgePolicyTest, LoadedGatewayConfigDrivesMirrorPolicy) {
 
     std::filesystem::remove(path);
 }
+
+TEST(V2ShadowBridgePolicyTest, ForwardUnknownMessageReturnsFalse) {
+    v2::gateway::GatewayServerShadowBridge bridge({}, {}, false);
+    EXPECT_FALSE(bridge.should_forward(0));
+    EXPECT_FALSE(bridge.should_forward(9999));
+}
+
+TEST(V2ShadowBridgePolicyTest, ShouldEmitReturnsTrueForNonBattleMessages) {
+    v2::gateway::GatewayServerShadowBridge bridge({}, {}, false);
+    EXPECT_TRUE(bridge.should_emit(net::protocol::kLoginResponse, "login_ok:user"));
+    EXPECT_TRUE(bridge.should_emit(net::protocol::kRoomCreateResponse, "room_alpha"));
+    EXPECT_TRUE(bridge.should_emit(net::protocol::kRoomJoinResponse, "room_beta"));
+}
+
+TEST(V2ShadowBridgePolicyTest, ShouldEmitBattleStateWithUnknownKindReturnsTrue) {
+    v2::gateway::GatewayServerShadowBridge bridge({}, {}, false);
+    EXPECT_TRUE(bridge.should_emit(net::protocol::kBattleStatePush,
+                                   "battle_state:kind=unknown_kind:room_id=r:battle_id=b"));
+}
+
+TEST(V2ShadowBridgePolicyTest, ShouldEmitBattleStateWithUnparseableBodyReturnsTrue) {
+    v2::gateway::GatewayServerShadowBridge bridge({}, {}, false);
+    EXPECT_TRUE(bridge.should_emit(net::protocol::kBattleStatePush, "not:battle_state"));
+}
+
+TEST(V2ShadowBridgePolicyTest, EmitPolicyAllBitsCanBeToggledIndependently) {
+    v2::gateway::GatewayServerShadowBridge::EmitPolicy all_off(false, false, false, false, false);
+    v2::gateway::GatewayServerShadowBridge bridge({}, all_off, true);
+
+    EXPECT_FALSE(bridge.should_emit(net::protocol::kBattleInputPush,
+                                    "battle_input:user_id=u:seq=1:input=data"));
+    EXPECT_FALSE(bridge.should_emit(net::protocol::kBattleStatePush,
+                                    "battle_state:kind=started:room_id=r:battle_id=b"));
+    EXPECT_FALSE(bridge.should_emit(net::protocol::kBattleStatePush,
+                                    "battle_state:kind=frame:room_id=r:battle_id=b:frame=1:trigger=input"));
+    EXPECT_FALSE(bridge.should_emit(net::protocol::kBattleStatePush,
+                                    "battle_state:kind=settlement:room_id=r:battle_id=b:reason=surrender:user_id=u"));
+    EXPECT_FALSE(bridge.should_emit(net::protocol::kBattleStatePush,
+                                    "battle_state:kind=finished:room_id=r:battle_id=b:reason=surrender:user_id=u"));
+}

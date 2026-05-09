@@ -30,6 +30,7 @@ public:
         std::uint32_t total_frames = 0;
         std::vector<std::string> participant_user_ids;
         std::string replay_payload;
+        v2::battle::BattleResultSummary result;
     };
 
     Runtime(v2::runtime::ActorSystem& actor_system,

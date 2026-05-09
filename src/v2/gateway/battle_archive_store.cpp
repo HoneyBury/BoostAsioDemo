@@ -15,6 +15,15 @@ JsonFileBattleArchiveStore::JsonFileBattleArchiveStore(std::filesystem::path dir
 
 bool JsonFileBattleArchiveStore::persist(const Runtime::BattleArchive& archive) {
     const auto report_path = dir_ / (archive.battle_id + ".report.json");
+
+    nlohmann::json scores = nlohmann::json::array();
+    for (const auto& score : archive.result.scores) {
+        scores.push_back({
+            {"user_id", score.user_id},
+            {"score", score.score},
+        });
+    }
+
     nlohmann::json report{
         {"battle_id", archive.battle_id},
         {"room_id", archive.room_id},
@@ -22,6 +31,10 @@ bool JsonFileBattleArchiveStore::persist(const Runtime::BattleArchive& archive) 
         {"triggering_user_id", archive.triggering_user_id},
         {"total_frames", archive.total_frames},
         {"participants", archive.participant_user_ids},
+        {"winner_user_id", archive.result.winner_user_id.has_value()
+                               ? nlohmann::json(*archive.result.winner_user_id)
+                               : nlohmann::json(nullptr)},
+        {"scores", std::move(scores)},
     };
 
     std::ofstream output(report_path);

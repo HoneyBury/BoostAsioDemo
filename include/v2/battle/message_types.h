@@ -114,6 +114,20 @@ struct BattleFinishedMsg {
     std::string triggering_user_id;
 };
 
+struct BattleScore {
+    std::string user_id;
+    std::int64_t score = 0;
+};
+
+struct BattleResultSummary {
+    std::string battle_id;
+    std::string room_id;
+    BattleFinishReason reason = BattleFinishReason::kFinished;
+    std::optional<std::string> winner_user_id;
+    std::vector<BattleScore> scores;
+    std::uint32_t total_frames = 0;
+};
+
 struct BattleSettlementPreparedMsg {
     std::string battle_id;
     std::string room_id;
@@ -122,6 +136,7 @@ struct BattleSettlementPreparedMsg {
     std::uint32_t total_frames = 0;
     std::vector<std::string> participant_user_ids;
     std::vector<BattleReplayInputRecord> replay_inputs;
+    BattleResultSummary result;
 };
 
 using BattleEvent = std::variant<BattleCreatedMsg,

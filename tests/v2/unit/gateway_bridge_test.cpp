@@ -112,3 +112,109 @@ TEST(V2GatewayBridgeTest, RateLimitPolicyCanRejectRequest) {
     EXPECT_EQ(writes.front().envelope.body,
               net::protocol::to_string(net::protocol::ErrorCode::kRateLimited));
 }
+
+TEST(V2GatewayBridgeTest, EchoWithEmptyBodyReturnsEmptyEcho) {
+    v2::runtime::ActorSystem actor_system;
+    v2::gateway::SessionAdapter adapter(actor_system);
+    auto gateway_actor = actor_system.create_actor(
+        std::make_unique<v2::gateway::GatewayActor>(adapter));
+    adapter.bind_gateway(gateway_actor);
+
+    v2::gateway::ClientEnvelope envelope;
+    envelope.session_id = 11;
+    envelope.protocol_message_id = net::protocol::kEchoRequest;
+    envelope.request_id = 200;
+    envelope.body.clear();
+
+    const auto writes = adapter.handle_incoming(envelope);
+    ASSERT_EQ(writes.size(), 1U);
+    EXPECT_EQ(writes.front().envelope.protocol_message_id, net::protocol::kEchoResponse);
+    EXPECT_EQ(writes.front().envelope.body, "");
+}
+
+TEST(V2GatewayBridgeTest, EchoRequestPreservesRequestId) {
+    v2::runtime::ActorSystem actor_system;
+    v2::gateway::SessionAdapter adapter(actor_system);
+    auto gateway_actor = actor_system.create_actor(
+        std::make_unique<v2::gateway::GatewayActor>(adapter));
+    adapter.bind_gateway(gateway_actor);
+
+    v2::gateway::ClientEnvelope envelope;
+    envelope.session_id = 12;
+    envelope.protocol_message_id = net::protocol::kEchoRequest;
+    envelope.request_id = 0;
+    envelope.body = "zero-reqid";
+
+    const auto writes = adapter.handle_incoming(envelope);
+    ASSERT_EQ(writes.size(), 1U);
+    EXPECT_EQ(writes.front().envelope.request_id, 0U);
+    EXPECT_EQ(writes.front().envelope.body, "zero-reqid");
+}
+
+TEST(V2GatewayBridgeTest, MultipleLoginReturnsSeparateResponses) {
+    v2::runtime::ActorSystem actor_system;
+    v2::gateway::SessionAdapter adapter(actor_system);
+    auto gateway_actor = actor_system.create_actor(
+        std::make_unique<v2::gateway::GatewayActor>(adapter));
+    adapter.bind_gateway(gateway_actor);
+
+    const auto writes1 = adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 20,
+        .protocol_message_id = net::protocol::kLoginRequest,
+        .request_id = 1,
+        .body = "user_a|token:a|Alice",
+    });
+    ASSERT_EQ(writes1.size(), 1U);
+    EXPECT_EQ(writes1.front().envelope.body, "login_ok:user_a");
+
+    const auto writes2 = adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 21,
+        .protocol_message_id = net::protocol::kLoginRequest,
+        .request_id = 2,
+        .body = "user_b|token:b|Bob",
+    });
+    ASSERT_EQ(writes2.size(), 1U);
+    EXPECT_EQ(writes2.front().envelope.body, "login_ok:user_b");
+}
+
+TEST(V2GatewayBridgeTest, VerifyLoginUsersCanEcho) {
+    v2::runtime::ActorSystem actor_system;
+    v2::gateway::SessionAdapter adapter(actor_system);
+    auto gateway_actor = actor_system.create_actor(
+        std::make_unique<v2::gateway::GatewayActor>(adapter));
+    adapter.bind_gateway(gateway_actor);
+
+    adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 30,
+        .protocol_message_id = net::protocol::kLoginRequest,
+        .request_id = 1,
+        .body = "user_echo|token:e|EchoUser",
+    });
+
+    const auto writes = adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 30,
+        .protocol_message_id = net::protocol::kEchoRequest,
+        .request_id = 2,
+        .body = "echo_after_login",
+    });
+    ASSERT_EQ(writes.size(), 1U);
+    EXPECT_EQ(writes.front().envelope.protocol_message_id, net::protocol::kEchoResponse);
+    EXPECT_EQ(writes.front().envelope.body, "echo_after_login");
+}
+
+TEST(V2GatewayBridgeTest, HeartbeatReturnsResponse) {
+    v2::runtime::ActorSystem actor_system;
+    v2::gateway::SessionAdapter adapter(actor_system);
+    auto gateway_actor = actor_system.create_actor(
+        std::make_unique<v2::gateway::GatewayActor>(adapter));
+    adapter.bind_gateway(gateway_actor);
+
+    const auto writes = adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 40,
+        .protocol_message_id = net::protocol::kHeartbeatRequest,
+        .request_id = 0,
+        .body = {},
+    });
+    ASSERT_EQ(writes.size(), 1U);
+    EXPECT_EQ(writes.front().envelope.protocol_message_id, net::protocol::kHeartbeatResponse);
+}

@@ -27,6 +27,7 @@ struct ParsedBattleStartCommandBody {
 };
 
 [[nodiscard]] std::optional<ParsedBattleStartCommandBody> parse_battle_start_command_body(std::string_view body);
+[[nodiscard]] bool validate_battle_start_command_body(const ParsedBattleStartCommandBody& body) noexcept;
 
 struct ParsedBattleInputCommandBody {
     bool is_finish_request = false;

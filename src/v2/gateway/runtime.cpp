@@ -678,6 +678,7 @@ void Runtime::archive_battle(const v2::battle::BattleSettlementPreparedMsg& sett
         .total_frames = settlement.total_frames,
         .participant_user_ids = settlement.participant_user_ids,
         .replay_payload = build_replay_payload(settlement),
+        .result = settlement.result,
     };
     archived_battles_[settlement.battle_id] = archive;
     if (archive_sink_ != nullptr) {

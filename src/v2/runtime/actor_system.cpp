@@ -5,6 +5,41 @@
 
 namespace v2::runtime {
 
+ScheduleHandle::ScheduleHandle(ActorSystem* system, ActorSystem::ScheduleId schedule_id) noexcept
+    : system_(system), schedule_id_(schedule_id) {}
+
+ScheduleHandle::~ScheduleHandle() {
+    if (system_ != nullptr && schedule_id_ != 0) {
+        system_->cancel_schedule(schedule_id_);
+    }
+}
+
+ScheduleHandle::ScheduleHandle(ScheduleHandle&& other) noexcept
+    : system_(other.system_), schedule_id_(other.schedule_id_) {
+    other.system_ = nullptr;
+    other.schedule_id_ = 0;
+}
+
+ScheduleHandle& ScheduleHandle::operator=(ScheduleHandle&& other) noexcept {
+    if (this != &other) {
+        (void)release();
+        system_ = other.system_;
+        schedule_id_ = other.schedule_id_;
+        other.system_ = nullptr;
+        other.schedule_id_ = 0;
+    }
+    return *this;
+}
+
+bool ScheduleHandle::release() noexcept {
+    if (system_ == nullptr || schedule_id_ == 0) {
+        return false;
+    }
+    system_ = nullptr;
+    schedule_id_ = 0;
+    return true;
+}
+
 ActorSystem::~ActorSystem() {
     shutdown();
 }
@@ -104,6 +139,24 @@ ActorSystem::ScheduleId ActorSystem::schedule_after(v2::actor::Message message, 
     return schedule_id;
 }
 
+ActorSystem::ScheduleId ActorSystem::schedule_after(v2::actor::Message message, TimePoint ready_at) {
+    if (shutting_down_ || message.header.target_actor == 0) {
+        return 0;
+    }
+    if (ready_at <= Clock::now()) {
+        send(std::move(message));
+        return 0;
+    }
+    const auto schedule_id = next_schedule_id_++;
+    scheduled_messages_.push_back(ScheduledMessage{
+        .schedule_id = schedule_id,
+        .use_wall_clock = true,
+        .ready_at = ready_at,
+        .message = std::move(message),
+    });
+    return schedule_id;
+}
+
 ActorSystem::ScheduleId ActorSystem::schedule_every(v2::actor::Message message,
                                                     Duration initial_delay,
                                                     Duration interval) {
@@ -116,6 +169,25 @@ ActorSystem::ScheduleId ActorSystem::schedule_every(v2::actor::Message message,
         .use_wall_clock = true,
         .ready_at = Clock::now() + (initial_delay <= Duration::zero() ? interval : initial_delay),
         .repeat_interval = interval,
+        .message = std::move(message),
+    });
+    return schedule_id;
+}
+
+ActorSystem::ScheduleId ActorSystem::schedule_every(v2::actor::Message message,
+                                                    Duration initial_delay,
+                                                    Duration interval,
+                                                    std::size_t max_repetitions) {
+    if (shutting_down_ || message.header.target_actor == 0 || interval <= Duration::zero() || max_repetitions == 0) {
+        return 0;
+    }
+    const auto schedule_id = next_schedule_id_++;
+    scheduled_messages_.push_back(ScheduledMessage{
+        .schedule_id = schedule_id,
+        .use_wall_clock = true,
+        .ready_at = Clock::now() + (initial_delay <= Duration::zero() ? interval : initial_delay),
+        .repeat_interval = interval,
+        .max_repetitions = max_repetitions,
         .message = std::move(message),
     });
     return schedule_id;
@@ -197,12 +269,14 @@ void ActorSystem::promote_scheduled_messages() {
     for (auto& scheduled : scheduled_messages_) {
         if (scheduled.use_wall_clock) {
             if (scheduled.ready_at <= Clock::now()) {
+                send(scheduled.message);
                 if (scheduled.repeat_interval > Duration::zero()) {
-                    send(scheduled.message);
-                    scheduled.ready_at += scheduled.repeat_interval;
-                    pending.push_back(std::move(scheduled));
-                } else {
-                    send(std::move(scheduled.message));
+                    ++scheduled.repetitions_fired;
+                    if (scheduled.max_repetitions == 0 ||
+                        scheduled.repetitions_fired < scheduled.max_repetitions) {
+                        scheduled.ready_at += scheduled.repeat_interval;
+                        pending.push_back(std::move(scheduled));
+                    }
                 }
             } else {
                 pending.push_back(std::move(scheduled));

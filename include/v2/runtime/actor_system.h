@@ -34,7 +34,12 @@ public:
     void send_after(v2::actor::Message message, Duration delay);
     void send_at(v2::actor::Message message, TimePoint ready_at);
     [[nodiscard]] ScheduleId schedule_after(v2::actor::Message message, Duration delay);
+    [[nodiscard]] ScheduleId schedule_after(v2::actor::Message message, TimePoint ready_at);
     [[nodiscard]] ScheduleId schedule_every(v2::actor::Message message, Duration initial_delay, Duration interval);
+    [[nodiscard]] ScheduleId schedule_every(v2::actor::Message message,
+                                            Duration initial_delay,
+                                            Duration interval,
+                                            std::size_t max_repetitions);
     bool cancel_schedule(ScheduleId schedule_id) noexcept;
     std::size_t dispatch_all();
     void shutdown();
@@ -57,6 +62,8 @@ private:
         std::size_t ready_after_dispatch = 0;
         TimePoint ready_at{};
         Duration repeat_interval{};
+        std::size_t max_repetitions = 0;
+        std::size_t repetitions_fired = 0;
         v2::actor::Message message;
     };
 
@@ -67,6 +74,26 @@ private:
     ScheduleId next_schedule_id_ = 1;
     v2::actor::ActorId next_actor_id_ = 1;
     bool shutting_down_ = false;
+};
+
+class ScheduleHandle {
+public:
+    ScheduleHandle() = default;
+    ScheduleHandle(ActorSystem* system, ActorSystem::ScheduleId schedule_id) noexcept;
+    ~ScheduleHandle();
+
+    ScheduleHandle(const ScheduleHandle&) = delete;
+    ScheduleHandle& operator=(const ScheduleHandle&) = delete;
+    ScheduleHandle(ScheduleHandle&& other) noexcept;
+    ScheduleHandle& operator=(ScheduleHandle&& other) noexcept;
+
+    [[nodiscard]] explicit operator bool() const noexcept { return system_ != nullptr && schedule_id_ != 0; }
+    [[nodiscard]] ActorSystem::ScheduleId id() const noexcept { return schedule_id_; }
+    bool release() noexcept;
+
+private:
+    ActorSystem* system_ = nullptr;
+    ActorSystem::ScheduleId schedule_id_ = 0;
 };
 
 }  // namespace v2::runtime

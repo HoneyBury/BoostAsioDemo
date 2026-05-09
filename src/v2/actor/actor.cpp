@@ -1,6 +1,9 @@
 #include "v2/actor/actor.h"
 
+#include "v2/runtime/actor_system.h"
+
 #include <algorithm>
+#include <utility>
 
 namespace v2::actor {
 
@@ -46,6 +49,19 @@ ScheduleId Actor::schedule_after(const ActorRef& target,
     return schedule_id;
 }
 
+ScheduleId Actor::schedule_after(const ActorRef& target,
+                                 Message message,
+                                 std::chrono::steady_clock::time_point ready_at) {
+    if (!target.is_valid()) {
+        return 0;
+    }
+    message.header.source_actor = id();
+    message.header.target_actor = target.actor_id();
+    const auto schedule_id = target.schedule_after(std::move(message), ready_at);
+    track_schedule(schedule_id);
+    return schedule_id;
+}
+
 ScheduleId Actor::schedule_every(const ActorRef& target,
                                  Message message,
                                  std::chrono::steady_clock::duration initial_delay,
@@ -58,6 +74,42 @@ ScheduleId Actor::schedule_every(const ActorRef& target,
     const auto schedule_id = target.schedule_every(std::move(message), initial_delay, interval);
     track_schedule(schedule_id);
     return schedule_id;
+}
+
+ScheduleId Actor::schedule_every(const ActorRef& target,
+                                 Message message,
+                                 std::chrono::steady_clock::duration initial_delay,
+                                 std::chrono::steady_clock::duration interval,
+                                 std::size_t max_repetitions) {
+    if (!target.is_valid()) {
+        return 0;
+    }
+    message.header.source_actor = id();
+    message.header.target_actor = target.actor_id();
+    const auto schedule_id =
+        target.schedule_every(std::move(message), initial_delay, interval, max_repetitions);
+    track_schedule(schedule_id);
+    return schedule_id;
+}
+
+v2::runtime::ScheduleHandle Actor::schedule_owned(const ActorRef& target,
+                                                  Message message,
+                                                  std::chrono::steady_clock::duration interval) {
+    return schedule_owned(target, std::move(message), interval, interval);
+}
+
+v2::runtime::ScheduleHandle Actor::schedule_owned(const ActorRef& target,
+                                                  Message message,
+                                                  std::chrono::steady_clock::duration initial_delay,
+                                                  std::chrono::steady_clock::duration interval) {
+    if (!target.is_valid()) {
+        return {};
+    }
+    message.header.source_actor = id();
+    message.header.target_actor = target.actor_id();
+    const auto schedule_id = target.schedule_every(std::move(message), initial_delay, interval);
+    track_schedule(schedule_id);
+    return v2::runtime::ScheduleHandle(target.system(), schedule_id);
 }
 
 bool Actor::cancel_schedule(ScheduleId schedule_id) {

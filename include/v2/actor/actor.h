@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <vector>
 #include <utility>
 
@@ -13,6 +14,7 @@ namespace v2::actor {
 namespace v2::runtime {
 
 class ActorSystem;
+class ScheduleHandle;
 
 }  // namespace v2::runtime
 
@@ -37,10 +39,25 @@ protected:
     [[nodiscard]] ScheduleId schedule_after(const ActorRef& target,
                                             Message message,
                                             std::chrono::steady_clock::duration delay);
+    [[nodiscard]] ScheduleId schedule_after(const ActorRef& target,
+                                            Message message,
+                                            std::chrono::steady_clock::time_point ready_at);
     [[nodiscard]] ScheduleId schedule_every(const ActorRef& target,
                                             Message message,
                                             std::chrono::steady_clock::duration initial_delay,
                                             std::chrono::steady_clock::duration interval);
+    [[nodiscard]] ScheduleId schedule_every(const ActorRef& target,
+                                            Message message,
+                                            std::chrono::steady_clock::duration initial_delay,
+                                            std::chrono::steady_clock::duration interval,
+                                            std::size_t max_repetitions);
+    [[nodiscard]] v2::runtime::ScheduleHandle schedule_owned(const ActorRef& target,
+                                                             Message message,
+                                                             std::chrono::steady_clock::duration interval);
+    [[nodiscard]] v2::runtime::ScheduleHandle schedule_owned(const ActorRef& target,
+                                                             Message message,
+                                                             std::chrono::steady_clock::duration initial_delay,
+                                                             std::chrono::steady_clock::duration interval);
     bool cancel_schedule(ScheduleId schedule_id);
 
 private:

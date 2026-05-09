@@ -79,6 +79,33 @@ private:
     v2::actor::ActorRef target_;
 };
 
+class CountingActor final : public v2::actor::Actor {
+public:
+    void on_message(v2::actor::Message&&) override { ++count_; }
+    int count() const noexcept { return count_; }
+
+private:
+    int count_ = 0;
+};
+
+class SelfSchedulingActor final : public v2::actor::Actor {
+public:
+    void on_message(v2::actor::Message&&) override {
+        ++count_;
+        if (count_ == 1) {
+            v2::actor::Message msg;
+            msg.header.kind = v2::actor::MessageKind::kUser;
+            msg.payload = std::string("tick");
+            handle_ = schedule_owned(self(), std::move(msg), std::chrono::milliseconds(10));
+        }
+    }
+    int count() const noexcept { return count_; }
+
+private:
+    int count_ = 0;
+    v2::runtime::ScheduleHandle handle_;
+};
+
 }  // namespace
 
 TEST(V2ActorRuntimeTest, CreateActorStartsAndShutdownStops) {
@@ -203,4 +230,134 @@ TEST(V2ActorRuntimeTest, RepeatingScheduleDeliversUntilCancelled) {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     EXPECT_EQ(actor_system.dispatch_all(), 0U);
     ASSERT_EQ(received.size(), 2U);
+}
+
+TEST(V2ActorRuntimeTest, ScheduleAtAbsoluteTimePointDeliversWhenDue) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("at-time-v2");
+
+    const auto ready_at = v2::runtime::ActorSystem::Clock::now() + std::chrono::milliseconds(10);
+    const auto schedule_id = actor_system.schedule_after(std::move(message), ready_at);
+    ASSERT_NE(schedule_id, 0U);
+
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(received.size(), 1U);
+    EXPECT_EQ(received.front(), "at-time-v2");
+}
+
+TEST(V2ActorRuntimeTest, ScheduleEveryWithMaxRepetitionsStopsAfterLimit) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("max-rep");
+
+    const auto schedule_id = actor_system.schedule_every(
+        std::move(message), std::chrono::milliseconds(10), std::chrono::milliseconds(10), 2);
+    ASSERT_NE(schedule_id, 0U);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(received.size(), 2U);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+    ASSERT_EQ(received.size(), 2U);
+}
+
+TEST(V2ActorRuntimeTest, ScheduleHandleCancelsOnDestruction) {
+    v2::runtime::ActorSystem actor_system;
+    auto actor = actor_system.create_actor(std::make_unique<CountingActor>());
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = actor.actor_id();
+    message.payload = std::string("raii");
+
+    {
+        const auto schedule_id = actor_system.schedule_every(
+            std::move(message), std::chrono::milliseconds(5), std::chrono::milliseconds(5));
+        v2::runtime::ScheduleHandle handle(&actor_system, schedule_id);
+        ASSERT_TRUE(handle);
+        EXPECT_EQ(handle.id(), schedule_id);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+}
+
+TEST(V2ActorRuntimeTest, ScheduleHandleReleaseDisarmsAutoCancel) {
+    v2::runtime::ActorSystem actor_system;
+    auto actor = actor_system.create_actor(std::make_unique<CountingActor>());
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = actor.actor_id();
+    message.payload = std::string("released");
+
+    const auto schedule_id = actor_system.schedule_after(
+        std::move(message), std::chrono::milliseconds(10));
+    ASSERT_NE(schedule_id, 0U);
+
+    {
+        v2::runtime::ScheduleHandle handle(&actor_system, schedule_id);
+        ASSERT_TRUE(handle);
+        EXPECT_TRUE(handle.release());
+        EXPECT_FALSE(handle);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+}
+
+TEST(V2ActorRuntimeTest, ScheduleHandleMoveSemanticsPreserveCancellation) {
+    v2::runtime::ActorSystem actor_system;
+    auto actor = actor_system.create_actor(std::make_unique<CountingActor>());
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = actor.actor_id();
+    message.payload = std::string("moved");
+
+    const auto schedule_id = actor_system.schedule_every(
+        std::move(message), std::chrono::milliseconds(5), std::chrono::milliseconds(5));
+    ASSERT_NE(schedule_id, 0U);
+
+    v2::runtime::ScheduleHandle handle1(&actor_system, schedule_id);
+    auto handle2 = std::move(handle1);
+    EXPECT_FALSE(handle1);
+    EXPECT_TRUE(handle2);
+}
+
+TEST(V2ActorRuntimeTest, SelfSchedulingActorOwnsRepeatLifecycle) {
+    v2::runtime::ActorSystem actor_system;
+    auto actor = actor_system.create_actor(std::make_unique<SelfSchedulingActor>());
+
+    v2::actor::Message msg;
+    msg.header.kind = v2::actor::MessageKind::kUser;
+    msg.payload = std::string("kickoff");
+    actor.tell(std::move(msg));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
 }

@@ -54,6 +54,11 @@
 - `gateway.v2_shadow_bridge_room`
 - `gateway.v2_shadow_bridge_battle`
 - `gateway.v2_shadow_bridge_echo`
+- `gateway.v2_shadow_bridge_emit_battle_input_push`
+- `gateway.v2_shadow_bridge_emit_battle_state_started`
+- `gateway.v2_shadow_bridge_emit_battle_state_frame`
+- `gateway.v2_shadow_bridge_emit_battle_state_settlement`
+- `gateway.v2_shadow_bridge_emit_battle_state_finished`
 
 当前限制：
 
@@ -61,6 +66,7 @@
 - 不支持热更新切换
 - 默认仍应保持关闭
 - 当前仍建议优先镜像 `login / room`，再逐步放开 `battle`
+- response mirror 当前主要细化到 battle 域，还没有推广到全部 v1/v2 response family
 
 ## 4. 推荐接入顺序
 
@@ -75,6 +81,7 @@
 
 在现阶段，主链接入优先级低于：
 
-1. battle lifecycle 完整化
-2. battle runtime 壳补齐
-3. v2 文档与测试护栏固定
+1. battle finish 后续事件和结算语义收口
+2. timer / delayed message 从原型推进到可复用调度能力
+3. battle frame loop 与 external schema 继续稳定
+4. v2 文档、配置和测试护栏固定

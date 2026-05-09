@@ -12,11 +12,12 @@
 - 单线程 mailbox
 - `ActorSystem::dispatch_all()`
 - 本地 `tell()` 投递
+- 基于 dispatch round 的最小 delayed message
 
 它还没有实现：
 
 - `ask()` / request-response future
-- timer / delayed message
+- wall-clock timer / scheduler
 - supervisor 树
 - 跨线程 / 跨核 actor 调度
 - 远程 actor 位置透明
@@ -48,9 +49,12 @@ SessionAdapter
 - battle input 受理和跨 session push
 - battle frame 推进与基于 frame limit 的正常结束
 - battle 主动结束请求 `finish:<reason>`
+- battle settlement 预备事件与 `finished` 前置 push
 - 玩家断线触发 battle finish 与 room/player 回切
 - battle finish reason 已切到最小枚举语义，但外部协议仍保持字符串兼容层
 - battle wire body 已集中到统一 codec，并已有字段级 parse/format 回归测试
+- battle wire body 已拆出独立 parser / validator，bridge 和测试可共用字段模型
+- actor runtime 已支持最小 `send_after()` / `tell_after()` 能力
 
 ## 4. 当前限制
 
@@ -59,14 +63,15 @@ SessionAdapter
 - battle 已支持最小 frame 推进和主动结束请求，但 frame 驱动仍是 prototype 级壳
 - runtime 里仍有较多 orchestration 逻辑，尚未拆出更清晰的 domain coordinator
 - 没有多核 I/O、无锁队列和背压治理
-- battle wire schema 虽已稳定到键值字符串，但还没有独立 versioning 和统一 external parser 入口
+- delayed message 当前只基于 `dispatch_all()` 轮次推进，不是 wall-clock timer
+- battle wire schema 虽已稳定到键值字符串，但还没有独立 versioning
 
 ## 5. 下一步建议
 
 runtime 下一阶段应优先补：
 
-1. battle wire schema 继续收口成独立 external parser / validator
-2. battle 结束分支扩展与最小结算事件
-3. actor timer / delayed message
-4. battle 状态广播与 frame 驱动壳
-5. 与现有 `GatewayServer` 的桥接缝，而不是直接替换入口
+1. battle finish 后续 typed 事件链和 room/player 的正式结算收口
+2. 从 dispatch-round delayed message 走到真正 timer / scheduler
+3. battle frame 驱动从 prototype 壳走向可替换的 authoritative loop
+4. 把 runtime 内 orchestration 继续从入口逻辑里剥离
+5. 与现有 `GatewayServer` 的桥接缝保持旁路，不直接替换入口

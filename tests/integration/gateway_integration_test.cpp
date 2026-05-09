@@ -407,7 +407,8 @@ TEST(GatewayIntegrationTest, ShadowBridgePolicyCanDisableRoomAndEchoMirroring) {
     policy.battle = true;
     policy.echo = false;
 
-    auto bridge = std::make_shared<v2::gateway::GatewayServerShadowBridge>(policy, false);
+    auto bridge = std::make_shared<v2::gateway::GatewayServerShadowBridge>(
+        policy, v2::gateway::GatewayServerShadowBridge::EmitPolicy{}, false);
     GatewayTestRuntime runtime;
     runtime.packet_bridge = bridge;
     SKIP_IF_RUNTIME_UNAVAILABLE(runtime);

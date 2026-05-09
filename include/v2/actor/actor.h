@@ -30,6 +30,7 @@ public:
 
 protected:
     void tell(const ActorRef& target, Message message) const;
+    void tell_after(const ActorRef& target, Message message, std::size_t dispatch_delay) const;
 
 private:
     friend class v2::runtime::ActorSystem;

@@ -43,8 +43,24 @@ void ActorSystem::send(v2::actor::Message message) {
     enqueue_ready_actor(message.header.target_actor, *cell);
 }
 
+void ActorSystem::send_after(v2::actor::Message message, std::size_t dispatch_delay) {
+    if (shutting_down_ || message.header.target_actor == 0) {
+        return;
+    }
+    if (dispatch_delay == 0) {
+        send(std::move(message));
+        return;
+    }
+
+    scheduled_messages_.push_back(ScheduledMessage{
+        .ready_after_dispatch = dispatch_round_ + dispatch_delay,
+        .message = std::move(message),
+    });
+}
+
 std::size_t ActorSystem::dispatch_all() {
     std::size_t dispatched = 0;
+    promote_scheduled_messages();
     while (!ready_actors_.empty()) {
         const auto actor_id = ready_actors_.front();
         ready_actors_.pop_front();
@@ -62,6 +78,7 @@ std::size_t ActorSystem::dispatch_all() {
             ++dispatched;
         }
     }
+    ++dispatch_round_;
     return dispatched;
 }
 
@@ -71,6 +88,7 @@ void ActorSystem::shutdown() {
     }
     shutting_down_ = true;
     ready_actors_.clear();
+    scheduled_messages_.clear();
 
     for (auto& [actor_id, cell] : actors_) {
         (void)actor_id;
@@ -95,6 +113,21 @@ void ActorSystem::enqueue_ready_actor(v2::actor::ActorId actor_id, ActorCell& ce
     }
     ready_actors_.push_back(actor_id);
     cell.queued = true;
+}
+
+void ActorSystem::promote_scheduled_messages() {
+    std::vector<ScheduledMessage> pending;
+    pending.reserve(scheduled_messages_.size());
+
+    for (auto& scheduled : scheduled_messages_) {
+        if (scheduled.ready_after_dispatch <= dispatch_round_) {
+            send(std::move(scheduled.message));
+        } else {
+            pending.push_back(std::move(scheduled));
+        }
+    }
+
+    scheduled_messages_ = std::move(pending);
 }
 
 }  // namespace v2::runtime

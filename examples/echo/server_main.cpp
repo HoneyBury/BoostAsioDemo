@@ -156,16 +156,23 @@ int main(int argc, char* argv[]) {
         });
     if (config.v2_shadow_bridge_enabled) {
         const auto mirror_policy = v2::gateway::make_shadow_bridge_policy(config);
+        const auto emit_policy = v2::gateway::make_shadow_bridge_emit_policy(config);
         shadow_bridge = std::make_shared<v2::gateway::GatewayServerShadowBridge>(
             mirror_policy,
+            emit_policy,
             config.v2_shadow_bridge_emit_responses);
         server.set_packet_bridge(shadow_bridge);
-        LOG_INFO("Enabled v2 shadow bridge (emit_responses={}, login={}, room={}, battle={}, echo={})",
+        LOG_INFO("Enabled v2 shadow bridge (emit_responses={}, login={}, room={}, battle={}, echo={}, battle_input_push={}, state_started={}, state_frame={}, state_settlement={}, state_finished={})",
                  config.v2_shadow_bridge_emit_responses ? "true" : "false",
                  config.v2_shadow_bridge_login ? "true" : "false",
                  config.v2_shadow_bridge_room ? "true" : "false",
                  config.v2_shadow_bridge_battle ? "true" : "false",
-                 config.v2_shadow_bridge_echo ? "true" : "false");
+                 config.v2_shadow_bridge_echo ? "true" : "false",
+                 config.v2_shadow_bridge_emit_battle_input_push ? "true" : "false",
+                 config.v2_shadow_bridge_emit_battle_state_started ? "true" : "false",
+                 config.v2_shadow_bridge_emit_battle_state_frame ? "true" : "false",
+                 config.v2_shadow_bridge_emit_battle_state_settlement ? "true" : "false",
+                 config.v2_shadow_bridge_emit_battle_state_finished ? "true" : "false");
     }
     server.set_connection_limits(config.max_connections, config.per_ip_connection_limit);
     server.start();
@@ -184,7 +191,12 @@ int main(int argc, char* argv[]) {
                 new_cfg.v2_shadow_bridge_login != config.v2_shadow_bridge_login ||
                 new_cfg.v2_shadow_bridge_room != config.v2_shadow_bridge_room ||
                 new_cfg.v2_shadow_bridge_battle != config.v2_shadow_bridge_battle ||
-                new_cfg.v2_shadow_bridge_echo != config.v2_shadow_bridge_echo) {
+                new_cfg.v2_shadow_bridge_echo != config.v2_shadow_bridge_echo ||
+                new_cfg.v2_shadow_bridge_emit_battle_input_push != config.v2_shadow_bridge_emit_battle_input_push ||
+                new_cfg.v2_shadow_bridge_emit_battle_state_started != config.v2_shadow_bridge_emit_battle_state_started ||
+                new_cfg.v2_shadow_bridge_emit_battle_state_frame != config.v2_shadow_bridge_emit_battle_state_frame ||
+                new_cfg.v2_shadow_bridge_emit_battle_state_settlement != config.v2_shadow_bridge_emit_battle_state_settlement ||
+                new_cfg.v2_shadow_bridge_emit_battle_state_finished != config.v2_shadow_bridge_emit_battle_state_finished) {
                 LOG_WARN("v2 shadow bridge settings are startup-only and were not hot-reloaded");
             }
         });

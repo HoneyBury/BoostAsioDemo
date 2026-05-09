@@ -233,6 +233,14 @@ std::string format_battle_frame_body(const v2::battle::BattleFrameAdvancedMsg& f
                        frame.trigger);
 }
 
+std::string format_battle_settlement_body(const v2::battle::BattleSettlementPreparedMsg& settlement) {
+    return fmt::format("battle_state:kind=settlement:room_id={}:battle_id={}:reason={}:user_id={}",
+                       settlement.room_id,
+                       settlement.battle_id,
+                       v2::battle::to_string(settlement.reason),
+                       settlement.triggering_user_id);
+}
+
 std::string format_battle_finished_body(const v2::battle::BattleFinishedMsg& finished) {
     return fmt::format("battle_state:kind=finished:room_id={}:battle_id={}:reason={}:user_id={}",
                        finished.room_id,

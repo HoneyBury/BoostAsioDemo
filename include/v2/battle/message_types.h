@@ -105,9 +105,17 @@ struct BattleFinishedMsg {
     std::string triggering_user_id;
 };
 
+struct BattleSettlementPreparedMsg {
+    std::string battle_id;
+    std::string room_id;
+    BattleFinishReason reason = BattleFinishReason::kFinished;
+    std::string triggering_user_id;
+};
+
 using BattleEvent = std::variant<BattleCreatedMsg,
                                  BattleInputAcceptedMsg,
                                  BattleFrameAdvancedMsg,
+                                 BattleSettlementPreparedMsg,
                                  BattleFinishedMsg>;
 
 }  // namespace v2::battle

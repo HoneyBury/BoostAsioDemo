@@ -53,7 +53,8 @@ GatewayServer
 
 - 这条链路当前用于灰度镜像和试验，不替换 `v1` 默认分发
 - 默认关闭，只建议启动期通过配置打开
-- 当前灰度粒度已经细化到 `login / room / battle / echo` 四个域
+- 当前 request mirror 粒度已经细化到 `login / room / battle / echo` 四个域
+- 当前 response emit 粒度已经细化到 `battle_input_push / battle_state_started / battle_state_frame / battle_state_settlement / battle_state_finished`
 
 ## 3. 当前已建模消息
 
@@ -89,6 +90,7 @@ GatewayServer
 - `battle_input:user_id={user_id}:seq={seq}:input={payload}`
 - `battle_end_accepted:{reason}`
 - `battle_state:kind=frame:room_id={room_id}:battle_id={battle_id}:frame={n}:trigger={source}`
+- `battle_state:kind=settlement:room_id={room_id}:battle_id={battle_id}:reason={reason}:user_id={user_id}`
 - `battle_state:kind=finished:room_id={room_id}:battle_id={battle_id}:reason={reason}:user_id={user_id}`
 
 当前用于主动结束 battle 的请求约定：
@@ -101,9 +103,11 @@ GatewayServer
 
 - 外部仍传字符串 body
 - battle body 的格式化与解析已经集中到单一 codec，避免散落在 runtime / demo / 测试里
+- battle wire body 已新增独立 `battle_wire_parser` / validator，gateway bridge / runtime / test 可以共用同一套字段模型
 - 当前已统一收口 `battle_started / battle_state / input_seq / battle_input_push / battle_end_accepted / battle_frame / battle_finished`
 - 内部已先收紧为最小 finish reason 枚举
 - 未识别的 `finish:<custom_reason>` 当前会回落到 `finished`
+- `battle_state` 当前已区分 `started / frame / settlement / finished`
 
 这些格式当前只用于 demo / prototype，不应视为最终 `v2` battle 协议。
 
@@ -112,4 +116,5 @@ GatewayServer
 - `GatewayActor` 仍只是最小 ingress actor
 - `Runtime` 仍承担了较重的编排职责
 - battle body 仍是冻结中的最小字符串 schema，不是最终 typed external schema
+- 当前 validator 只覆盖 battle wire schema，还没有推广到 login / room 等外部 body
 - 还没有接入现有 `GatewayServer` 主链

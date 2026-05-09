@@ -180,6 +180,10 @@ TEST(V2DemoServerSmokeTest, RealSocketFlowSupportsBootstrapAndDisconnectCleanup)
     EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
               "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=3:trigger=input:owner:3");
     EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_state:kind=settlement:room_id=room_alpha:battle_id=battle_0001:reason=frame_limit_reached:user_id=input:owner:3");
+    EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_state:kind=settlement:room_id=room_alpha:battle_id=battle_0001:reason=frame_limit_reached:user_id=input:owner:3");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,
               "battle_state:kind=finished:room_id=room_alpha:battle_id=battle_0001:reason=frame_limit_reached:user_id=input:owner:3");
     EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
               "battle_state:kind=finished:room_id=room_alpha:battle_id=battle_0001:reason=frame_limit_reached:user_id=input:owner:3");
@@ -227,6 +231,10 @@ TEST(V2DemoServerSmokeTest, RealSocketFlowSupportsRequestedBattleFinish) {
     (void)member.expect_message(net::protocol::kBattleStatePush);
 
     owner.send(net::protocol::kBattleInputRequest, 28, "finish:surrender");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_state:kind=settlement:room_id=room_beta:battle_id=battle_0001:reason=surrender:user_id=owner");
+    EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_state:kind=settlement:room_id=room_beta:battle_id=battle_0001:reason=surrender:user_id=owner");
     EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).body,
               "battle_end_accepted:surrender");
     EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,

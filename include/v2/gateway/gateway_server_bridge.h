@@ -2,6 +2,7 @@
 
 #include "app/config.h"
 #include "game/gateway/gateway_server.h"
+#include "v2/gateway/battle_wire_parser.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 
@@ -30,10 +31,32 @@ public:
         bool echo;
     };
 
-    explicit GatewayServerShadowBridge(MirrorPolicy mirror_policy = {}, bool emit_responses = false)
+    struct EmitPolicy {
+        constexpr EmitPolicy(bool battle_input_push_enabled = true,
+                             bool battle_state_started_enabled = true,
+                             bool battle_state_frame_enabled = true,
+                             bool battle_state_settlement_enabled = true,
+                             bool battle_state_finished_enabled = true) noexcept
+            : battle_input_push(battle_input_push_enabled),
+              battle_state_started(battle_state_started_enabled),
+              battle_state_frame(battle_state_frame_enabled),
+              battle_state_settlement(battle_state_settlement_enabled),
+              battle_state_finished(battle_state_finished_enabled) {}
+
+        bool battle_input_push;
+        bool battle_state_started;
+        bool battle_state_frame;
+        bool battle_state_settlement;
+        bool battle_state_finished;
+    };
+
+    explicit GatewayServerShadowBridge(MirrorPolicy mirror_policy = {},
+                                       EmitPolicy emit_policy = {},
+                                       bool emit_responses = false)
         : adapter_(actor_system_, this),
           runtime_(actor_system_, adapter_),
           mirror_policy_(mirror_policy),
+          emit_policy_(emit_policy),
           emit_responses_(emit_responses) {
         gateway_actor_ = runtime_.create_gateway_actor();
         adapter_.bind_gateway(gateway_actor_);
@@ -46,7 +69,9 @@ public:
 
     [[nodiscard]] bool emit_responses() const noexcept { return emit_responses_; }
     [[nodiscard]] const MirrorPolicy& mirror_policy() const noexcept { return mirror_policy_; }
+    [[nodiscard]] const EmitPolicy& emit_policy() const noexcept { return emit_policy_; }
     [[nodiscard]] bool should_forward(std::uint16_t message_id) const noexcept;
+    [[nodiscard]] bool should_emit(std::uint16_t message_id, std::string_view body) const noexcept;
 
 private:
     [[nodiscard]] SessionId get_or_create_session_id(const std::shared_ptr<net::Session>& session);
@@ -56,6 +81,7 @@ private:
     Runtime runtime_;
     v2::actor::ActorRef gateway_actor_;
     MirrorPolicy mirror_policy_{};
+    EmitPolicy emit_policy_{};
     bool emit_responses_ = false;
     std::unordered_map<net::Session*, SessionId> session_ids_by_ptr_;
     std::unordered_map<SessionId, std::weak_ptr<net::Session>> sessions_by_id_;
@@ -63,6 +89,8 @@ private:
 };
 
 [[nodiscard]] GatewayServerShadowBridge::MirrorPolicy make_shadow_bridge_policy(
+    const app::config::GatewayAppConfig& config) noexcept;
+[[nodiscard]] GatewayServerShadowBridge::EmitPolicy make_shadow_bridge_emit_policy(
     const app::config::GatewayAppConfig& config) noexcept;
 
 }  // namespace v2::gateway

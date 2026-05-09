@@ -48,6 +48,7 @@ struct ParsedBattleInputPushBody {
                                                         std::string_view input_data);
 [[nodiscard]] std::string format_battle_end_accepted_body(v2::battle::BattleFinishReason reason);
 [[nodiscard]] std::string format_battle_frame_body(const v2::battle::BattleFrameAdvancedMsg& frame);
+[[nodiscard]] std::string format_battle_settlement_body(const v2::battle::BattleSettlementPreparedMsg& settlement);
 [[nodiscard]] std::string format_battle_finished_body(const v2::battle::BattleFinishedMsg& finished);
 
 }  // namespace v2::gateway

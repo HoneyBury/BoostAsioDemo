@@ -15,6 +15,16 @@ GatewayServerShadowBridge::MirrorPolicy make_shadow_bridge_policy(
         config.v2_shadow_bridge_echo);
 }
 
+GatewayServerShadowBridge::EmitPolicy make_shadow_bridge_emit_policy(
+    const app::config::GatewayAppConfig& config) noexcept {
+    return GatewayServerShadowBridge::EmitPolicy(
+        config.v2_shadow_bridge_emit_battle_input_push,
+        config.v2_shadow_bridge_emit_battle_state_started,
+        config.v2_shadow_bridge_emit_battle_state_frame,
+        config.v2_shadow_bridge_emit_battle_state_settlement,
+        config.v2_shadow_bridge_emit_battle_state_finished);
+}
+
 bool GatewayServerShadowBridge::should_forward(std::uint16_t message_id) const noexcept {
     switch (message_id) {
         case net::protocol::kLoginRequest:
@@ -31,6 +41,35 @@ bool GatewayServerShadowBridge::should_forward(std::uint16_t message_id) const n
         default:
             return false;
     }
+}
+
+bool GatewayServerShadowBridge::should_emit(std::uint16_t message_id, std::string_view body) const noexcept {
+    if (message_id == net::protocol::kBattleInputPush) {
+        return emit_policy_.battle_input_push;
+    }
+    if (message_id != net::protocol::kBattleStatePush) {
+        return true;
+    }
+
+    const auto parsed = parse_battle_wire_body(body);
+    if (!parsed || !std::holds_alternative<ParsedBattleStateBody>(*parsed)) {
+        return true;
+    }
+
+    const auto& state = std::get<ParsedBattleStateBody>(*parsed);
+    if (state.kind == "started") {
+        return emit_policy_.battle_state_started;
+    }
+    if (state.kind == "frame") {
+        return emit_policy_.battle_state_frame;
+    }
+    if (state.kind == "settlement") {
+        return emit_policy_.battle_state_settlement;
+    }
+    if (state.kind == "finished") {
+        return emit_policy_.battle_state_finished;
+    }
+    return true;
 }
 
 void GatewayServerShadowBridge::on_packet(const std::shared_ptr<net::Session>& session,
@@ -62,6 +101,9 @@ void GatewayServerShadowBridge::on_close(const std::shared_ptr<net::Session>& se
 
 void GatewayServerShadowBridge::deliver(SessionWrite write) {
     if (!emit_responses_) {
+        return;
+    }
+    if (!should_emit(write.envelope.protocol_message_id, write.envelope.body)) {
         return;
     }
 

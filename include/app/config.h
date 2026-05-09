@@ -47,6 +47,11 @@ struct GatewayAppConfig {
     bool v2_shadow_bridge_room = true;
     bool v2_shadow_bridge_battle = true;
     bool v2_shadow_bridge_echo = false;
+    bool v2_shadow_bridge_emit_battle_input_push = true;
+    bool v2_shadow_bridge_emit_battle_state_started = true;
+    bool v2_shadow_bridge_emit_battle_state_frame = true;
+    bool v2_shadow_bridge_emit_battle_state_settlement = true;
+    bool v2_shadow_bridge_emit_battle_state_finished = true;
     std::uint32_t session_max_packet_size = 1024 * 1024;
     std::size_t session_max_pending_write_bytes = 256 * 1024;
     std::chrono::milliseconds session_heartbeat_check_interval{5000};

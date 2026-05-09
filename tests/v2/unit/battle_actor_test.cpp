@@ -102,8 +102,11 @@ TEST(V2BattleActorTest, PlayerDisconnectFinishesBattle) {
 
     EXPECT_EQ(actor_system.dispatch_all(), 2U);
     EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kFinished);
-    ASSERT_EQ(sink.events.size(), 2U);
-    const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events[1]);
+    ASSERT_EQ(sink.events.size(), 3U);
+    const auto* settlement = std::get_if<v2::battle::BattleSettlementPreparedMsg>(&sink.events[1]);
+    ASSERT_NE(settlement, nullptr);
+    EXPECT_EQ(settlement->reason, v2::battle::BattleFinishReason::kPlayerDisconnected);
+    const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events[2]);
     ASSERT_NE(finished, nullptr);
     EXPECT_EQ(finished->reason, v2::battle::BattleFinishReason::kPlayerDisconnected);
     EXPECT_EQ(finished->triggering_user_id, "owner");
@@ -135,10 +138,13 @@ TEST(V2BattleActorTest, TickAdvancesFrameAndCanFinishNormally) {
     EXPECT_EQ(actor_system.dispatch_all(), 4U);
     EXPECT_EQ(actor_ptr->state().frame_number, 3U);
     EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kFinished);
-    ASSERT_EQ(sink.events.size(), 5U);
+    ASSERT_EQ(sink.events.size(), 6U);
     const auto* frame = std::get_if<v2::battle::BattleFrameAdvancedMsg>(&sink.events[1]);
     ASSERT_NE(frame, nullptr);
     EXPECT_EQ(frame->frame_number, 1U);
+    const auto* settlement = std::get_if<v2::battle::BattleSettlementPreparedMsg>(&sink.events[4]);
+    ASSERT_NE(settlement, nullptr);
+    EXPECT_EQ(settlement->reason, v2::battle::BattleFinishReason::kFrameLimitReached);
     const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events.back());
     ASSERT_NE(finished, nullptr);
     EXPECT_EQ(finished->reason, v2::battle::BattleFinishReason::kFrameLimitReached);
@@ -170,8 +176,11 @@ TEST(V2BattleActorTest, EndBattleMessageFinishesWithRequestedReason) {
 
     EXPECT_EQ(actor_system.dispatch_all(), 2U);
     EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kFinished);
-    ASSERT_EQ(sink.events.size(), 2U);
-    const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events[1]);
+    ASSERT_EQ(sink.events.size(), 3U);
+    const auto* settlement = std::get_if<v2::battle::BattleSettlementPreparedMsg>(&sink.events[1]);
+    ASSERT_NE(settlement, nullptr);
+    EXPECT_EQ(settlement->reason, v2::battle::BattleFinishReason::kSurrender);
+    const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events[2]);
     ASSERT_NE(finished, nullptr);
     EXPECT_EQ(finished->reason, v2::battle::BattleFinishReason::kSurrender);
     EXPECT_EQ(finished->triggering_user_id, "owner");

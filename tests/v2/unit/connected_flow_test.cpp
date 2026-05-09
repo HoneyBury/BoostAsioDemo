@@ -112,13 +112,16 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyStartAndInputFlowThroughActors) {
         .request_id = 10,
         .body = "move:3,2",
     });
-    ASSERT_EQ(third_input.size(), 6U);
+    ASSERT_EQ(third_input.size(), 8U);
     EXPECT_EQ(third_input[0].envelope.body, "input_seq:seq=3");
     EXPECT_EQ(third_input[1].envelope.body, "battle_input:user_id=owner:seq=3:input=move:3,2");
     EXPECT_EQ(third_input[2].envelope.body,
               "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=3:trigger=input:owner:3");
     EXPECT_EQ(third_input[4].envelope.protocol_message_id, net::protocol::kBattleStatePush);
     EXPECT_EQ(third_input[4].envelope.body,
+              "battle_state:kind=settlement:room_id=room_alpha:battle_id=battle_0001:reason=frame_limit_reached:user_id=input:owner:3");
+    EXPECT_EQ(third_input[6].envelope.protocol_message_id, net::protocol::kBattleStatePush);
+    EXPECT_EQ(third_input[6].envelope.body,
               "battle_state:kind=finished:room_id=room_alpha:battle_id=battle_0001:reason=frame_limit_reached:user_id=input:owner:3");
 }
 
@@ -177,11 +180,14 @@ TEST(V2ConnectedFlowTest, BattleCanFinishByRequestedReason) {
         .request_id = 8,
         .body = "finish:surrender",
     });
-    ASSERT_EQ(finish.size(), 3U);
-    EXPECT_EQ(finish[0].envelope.protocol_message_id, net::protocol::kBattleInputResponse);
-    EXPECT_EQ(finish[0].envelope.body, "battle_end_accepted:surrender");
-    EXPECT_EQ(finish[1].envelope.protocol_message_id, net::protocol::kBattleStatePush);
-    EXPECT_EQ(finish[1].envelope.body,
+    ASSERT_EQ(finish.size(), 5U);
+    EXPECT_EQ(finish[0].envelope.protocol_message_id, net::protocol::kBattleStatePush);
+    EXPECT_EQ(finish[0].envelope.body,
+              "battle_state:kind=settlement:room_id=room_alpha:battle_id=battle_0001:reason=surrender:user_id=owner");
+    EXPECT_EQ(finish[2].envelope.protocol_message_id, net::protocol::kBattleInputResponse);
+    EXPECT_EQ(finish[2].envelope.body, "battle_end_accepted:surrender");
+    EXPECT_EQ(finish[3].envelope.protocol_message_id, net::protocol::kBattleStatePush);
+    EXPECT_EQ(finish[3].envelope.body,
               "battle_state:kind=finished:room_id=room_alpha:battle_id=battle_0001:reason=surrender:user_id=owner");
 
     auto after_finish = adapter.handle_incoming(v2::gateway::ClientEnvelope{

@@ -420,6 +420,19 @@ void Runtime::push(v2::battle::BattleEvent event) {
         return;
     }
 
+    if (const auto* settlement = std::get_if<v2::battle::BattleSettlementPreparedMsg>(&event)) {
+        for (const auto& [session_id, room_id] : rooms_by_session_id_) {
+            if (room_id == settlement->room_id) {
+                emit(net::protocol::kBattleStatePush,
+                     session_id,
+                     0,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                     format_battle_settlement_body(*settlement));
+            }
+        }
+        return;
+    }
+
     if (const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&event)) {
         battles_by_room_id_.erase(finished->room_id);
 

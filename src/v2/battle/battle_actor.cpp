@@ -11,6 +11,12 @@ void BattleActor::finish_battle(BattleFinishReason reason, std::string triggerin
     }
 
     state_.lifecycle = BattleLifecycleState::kFinished;
+    sink_.push(BattleSettlementPreparedMsg{
+        .battle_id = state_.battle_id,
+        .room_id = state_.room_id,
+        .reason = reason,
+        .triggering_user_id = triggering_user_id,
+    });
     sink_.push(BattleFinishedMsg{
         .battle_id = state_.battle_id,
         .room_id = state_.room_id,

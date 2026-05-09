@@ -51,6 +51,19 @@ private:
     v2::actor::ActorRef target_;
 };
 
+class DelayedForwardingActor final : public v2::actor::Actor {
+public:
+    explicit DelayedForwardingActor(v2::actor::ActorRef target)
+        : target_(target) {}
+
+    void on_message(v2::actor::Message&& message) override {
+        tell_after(target_, std::move(message), 1);
+    }
+
+private:
+    v2::actor::ActorRef target_;
+};
+
 }  // namespace
 
 TEST(V2ActorRuntimeTest, CreateActorStartsAndShutdownStops) {
@@ -86,4 +99,23 @@ TEST(V2ActorRuntimeTest, DispatchAllDeliversMessagesBetweenActors) {
     EXPECT_EQ(actor_system.dispatch_all(), 2U);
     ASSERT_EQ(received.size(), 1U);
     EXPECT_EQ(received.front(), "hello-v2");
+}
+
+TEST(V2ActorRuntimeTest, DispatchAllPromotesDelayedMessagesOnLaterRounds) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+    auto delayed = actor_system.create_actor(std::make_unique<DelayedForwardingActor>(receiver));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.payload = std::string("delayed-v2");
+    delayed.tell(std::move(message));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    EXPECT_TRUE(received.empty());
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(received.size(), 1U);
+    EXPECT_EQ(received.front(), "delayed-v2");
 }

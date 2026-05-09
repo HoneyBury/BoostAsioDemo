@@ -22,6 +22,7 @@ public:
     bool is_valid() const noexcept { return system_ != nullptr && actor_id_ != 0; }
 
     void tell(Message message) const;
+    void tell_after(Message message, std::size_t dispatch_delay) const;
 
 private:
     friend class v2::runtime::ActorSystem;

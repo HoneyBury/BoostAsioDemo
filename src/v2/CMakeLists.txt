@@ -4,10 +4,12 @@ add_library(project_v2 STATIC
     battle/battle_actor.cpp
     common/module_marker.cpp
     gateway/battle_protocol_codec.cpp
+    gateway/battle_archive_store.cpp
     gateway/battle_wire_parser.cpp
     gateway/gateway_command_parser.cpp
     gateway/demo_server.cpp
     gateway/gateway_actor.cpp
+    gateway/gateway_response_parser.cpp
     gateway/gateway_server_bridge.cpp
     gateway/runtime.cpp
     gateway/session_adapter.cpp

@@ -53,6 +53,7 @@ SessionAdapter
 - battle settlement 预备事件与 `finished` 前置 push
 - room/player 已可消费 battle settlement typed event，并在 finish 前完成最小状态收口
 - runtime 已归档最小 battle result summary 和 replay payload，能接到现有 `ReplayPlayer` 读取链
+- runtime 已支持可选 battle archive sink，可把 report / replay 作为正式 persistence 入口接出
 - 玩家断线触发 battle finish 与 room/player 回切
 - battle finish reason 已切到最小枚举语义，但外部协议仍保持字符串兼容层
 - battle wire body 已集中到统一 codec，并已有字段级 parse/format 回归测试
@@ -60,6 +61,7 @@ SessionAdapter
 - gateway command body 已补最小 parser / validator，当前覆盖 login / room id / ready state / battle start / battle input
 - actor runtime 已支持最小 `send_after()` / `tell_after()` 能力
 - actor runtime 已支持可取消的单次 wall-clock schedule 和最小 repeating schedule
+- actor 已支持最小 owned schedule handle，并在 stop/shutdown 时自动清理已登记 schedule
 
 ## 4. 当前限制
 
@@ -68,7 +70,7 @@ SessionAdapter
 - battle 已支持最小 frame 推进和主动结束请求，但 frame 驱动仍是 prototype 级壳
 - runtime 里仍有较多 orchestration 逻辑，尚未拆出更清晰的 domain coordinator
 - 没有多核 I/O、无锁队列和背压治理
-- scheduler 当前还不支持 actor-owned handle、统一 tick ownership 和更复杂的 backpressure / drift 策略
+- scheduler 当前还没有统一 tick ownership 和更复杂的 backpressure / drift 策略
 - battle wire schema 虽已稳定到键值字符串，但还没有独立 versioning
 
 ## 5. 下一步建议

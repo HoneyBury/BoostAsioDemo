@@ -8,6 +8,7 @@ add_executable(project_v2_unit_tests
     unit/connected_flow_test.cpp
     unit/gateway_command_parser_test.cpp
     unit/gateway_bridge_test.cpp
+    unit/gateway_response_parser_test.cpp
     unit/player_actor_test.cpp
     unit/room_actor_test.cpp
     unit/shadow_bridge_policy_test.cpp

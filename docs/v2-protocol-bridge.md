@@ -105,6 +105,7 @@ GatewayServer
 - battle body 的格式化与解析已经集中到单一 codec，避免散落在 runtime / demo / 测试里
 - battle wire body 已新增独立 `battle_wire_parser` / validator，gateway bridge / runtime / test 可以共用同一套字段模型
 - gateway command body 已新增独立 parser，当前至少覆盖 login / room id / ready state / battle start / battle input
+- gateway response body 已新增最小 parser，当前覆盖 login / room create/join / session kicked / session resumed
 - 当前已统一收口 `battle_started / battle_state / input_seq / battle_input_push / battle_end_accepted / battle_frame / battle_finished`
 - 内部已先收紧为最小 finish reason 枚举
 - 未识别的 `finish:<custom_reason>` 当前会回落到 `finished`

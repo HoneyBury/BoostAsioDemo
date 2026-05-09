@@ -34,4 +34,33 @@ void ActorRef::tell_after(Message message, std::chrono::steady_clock::duration d
     system_->send_after(std::move(message), delay);
 }
 
+ScheduleId ActorRef::schedule_after(Message message, std::chrono::steady_clock::duration delay) const {
+    if (!is_valid()) {
+        return 0;
+    }
+    if (message.header.target_actor == 0) {
+        message.header.target_actor = actor_id_;
+    }
+    return system_->schedule_after(std::move(message), delay);
+}
+
+ScheduleId ActorRef::schedule_every(Message message,
+                                    std::chrono::steady_clock::duration initial_delay,
+                                    std::chrono::steady_clock::duration interval) const {
+    if (!is_valid()) {
+        return 0;
+    }
+    if (message.header.target_actor == 0) {
+        message.header.target_actor = actor_id_;
+    }
+    return system_->schedule_every(std::move(message), initial_delay, interval);
+}
+
+bool ActorRef::cancel_schedule(ScheduleId schedule_id) const {
+    if (!is_valid()) {
+        return false;
+    }
+    return system_->cancel_schedule(schedule_id);
+}
+
 }  // namespace v2::actor

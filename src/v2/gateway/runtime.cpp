@@ -1,6 +1,7 @@
 #include "v2/gateway/runtime.h"
 
 #include "net/protocol.h"
+#include "v2/gateway/battle_archive_store.h"
 #include "v2/gateway/battle_protocol_codec.h"
 #include "v2/gateway/gateway_command_parser.h"
 
@@ -669,7 +670,7 @@ std::optional<SessionId> Runtime::session_id_for_user(const std::string& user_id
 }
 
 void Runtime::archive_battle(const v2::battle::BattleSettlementPreparedMsg& settlement) {
-    archived_battles_[settlement.battle_id] = BattleArchive{
+    auto archive = BattleArchive{
         .battle_id = settlement.battle_id,
         .room_id = settlement.room_id,
         .reason = v2::battle::to_string(settlement.reason),
@@ -678,6 +679,10 @@ void Runtime::archive_battle(const v2::battle::BattleSettlementPreparedMsg& sett
         .participant_user_ids = settlement.participant_user_ids,
         .replay_payload = build_replay_payload(settlement),
     };
+    archived_battles_[settlement.battle_id] = archive;
+    if (archive_sink_ != nullptr) {
+        (void)archive_sink_->persist(archive);
+    }
 }
 
 void Runtime::emit(std::uint16_t message_id,

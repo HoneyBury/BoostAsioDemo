@@ -167,6 +167,7 @@ void ActorSystem::shutdown() {
     for (auto& [actor_id, cell] : actors_) {
         (void)actor_id;
         if (cell.started && cell.actor) {
+            cell.actor->cancel_all_owned_schedules();
             cell.actor->on_stop();
         }
     }

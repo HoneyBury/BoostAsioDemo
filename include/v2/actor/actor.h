@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <vector>
 #include <utility>
 
 #include "v2/actor/actor_ref.h"
@@ -33,6 +34,14 @@ protected:
     void tell(const ActorRef& target, Message message) const;
     void tell_after(const ActorRef& target, Message message, std::size_t dispatch_delay) const;
     void tell_after(const ActorRef& target, Message message, std::chrono::steady_clock::duration delay) const;
+    [[nodiscard]] ScheduleId schedule_after(const ActorRef& target,
+                                            Message message,
+                                            std::chrono::steady_clock::duration delay);
+    [[nodiscard]] ScheduleId schedule_every(const ActorRef& target,
+                                            Message message,
+                                            std::chrono::steady_clock::duration initial_delay,
+                                            std::chrono::steady_clock::duration interval);
+    bool cancel_schedule(ScheduleId schedule_id);
 
 private:
     friend class v2::runtime::ActorSystem;
@@ -41,9 +50,12 @@ private:
         self_ = self_ref;
         parent_ = parent_ref;
     }
+    void track_schedule(ScheduleId schedule_id);
+    void cancel_all_owned_schedules();
 
     ActorRef self_;
     ActorRef parent_;
+    std::vector<ScheduleId> owned_schedules_;
 };
 
 }  // namespace v2::actor

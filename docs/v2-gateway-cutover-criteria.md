@@ -67,7 +67,7 @@
 - 默认仍应保持关闭
 - 当前仍建议优先镜像 `login / room`，再逐步放开 `battle`
 - response mirror 当前主要细化到 battle 域，还没有推广到全部 v1/v2 response family
-- gateway command parser 当前只覆盖最小 ingress 字段和 battle request 归一化，不应误判为已冻结完整 external schema
+- gateway parser 当前已覆盖最小 ingress / response 字段，但仍不应误判为已冻结完整 external schema
 
 ## 4. 推荐接入顺序
 

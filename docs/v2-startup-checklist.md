@@ -299,17 +299,21 @@ examples/v2_gateway_demo/
 - `B6`：scheduler 已支持 cancel / repeat 的最小 wall-clock 语义
 - `B7`：gateway parser 已扩到 battle start / battle input，请求体不再只靠散落字符串判断
 - `B8`：已补真实 `echo_server` 配置驱动的 battle shadow bridge kind gating 测试
+- `B5.1`：battle archive 已补可选 sink/store 入口，report 与 replay 可落盘验证
+- `B6.1`：actor 已支持 owned schedule handle，并在 stop/shutdown 时自动清理
+- `B7.1`：gateway response parser 已补 login / room / session push 基础字段模型
+- `B8.1`：真实 bridge 灰度测试已覆盖 started-only 与 finish-only 两组 battle response 配置
 
 当前明确只有原型或占位的部分：
 
 - `BattleActor` 只处理战斗创建和输入受理，不包含 `ECS World`、帧循环、状态广播聚合、结算、回放
 - `BattleActor` 已有最小结束路径和主动结束，但仍没有正式结算、奖励、战报和 replay 输出
-- 当前 replay 仍只是 runtime archive / `ReplayPlayer` 可读原型，不是正式持久化主链
+- 当前 replay 虽已有 sink/store 入口，但仍不是 battle 主链默认持久化
 - `SessionAdapter` 已可挂接 demo server，但还没有接入现有 `GatewayServer` 主链
 - runtime 仍是单进程、单线程 bootstrap 编排层，不是多核 actor runtime
 - battle 输入目前只做到“受理 + 转发”，没有 authoritative simulation
 - `PlayerActor` / `RoomActor` / `BattleActor` 之间仍以最小 typed message 协作为主，没有 supervisor 树和 `ask()`
-- scheduler 当前虽已有 cancel / repeat，但还不是最终 actor-owned 正式调度器
+- scheduler 当前虽已有 cancel / repeat 与最小 actor-owned handle，但还不是最终统一调度器
 
 当前不应误判为已完成的内容：
 

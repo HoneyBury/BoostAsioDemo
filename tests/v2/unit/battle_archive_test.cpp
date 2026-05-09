@@ -5,6 +5,7 @@
 #include "game/battle/replay_player.h"
 #include "game/persistence/player_store.h"
 #include "net/protocol.h"
+#include "v2/gateway/battle_archive_store.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 
@@ -106,4 +107,32 @@ TEST(V2BattleArchiveTest, RuntimeBuildsResultSummaryAndReplayPayloadOnBattleSett
     EXPECT_TRUE(ended);
 
     std::filesystem::remove_all(replay_dir);
+}
+
+TEST(V2BattleArchiveTest, ArchiveSinkPersistsReportAndReplayArtifacts) {
+    const auto archive_dir = std::filesystem::temp_directory_path() / "v2_runtime_archive_store";
+    v2::gateway::JsonFileBattleArchiveStore store(archive_dir);
+
+    v2::gateway::Runtime::BattleArchive archive{
+        .battle_id = "battle_9001",
+        .room_id = "room_store",
+        .reason = "timeout",
+        .triggering_user_id = "owner",
+        .total_frames = 3,
+        .participant_user_ids = {"owner", "member"},
+        .replay_payload = R"({"battle_id":"battle_9001","room_id":"room_store","total_frames":1,"frames":[{"frame":1,"inputs":[{"seq":1,"user_id":"owner","payload":"move:1,1"}]}]})",
+    };
+
+    ASSERT_TRUE(store.persist(archive));
+    const auto report = store.load_report("battle_9001");
+    ASSERT_TRUE(report.has_value());
+    EXPECT_NE(report->find("\"battle_id\": \"battle_9001\""), std::string::npos);
+    EXPECT_NE(report->find("\"reason\": \"timeout\""), std::string::npos);
+
+    game::persistence::JsonFileBattleReplayStore replay_store(archive_dir / "replays");
+    game::battle::ReplayPlayer player(replay_store);
+    ASSERT_TRUE(player.load("battle_9001"));
+    EXPECT_EQ(player.battle_id(), "battle_9001");
+
+    std::filesystem::remove_all(archive_dir);
 }

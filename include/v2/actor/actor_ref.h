@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 
 #include "v2/actor/message.h"
 
@@ -16,6 +17,8 @@ class ActorSystem;
 
 namespace v2::actor {
 
+using ScheduleId = std::uint64_t;
+
 class ActorRef {
 public:
     ActorRef() = default;
@@ -26,6 +29,11 @@ public:
     void tell(Message message) const;
     void tell_after(Message message, std::size_t dispatch_delay) const;
     void tell_after(Message message, std::chrono::steady_clock::duration delay) const;
+    [[nodiscard]] ScheduleId schedule_after(Message message, std::chrono::steady_clock::duration delay) const;
+    [[nodiscard]] ScheduleId schedule_every(Message message,
+                                           std::chrono::steady_clock::duration initial_delay,
+                                           std::chrono::steady_clock::duration interval) const;
+    bool cancel_schedule(ScheduleId schedule_id) const;
 
 private:
     friend class v2::runtime::ActorSystem;

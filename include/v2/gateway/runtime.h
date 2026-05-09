@@ -15,6 +15,8 @@
 
 namespace v2::gateway {
 
+class BattleArchiveSink;
+
 class Runtime final : public GatewayCommandSink,
                       public v2::battle::BattleEventSink,
                       public v2::player::PlayerEventSink,
@@ -30,8 +32,10 @@ public:
         std::string replay_payload;
     };
 
-    Runtime(v2::runtime::ActorSystem& actor_system, SessionWriteSink& write_sink)
-        : actor_system_(actor_system), write_sink_(write_sink) {}
+    Runtime(v2::runtime::ActorSystem& actor_system,
+            SessionWriteSink& write_sink,
+            BattleArchiveSink* archive_sink = nullptr)
+        : actor_system_(actor_system), write_sink_(write_sink), archive_sink_(archive_sink) {}
 
     [[nodiscard]] v2::actor::ActorRef create_gateway_actor();
     [[nodiscard]] bool is_authenticated(const GatewayCommand& command) const;
@@ -77,6 +81,7 @@ private:
     std::unordered_map<SessionId, PendingResponse> pending_battle_end_;
     std::unordered_map<std::string, BattleArchive> archived_battles_;
     std::uint64_t next_battle_id_ = 1;
+    BattleArchiveSink* archive_sink_ = nullptr;
 };
 
 }  // namespace v2::gateway

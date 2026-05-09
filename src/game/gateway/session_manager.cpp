@@ -46,6 +46,11 @@ std::vector<SessionManager::SessionPtr> SessionManager::all_sessions() const {
     return sessions;
 }
 
+bool SessionManager::contains(const SessionPtr& session) const {
+    std::scoped_lock lock(mutex_);
+    return sessions_.contains(session.get());
+}
+
 bool SessionManager::is_authenticated(const SessionPtr& session) const {
     std::scoped_lock lock(mutex_);
     const auto it = sessions_.find(session.get());

@@ -2,6 +2,7 @@ add_executable(project_v2_unit_tests
     unit/actor_runtime_test.cpp
     unit/battle_archive_test.cpp
     unit/battle_actor_test.cpp
+    unit/battle_runtime_world_test.cpp
     unit/battle_protocol_codec_test.cpp
     unit/battle_wire_parser_test.cpp
     unit/bootstrap_smoke_test.cpp

@@ -19,25 +19,32 @@ GatewayServer::GatewayServer(asio::io_context& io_context,
                              std::uint16_t http_management_port,
                              net::SessionOptions session_options,
                              std::chrono::milliseconds metrics_log_interval,
-                             GatewayMetricsExportOptions metrics_export_options)
+                             GatewayMetricsExportOptions metrics_export_options,
+                             std::unique_ptr<v2::io::IoEngine> io_engine)
     : dispatcher_(dispatcher),
       session_manager_(session_manager),
       room_manager_(room_manager),
       battle_manager_(battle_manager),
       metrics_(metrics),
-      acceptor_(io_context, tcp::endpoint(tcp::v4(), port)),
       metrics_timer_(io_context),
       session_options_(std::move(session_options)),
       metrics_log_interval_(metrics_log_interval),
-      metrics_export_options_(std::move(metrics_export_options)) {
+      metrics_export_options_(std::move(metrics_export_options)),
+      io_engine_(std::move(io_engine)) {
+    if (io_engine_ != nullptr) {
+        io_acceptor_ = io_engine_->listen("0.0.0.0", port, session_options_);
+    } else {
+        acceptor_ = std::make_unique<tcp::acceptor>(io_context, tcp::endpoint(tcp::v4(), port));
+    }
+
     if (http_management_port > 0) {
         http_manager_ = std::make_unique<net::HttpManager>(
-            acceptor_.get_executor(), http_management_port);
+            io_context.get_executor(), http_management_port);
     }
 }
 
 void GatewayServer::start() {
-    LOG_INFO("Gateway server listening on 0.0.0.0:{}", acceptor_.local_endpoint().port());
+    LOG_INFO("Gateway server listening on 0.0.0.0:{}", local_port());
 
     if (http_manager_) {
         http_manager_->set_metrics_provider(
@@ -53,21 +60,36 @@ void GatewayServer::start() {
     }
 
     arm_metrics_timer();
+    if (io_acceptor_ != nullptr) {
+        do_accept_with_io_engine();
+        io_engine_->run();
+        return;
+    }
+
     do_accept();
 }
 
 void GatewayServer::stop() {
     error_code ignored_ec;
-    acceptor_.close(ignored_ec);
     metrics_timer_.cancel();
 
     if (http_manager_) {
         http_manager_->stop();
     }
 
-    for (auto& session : session_manager_.all_sessions()) {
+    const auto sessions = session_manager_.all_sessions();
+    for (const auto& session : sessions) {
+        (void)release_session_state(session, extract_ip(session->remote_endpoint()));
         session->stop();
     }
+
+    if (acceptor_ != nullptr) {
+        acceptor_->close(ignored_ec);
+    }
+    if (io_engine_ != nullptr) {
+        io_engine_->stop();
+    }
+    io_acceptor_.reset();
 }
 
 bool GatewayServer::attach_session(const std::shared_ptr<net::Session>& session) {
@@ -110,17 +132,7 @@ bool GatewayServer::attach_session(const std::shared_ptr<net::Session>& session)
 
     session->set_close_handler(
         [this, client_ip](const std::shared_ptr<net::Session>& session_ptr, const error_code&) {
-            const auto room_id = room_manager_.room_id_of(session_ptr);
-            if (packet_bridge_) {
-                packet_bridge_->on_close(session_ptr);
-            }
-            room_manager_.remove_session(session_ptr);
-            if (room_id) {
-                game::room::clear_battle_if_room_empty(battle_manager_, room_manager_, *room_id);
-            }
-            session_manager_.remove_session(session_ptr);
-            metrics_.on_session_closed();
-            release_connection_slot(client_ip);
+            (void)release_session_state(session_ptr, client_ip);
         });
 
     session->start();
@@ -128,7 +140,13 @@ bool GatewayServer::attach_session(const std::shared_ptr<net::Session>& session)
 }
 
 std::uint16_t GatewayServer::local_port() const {
-    return acceptor_.local_endpoint().port();
+    if (acceptor_ != nullptr) {
+        return acceptor_->local_endpoint().port();
+    }
+    if (io_acceptor_ != nullptr) {
+        return io_acceptor_->local_port();
+    }
+    return 0;
 }
 
 void GatewayServer::set_packet_bridge(std::shared_ptr<GatewayPacketBridge> packet_bridge) {
@@ -145,7 +163,7 @@ std::size_t GatewayServer::active_connections() const {
 }
 
 void GatewayServer::do_accept() {
-    acceptor_.async_accept([this](const error_code& ec, tcp::socket socket) {
+    acceptor_->async_accept([this](const error_code& ec, tcp::socket socket) {
         if (ec) {
             if (ec != asio::error::operation_aborted) {
                 LOG_ERROR("Accept failed: {}", ec.message());
@@ -157,6 +175,40 @@ void GatewayServer::do_accept() {
         (void)attach_session(session);
         do_accept();
     });
+}
+
+void GatewayServer::do_accept_with_io_engine() {
+    if (io_acceptor_ == nullptr) {
+        return;
+    }
+
+    io_acceptor_->async_accept_native([this](std::shared_ptr<net::Session> session) {
+        if (session == nullptr) {
+            return;
+        }
+        (void)attach_session(session);
+        do_accept_with_io_engine();
+    });
+}
+
+bool GatewayServer::release_session_state(const std::shared_ptr<net::Session>& session,
+                                          std::string_view client_ip) {
+    if (!session_manager_.contains(session)) {
+        return false;
+    }
+
+    const auto room_id = room_manager_.room_id_of(session);
+    if (packet_bridge_) {
+        packet_bridge_->on_close(session);
+    }
+    room_manager_.remove_session(session);
+    if (room_id) {
+        game::room::clear_battle_if_room_empty(battle_manager_, room_manager_, *room_id);
+    }
+    session_manager_.remove_session(session);
+    metrics_.on_session_closed();
+    release_connection_slot(client_ip);
+    return true;
 }
 
 bool GatewayServer::try_acquire_connection_slot(std::string_view client_ip) {

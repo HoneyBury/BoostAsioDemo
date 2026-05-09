@@ -20,6 +20,7 @@
 #include "net/message_dispatcher.h"
 #include "net/protocol.h"
 #include "v2/gateway/gateway_server_bridge.h"
+#include "v2/io/io_engine.h"
 
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -153,7 +154,8 @@ int main(int argc, char* argv[]) {
         {
             .prometheus_path = config.metrics_prometheus_path,
             .json_path = config.metrics_json_path,
-        });
+        },
+        std::make_unique<v2::io::AsioIoEngine>(static_cast<std::uint32_t>(config.io_threads)));
     if (config.v2_shadow_bridge_enabled) {
         const auto mirror_policy = v2::gateway::make_shadow_bridge_policy(config);
         const auto emit_policy = v2::gateway::make_shadow_bridge_emit_policy(config);
@@ -228,17 +230,9 @@ int main(int argc, char* argv[]) {
     });
     sig_handler.start();
 
-    const auto io_thread_count = config.io_threads;
+    std::thread control_worker([&io_context]() { io_context.run(); });
 
-    std::vector<std::thread> io_workers;
-    io_workers.reserve(io_thread_count);
-    for (unsigned int i = 0; i < io_thread_count; ++i) {
-        io_workers.emplace_back([&io_context]() { io_context.run(); });
-    }
-
-    for (auto& worker : io_workers) {
-        worker.join();
-    }
+    control_worker.join();
 
     business_pool.join();
     watcher.stop();

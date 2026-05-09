@@ -13,6 +13,7 @@
 #include "game/room/room_service.h"
 #include "net/message_dispatcher.h"
 #include "net/protocol.h"
+#include "v2/io/io_engine.h"
 
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -69,7 +70,9 @@ protected:
                 0,             // game port (auto-assign — not used in this test)
                 kManagementPort,
                 net::SessionOptions{},
-                std::chrono::milliseconds(60000));
+                std::chrono::milliseconds(60000),
+                game::gateway::GatewayMetricsExportOptions{},
+                std::make_unique<v2::io::AsioIoEngine>(2));
             server->start();
 
             io_thread = std::thread([this]() { io_context.run(); });

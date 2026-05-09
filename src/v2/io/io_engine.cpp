@@ -82,16 +82,24 @@ public:
     }
 
     void async_accept(std::function<void(std::unique_ptr<IoSession>)> on_accept) override {
+        async_accept_native(
+            [this, on_accept = std::move(on_accept)](std::shared_ptr<net::Session> session) mutable {
+                if (!session) {
+                    on_accept(nullptr);
+                    return;
+                }
+                on_accept(std::make_unique<AsioIoSession>(std::move(session), core_id_));
+            });
+    }
+
+    void async_accept_native(NativeSessionAcceptHandler on_accept) override {
         acceptor_.async_accept(
             [this, on_accept = std::move(on_accept)](const boost::system::error_code& ec, tcp::socket socket) mutable {
                 if (ec) {
                     on_accept(nullptr);
                     return;
                 }
-                auto session = std::make_unique<AsioIoSession>(
-                    std::make_shared<net::Session>(std::move(socket), session_options_),
-                    core_id_);
-                on_accept(std::move(session));
+                on_accept(std::make_shared<net::Session>(std::move(socket), session_options_));
             });
     }
 

@@ -32,6 +32,7 @@ public:
     void remove_session(const SessionPtr& session);
 
     [[nodiscard]] std::vector<SessionPtr> all_sessions() const;
+    [[nodiscard]] bool contains(const SessionPtr& session) const;
     [[nodiscard]] bool is_authenticated(const SessionPtr& session) const;
     [[nodiscard]] std::optional<std::string> user_id_of(const SessionPtr& session) const;
     [[nodiscard]] std::optional<LoginContext> login_context_of(const SessionPtr& session) const;

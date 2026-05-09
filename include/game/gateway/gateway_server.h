@@ -8,6 +8,7 @@
 #include "net/http_manager.h"
 #include "net/message_dispatcher.h"
 #include "net/session.h"
+#include "v2/io/io_engine.h"
 
 #include <boost/asio.hpp>
 
@@ -46,7 +47,8 @@ public:
                   std::uint16_t http_management_port = 0,
                   net::SessionOptions session_options = {},
                   std::chrono::milliseconds metrics_log_interval = std::chrono::milliseconds(5000),
-                  GatewayMetricsExportOptions metrics_export_options = {});
+                  GatewayMetricsExportOptions metrics_export_options = {},
+                  std::unique_ptr<v2::io::IoEngine> io_engine = nullptr);
 
     void start();
     void stop();
@@ -58,7 +60,10 @@ public:
 
 private:
     void do_accept();
+    void do_accept_with_io_engine();
     void arm_metrics_timer();
+    bool release_session_state(const std::shared_ptr<net::Session>& session,
+                               std::string_view client_ip);
     [[nodiscard]] bool try_acquire_connection_slot(std::string_view client_ip);
     void release_connection_slot(std::string_view client_ip);
     [[nodiscard]] static std::string extract_ip(std::string_view remote_endpoint);
@@ -68,12 +73,14 @@ private:
     game::room::RoomManager& room_manager_;
     game::battle::BattleManager& battle_manager_;
     GatewayMetrics& metrics_;
-    tcp::acceptor acceptor_;
+    std::unique_ptr<tcp::acceptor> acceptor_;
     asio::steady_timer metrics_timer_;
     net::SessionOptions session_options_;
     std::chrono::milliseconds metrics_log_interval_;
     GatewayMetricsExportOptions metrics_export_options_;
     std::unique_ptr<net::HttpManager> http_manager_;
+    std::unique_ptr<v2::io::IoEngine> io_engine_;
+    std::unique_ptr<v2::io::IoAcceptor> io_acceptor_;
     GatewayMetricsSnapshot previous_metrics_snapshot_;
     std::chrono::steady_clock::time_point last_metrics_export_time_;
     std::size_t max_connections_ = 0;

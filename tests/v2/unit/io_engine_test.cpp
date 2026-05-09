@@ -94,3 +94,35 @@ TEST(V2IoEngineTest, AcceptsSocketAndDeliversPacketToSessionHandler) {
         GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
     }
 }
+
+TEST(V2IoEngineTest, AcceptsNativeSessionForGatewayStyleIngress) {
+    app::logging::init("project_tests");
+
+    v2::io::AsioIoEngine engine(2);
+
+    try {
+        auto acceptor = engine.listen("127.0.0.1", 0);
+        std::promise<std::string> endpoint_promise;
+        auto endpoint = endpoint_promise.get_future();
+
+        acceptor->async_accept_native(
+            [&endpoint_promise](std::shared_ptr<net::Session> session) mutable {
+                ASSERT_NE(session, nullptr);
+                endpoint_promise.set_value(session->remote_endpoint());
+                session->stop();
+            });
+
+        engine.run();
+
+        asio::io_context client_io;
+        tcp::socket client(client_io);
+        client.connect(tcp::endpoint(asio::ip::make_address("127.0.0.1"), acceptor->local_port()));
+
+        EXPECT_NE(endpoint.get().find("127.0.0.1:"), std::string::npos);
+        client.close();
+        engine.stop();
+    } catch (const std::exception& ex) {
+        engine.stop();
+        GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
+    }
+}

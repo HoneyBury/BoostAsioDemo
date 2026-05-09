@@ -15,6 +15,7 @@
 #include "net/packet_compressor.h"
 #include "net/protocol.h"
 #include "v2/gateway/gateway_server_bridge.h"
+#include "v2/io/io_engine.h"
 
 #include <boost/asio.hpp>
 #include <boost/process/v1.hpp>
@@ -96,7 +97,9 @@ struct GatewayTestRuntime {
                 0,
                 0,
                 options,
-                std::chrono::milliseconds(1000));
+                std::chrono::milliseconds(1000),
+                game::gateway::GatewayMetricsExportOptions{},
+                std::make_unique<v2::io::AsioIoEngine>(2));
             if (packet_bridge) {
                 server->set_packet_bridge(packet_bridge);
             }

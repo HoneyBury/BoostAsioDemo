@@ -15,6 +15,7 @@
 #include "net/message_dispatcher.h"
 #include "net/packet_codec.h"
 #include "net/protocol.h"
+#include "v2/io/io_engine.h"
 
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -104,7 +105,9 @@ struct LifecycleRuntime {
                 0,
                 0,
                 net::SessionOptions{},
-                std::chrono::milliseconds(1000));
+                std::chrono::milliseconds(1000),
+                game::gateway::GatewayMetricsExportOptions{},
+                std::make_unique<v2::io::AsioIoEngine>(2));
             server->start();
             io_thread = std::thread([this]() { io_context.run(); });
             return true;

@@ -1,6 +1,6 @@
 #include "v2/battle/runtime_world.h"
 
-#include "v2/ecs/system.h"
+#include "v2/battle/runtime_components.h"
 
 #include <memory>
 #include <unordered_map>
@@ -10,37 +10,23 @@ namespace v2::battle {
 
 namespace {
 
-struct BattleClockComponent final : v2::ecs::Component {
-    std::uint32_t frame_number = 0;
-    std::string last_trigger;
-};
-
-struct BattleParticipantComponent final : v2::ecs::Component {
-    std::string user_id;
-    bool online = true;
-    std::int64_t score = 0;
-};
-
-class AdvanceFrameSystem final : public v2::ecs::System {
-public:
-    void run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) override {
-        auto* simple_world = dynamic_cast<v2::ecs::SimpleWorld*>(&world);
-        if (simple_world == nullptr) {
-            return;
-        }
-        simple_world->for_each<BattleClockComponent>(
-            [&](v2::ecs::EntityHandle, BattleClockComponent& clock) {
-                clock.frame_number = ctx.frame_number;
-                clock.last_trigger = ctx.trigger;
-            });
-    }
-};
-
 v2::ecs::SimpleWorld* as_simple_world(v2::ecs::World& world) {
     return dynamic_cast<v2::ecs::SimpleWorld*>(&world);
 }
 
 }  // namespace
+
+void AdvanceFrameSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
+    auto* simple_world = dynamic_cast<v2::ecs::SimpleWorld*>(&world);
+    if (simple_world == nullptr) {
+        return;
+    }
+    simple_world->for_each<BattleClockComponent>(
+        [&](v2::ecs::EntityHandle, BattleClockComponent& clock) {
+            clock.frame_number = ctx.frame_number;
+            clock.last_trigger = ctx.trigger;
+        });
+}
 
 std::unique_ptr<v2::ecs::World> create_battle_world(const std::vector<std::string>& player_ids) {
     auto world = std::make_unique<v2::ecs::SimpleWorld>();
@@ -125,6 +111,32 @@ std::vector<BattleScore> battle_world_collect_scores(
         });
     }
     return scores;
+}
+
+BattleWorldSnapshot battle_world_snapshot(v2::ecs::World& world) {
+    BattleWorldSnapshot snapshot;
+
+    auto* simple_world = as_simple_world(world);
+    if (simple_world == nullptr) {
+        return snapshot;
+    }
+
+    simple_world->for_each<BattleClockComponent>(
+        [&](v2::ecs::EntityHandle, BattleClockComponent& clock) {
+            snapshot.clock.frame_number = clock.frame_number;
+            snapshot.clock.last_trigger = clock.last_trigger;
+        });
+
+    simple_world->for_each<BattleParticipantComponent>(
+        [&](v2::ecs::EntityHandle, BattleParticipantComponent& participant) {
+            snapshot.participants.push_back(BattleWorldParticipantState{
+                .user_id = participant.user_id,
+                .online = participant.online,
+                .score = participant.score,
+            });
+        });
+
+    return snapshot;
 }
 
 }  // namespace v2::battle

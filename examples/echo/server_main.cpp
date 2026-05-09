@@ -155,12 +155,7 @@ int main(int argc, char* argv[]) {
             .json_path = config.metrics_json_path,
         });
     if (config.v2_shadow_bridge_enabled) {
-        v2::gateway::GatewayServerShadowBridge::MirrorPolicy mirror_policy{
-            .login = config.v2_shadow_bridge_login,
-            .room = config.v2_shadow_bridge_room,
-            .battle = config.v2_shadow_bridge_battle,
-            .echo = config.v2_shadow_bridge_echo,
-        };
+        const auto mirror_policy = v2::gateway::make_shadow_bridge_policy(config);
         shadow_bridge = std::make_shared<v2::gateway::GatewayServerShadowBridge>(
             mirror_policy,
             config.v2_shadow_bridge_emit_responses);

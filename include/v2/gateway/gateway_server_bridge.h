@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/config.h"
 #include "game/gateway/gateway_server.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
@@ -60,5 +61,8 @@ private:
     std::unordered_map<SessionId, std::weak_ptr<net::Session>> sessions_by_id_;
     SessionId next_session_id_ = 1;
 };
+
+[[nodiscard]] GatewayServerShadowBridge::MirrorPolicy make_shadow_bridge_policy(
+    const app::config::GatewayAppConfig& config) noexcept;
 
 }  // namespace v2::gateway

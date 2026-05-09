@@ -23,8 +23,22 @@ std::optional<v2::battle::BattleFinishReason> parse_battle_finish_request(std::s
     return v2::battle::BattleFinishReason::kFinished;
 }
 
+std::string format_battle_started_body(std::string_view room_id, std::string_view battle_id) {
+    return fmt::format("battle_started:{}:{}", room_id, battle_id);
+}
+
 std::string format_battle_state_body(std::string_view room_id, std::string_view battle_id) {
     return fmt::format("battle_state:{}:{}", room_id, battle_id);
+}
+
+std::string format_battle_input_response_body(std::uint64_t input_seq) {
+    return fmt::format("input_seq:{}", input_seq);
+}
+
+std::string format_battle_input_push_body(std::string_view user_id,
+                                          std::uint64_t input_seq,
+                                          std::string_view input_data) {
+    return fmt::format("{}:{}:{}", user_id, input_seq, input_data);
 }
 
 std::string format_battle_end_accepted_body(v2::battle::BattleFinishReason reason) {

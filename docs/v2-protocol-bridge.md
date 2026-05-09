@@ -100,6 +100,7 @@ GatewayServer
 
 - 外部仍传字符串 body
 - battle body 的格式化与解析已经集中到单一 codec，避免散落在 runtime / demo / 测试里
+- 当前已统一收口 `battle_started / battle_state / input_seq / battle_input_push / battle_end_accepted / battle_frame / battle_finished`
 - 内部已先收紧为最小 finish reason 枚举
 - 未识别的 `finish:<custom_reason>` 当前会回落到 `finished`
 

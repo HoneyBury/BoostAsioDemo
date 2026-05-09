@@ -6,6 +6,15 @@
 
 namespace v2::gateway {
 
+GatewayServerShadowBridge::MirrorPolicy make_shadow_bridge_policy(
+    const app::config::GatewayAppConfig& config) noexcept {
+    return GatewayServerShadowBridge::MirrorPolicy(
+        config.v2_shadow_bridge_login,
+        config.v2_shadow_bridge_room,
+        config.v2_shadow_bridge_battle,
+        config.v2_shadow_bridge_echo);
+}
+
 bool GatewayServerShadowBridge::should_forward(std::uint16_t message_id) const noexcept {
     switch (message_id) {
         case net::protocol::kLoginRequest:

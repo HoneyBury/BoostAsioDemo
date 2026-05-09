@@ -356,7 +356,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
                  pending->second.session_id,
                  pending->second.request_id,
                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                 fmt::format("battle_started:{}:{}", created->room_id, created->battle_id));
+                 format_battle_started_body(created->room_id, created->battle_id));
             pending_battle_start_.erase(pending);
         }
         for (const auto& [session_id, room_id] : rooms_by_session_id_) {
@@ -380,7 +380,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
                      pending->second.session_id,
                      pending->second.request_id,
                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                     fmt::format("input_seq:{}", input->input_seq));
+                     format_battle_input_response_body(input->input_seq));
                 pending_battle_input_.erase(pending);
             }
         }
@@ -390,7 +390,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
                      session_id,
                      0,
                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                     fmt::format("{}:{}:{}", input->user_id, input->input_seq, input->input_data));
+                     format_battle_input_push_body(input->user_id, input->input_seq, input->input_data));
             }
         }
 

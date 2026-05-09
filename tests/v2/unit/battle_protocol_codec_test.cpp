@@ -14,8 +14,17 @@ TEST(V2BattleProtocolCodecTest, ParsesRequestedFinishReasons) {
 }
 
 TEST(V2BattleProtocolCodecTest, FormatsBattleBodiesWithStableSchema) {
+    const auto started = v2::gateway::format_battle_started_body("room_alpha", "battle_0001");
+    EXPECT_EQ(started, "battle_started:room_alpha:battle_0001");
+
     const auto state = v2::gateway::format_battle_state_body("room_alpha", "battle_0001");
     EXPECT_EQ(state, "battle_state:room_alpha:battle_0001");
+
+    const auto input_response = v2::gateway::format_battle_input_response_body(3);
+    EXPECT_EQ(input_response, "input_seq:3");
+
+    const auto input_push = v2::gateway::format_battle_input_push_body("owner", 3, "move:3,2");
+    EXPECT_EQ(input_push, "owner:3:move:3,2");
 
     const auto end_accepted =
         v2::gateway::format_battle_end_accepted_body(v2::battle::BattleFinishReason::kSurrender);

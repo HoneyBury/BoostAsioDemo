@@ -9,7 +9,12 @@
 namespace v2::gateway {
 
 [[nodiscard]] std::optional<v2::battle::BattleFinishReason> parse_battle_finish_request(std::string_view body);
+[[nodiscard]] std::string format_battle_started_body(std::string_view room_id, std::string_view battle_id);
 [[nodiscard]] std::string format_battle_state_body(std::string_view room_id, std::string_view battle_id);
+[[nodiscard]] std::string format_battle_input_response_body(std::uint64_t input_seq);
+[[nodiscard]] std::string format_battle_input_push_body(std::string_view user_id,
+                                                        std::uint64_t input_seq,
+                                                        std::string_view input_data);
 [[nodiscard]] std::string format_battle_end_accepted_body(v2::battle::BattleFinishReason reason);
 [[nodiscard]] std::string format_battle_frame_body(const v2::battle::BattleFrameAdvancedMsg& frame);
 [[nodiscard]] std::string format_battle_finished_body(const v2::battle::BattleFinishedMsg& finished);

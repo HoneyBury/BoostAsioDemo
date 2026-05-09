@@ -1,21 +1,30 @@
 #include <cstdlib>
+#include <atomic>
+#include <chrono>
+#include <csignal>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <boost/asio.hpp>
 #include <fmt/core.h>
 
 #include "app/crash_handler.h"
-#include "app/graceful_shutdown.h"
 #include "app/logging.h"
 #include "net/protocol.h"
 #include "v2/gateway/demo_server.h"
+#include "v2/io/io_engine.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 
 namespace {
+
+std::atomic<bool> g_keep_running{true};
+
+void handle_signal(int) {
+    g_keep_running.store(false, std::memory_order_relaxed);
+}
 
 void print_exchange(v2::gateway::SessionAdapter& adapter,
                     v2::gateway::ClientEnvelope envelope,
@@ -34,6 +43,16 @@ void print_exchange(v2::gateway::SessionAdapter& adapter,
 
 bool is_script_mode(int argc, char* argv[]) {
     return argc > 1 && std::string(argv[1]) == "--script";
+}
+
+std::uint32_t parse_io_cores(int argc, char* argv[]) {
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::string(argv[i]) == "--io-cores") {
+            const auto parsed = std::atoi(argv[i + 1]);
+            return parsed > 0 ? static_cast<std::uint32_t>(parsed) : 1U;
+        }
+    }
+    return 1U;
 }
 
 }  // namespace
@@ -145,17 +164,19 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 
-        boost::asio::io_context io_context;
-        v2::gateway::DemoServer server(io_context, 9201);
+        const auto io_cores = parse_io_cores(argc, argv);
+        auto io_engine = std::make_unique<v2::io::AsioIoEngine>(io_cores);
+        v2::gateway::DemoServer server(9201, {}, std::move(io_engine));
         server.start();
-        app::GracefulShutdown shutdown(io_context.get_executor(), [&]() {
-            server.stop();
-            io_context.stop();
-        });
-        shutdown.start();
-
-        fmt::print("v2 gateway demo listening on port {}\n", server.local_port());
-        io_context.run();
+        std::signal(SIGINT, handle_signal);
+        std::signal(SIGTERM, handle_signal);
+        fmt::print("v2 gateway demo listening on port {} with {} io cores\n",
+                   server.local_port(),
+                   server.io_core_count());
+        while (g_keep_running.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        server.stop();
         return 0;
     } catch (const std::exception& ex) {
         fmt::print(stderr, "v2_gateway_demo failed: {}\n", ex.what());

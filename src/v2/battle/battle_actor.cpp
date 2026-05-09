@@ -24,18 +24,29 @@ void BattleActor::finish_battle(BattleFinishReason reason, std::string triggerin
     std::optional<std::string> winner_user_id;
     std::int64_t high_score = 0;
     bool any_score_set = false;
-    for (const auto& participant : state_.participants) {
-        std::int64_t score = 0;
-        for (const auto& input : state_.replay_inputs) {
-            if (input.user_id == participant.user_id) {
-                score += input.score;
+    if (world_ != nullptr) {
+        scores = battle_world_collect_scores(*world_, state_.participants);
+        for (const auto& score : scores) {
+            if (!any_score_set || score.score > high_score) {
+                any_score_set = true;
+                high_score = score.score;
+                winner_user_id = score.user_id;
             }
         }
-        scores.push_back(BattleScore{.user_id = participant.user_id, .score = score});
-        if (!any_score_set || score > high_score) {
-            any_score_set = true;
-            high_score = score;
-            winner_user_id = participant.user_id;
+    } else {
+        for (const auto& participant : state_.participants) {
+            std::int64_t score = 0;
+            for (const auto& input : state_.replay_inputs) {
+                if (input.user_id == participant.user_id) {
+                    score += input.score;
+                }
+            }
+            scores.push_back(BattleScore{.user_id = participant.user_id, .score = score});
+            if (!any_score_set || score > high_score) {
+                any_score_set = true;
+                high_score = score;
+                winner_user_id = participant.user_id;
+            }
         }
     }
 
@@ -79,7 +90,10 @@ void BattleActor::on_message(v2::actor::Message&& message) {
         }
         max_frames_ = create->max_frames;
         last_submitted_frame_.clear();
+        last_acked_frame_.clear();
         state_.lifecycle = BattleLifecycleState::kRunning;
+        next_input_seq_ = 1;
+        world_ = create_battle_world(create->player_ids);
 
         sink_.push(BattleCreatedMsg{
             .battle_id = state_.battle_id,
@@ -99,6 +113,9 @@ void BattleActor::on_message(v2::actor::Message&& message) {
             last_submitted_frame_[input->user_id] = input->submitted_frame;
         }
         const auto input_seq = next_input_seq_++;
+        if (world_ != nullptr) {
+            battle_world_apply_input_score(*world_, input->user_id, input->score);
+        }
         state_.replay_inputs.push_back(BattleReplayInputRecord{
             .input_seq = input_seq,
             .frame_number = state_.frame_number + 1,
@@ -120,7 +137,16 @@ void BattleActor::on_message(v2::actor::Message&& message) {
 
     const auto* tick = std::get_if<TickBattleMsg>(&message.payload);
     if (tick != nullptr && state_.lifecycle == BattleLifecycleState::kRunning) {
-        ++state_.frame_number;
+        if (world_ != nullptr) {
+            state_.frame_number = battle_world_tick(*world_, v2::ecs::FrameContext{
+                .battle_id = state_.battle_id,
+                .room_id = state_.room_id,
+                .frame_number = state_.frame_number + 1,
+                .trigger = tick->trigger,
+            });
+        } else {
+            ++state_.frame_number;
+        }
         for (auto& record : state_.replay_inputs) {
             if (record.frame_number == state_.frame_number) {
                 record.trigger = tick->trigger;
@@ -166,6 +192,9 @@ void BattleActor::on_message(v2::actor::Message&& message) {
     }
 
     it->online = false;
+    if (world_ != nullptr) {
+        battle_world_mark_offline(*world_, disconnected->user_id);
+    }
     finish_battle(BattleFinishReason::kPlayerDisconnected, disconnected->user_id);
 }
 

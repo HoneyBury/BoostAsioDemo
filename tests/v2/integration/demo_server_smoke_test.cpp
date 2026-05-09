@@ -19,16 +19,13 @@ namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
 struct V2DemoRuntime {
-    asio::io_context io_context;
     std::unique_ptr<v2::gateway::DemoServer> server;
-    std::thread io_thread;
     std::string startup_error;
 
     bool start() {
         try {
-            server = std::make_unique<v2::gateway::DemoServer>(io_context, 0);
+            server = std::make_unique<v2::gateway::DemoServer>(0);
             server->start();
-            io_thread = std::thread([this]() { io_context.run(); });
             return true;
         } catch (const std::exception& ex) {
             startup_error = ex.what();
@@ -39,10 +36,6 @@ struct V2DemoRuntime {
     void stop() {
         if (server) {
             server->stop();
-        }
-        io_context.stop();
-        if (io_thread.joinable()) {
-            io_thread.join();
         }
     }
 };
@@ -250,4 +243,12 @@ TEST(V2DemoServerSmokeTest, RealSocketFlowSupportsRequestedBattleFinish) {
     owner.close();
     member.close();
     runtime.stop();
+}
+
+TEST(V2DemoServerSmokeTest, DemoServerReportsConfiguredIoCoreCount) {
+    app::logging::init("project_tests");
+
+    auto io_engine = std::make_unique<v2::io::AsioIoEngine>(2);
+    v2::gateway::DemoServer server(0, {}, std::move(io_engine));
+    EXPECT_EQ(server.io_core_count(), 2U);
 }

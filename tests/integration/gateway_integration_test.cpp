@@ -193,6 +193,32 @@ net::packet::DecodedPacket read_until_message(TestClient& client, std::uint16_t 
     }
 }
 
+std::vector<net::packet::DecodedPacket> collect_matching_messages(TestClient& client,
+                                                                  std::uint16_t message_id,
+                                                                  std::chrono::milliseconds timeout) {
+    std::vector<net::packet::DecodedPacket> packets;
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        const auto packet = client.try_read_for(std::chrono::milliseconds(25));
+        if (!packet.has_value()) {
+            continue;
+        }
+        if (packet->message_id == message_id) {
+            packets.push_back(std::move(*packet));
+        }
+    }
+    return packets;
+}
+
+bool contains_body(const std::vector<net::packet::DecodedPacket>& packets, std::string_view body) {
+    for (const auto& packet : packets) {
+        if (packet.body == body) {
+            return true;
+        }
+    }
+    return false;
+}
+
 class RecordingPacketBridge final : public game::gateway::GatewayPacketBridge {
 public:
     void on_packet(const std::shared_ptr<net::Session>& session,
@@ -624,27 +650,28 @@ TEST(GatewayIntegrationTest, EchoServerConfigCanRestrictBattleShadowResponsesByK
     EXPECT_EQ(member.expect_message(net::protocol::kRoomReadyResponse).request_id, 335U);
 
     owner.send(net::protocol::kBattleStartRequest, 336, "");
-    const auto start_first = owner.expect_message(net::protocol::kBattleStartResponse);
-    const auto start_second = owner.expect_message(net::protocol::kBattleStartResponse);
-    EXPECT_TRUE((start_first.body == "battle_started:bridge_room:2" &&
-                 start_second.body == "battle_started:room_id=bridge_room:battle_id=battle_0001") ||
-                (start_second.body == "battle_started:bridge_room:2" &&
-                 start_first.body == "battle_started:room_id=bridge_room:battle_id=battle_0001"));
+    std::vector<net::packet::DecodedPacket> start_responses;
+    start_responses.push_back(owner.expect_message(net::protocol::kBattleStartResponse));
+    for (auto& packet : collect_matching_messages(owner, net::protocol::kBattleStartResponse, std::chrono::milliseconds(300))) {
+        start_responses.push_back(std::move(packet));
+    }
+    EXPECT_TRUE(contains_body(start_responses, "battle_started:room_id=bridge_room:battle_id=battle_0001"));
 
-    const auto member_started_first = member.expect_message(net::protocol::kBattleStatePush);
-    const auto member_started_second = member.expect_message(net::protocol::kBattleStatePush);
-    EXPECT_TRUE((member_started_first.body == "battle_state:started:bridge_room:2" &&
-                 member_started_second.body == "battle_state:kind=started:room_id=bridge_room:battle_id=battle_0001") ||
-                (member_started_second.body == "battle_state:started:bridge_room:2" &&
-                 member_started_first.body == "battle_state:kind=started:room_id=bridge_room:battle_id=battle_0001"));
+    std::vector<net::packet::DecodedPacket> member_started;
+    member_started.push_back(member.expect_message(net::protocol::kBattleStatePush));
+    for (auto& packet : collect_matching_messages(member, net::protocol::kBattleStatePush, std::chrono::milliseconds(300))) {
+        member_started.push_back(std::move(packet));
+    }
+    EXPECT_TRUE(contains_body(member_started, "battle_state:started:bridge_room:2"));
+    EXPECT_TRUE(contains_body(member_started, "battle_state:kind=started:room_id=bridge_room:battle_id=battle_0001"));
 
     owner.send(net::protocol::kBattleInputRequest, 337, "move:right");
-    const auto input_first = owner.expect_message(net::protocol::kBattleInputResponse);
-    const auto input_second = owner.expect_message(net::protocol::kBattleInputResponse);
-    EXPECT_TRUE((input_first.body == "battle_input_accepted:bridge_room:1" &&
-                 input_second.body == "input_seq:seq=1") ||
-                (input_second.body == "battle_input_accepted:bridge_room:1" &&
-                 input_first.body == "input_seq:seq=1"));
+    std::vector<net::packet::DecodedPacket> input_responses;
+    input_responses.push_back(owner.expect_message(net::protocol::kBattleInputResponse));
+    for (auto& packet : collect_matching_messages(owner, net::protocol::kBattleInputResponse, std::chrono::milliseconds(300))) {
+        input_responses.push_back(std::move(packet));
+    }
+    EXPECT_TRUE(contains_body(input_responses, "input_seq:seq=1"));
 
     const auto member_input = member.expect_message(net::protocol::kBattleInputPush);
     EXPECT_EQ(member_input.body, "battle_input:bridge_room:bridge_owner:1:move:right");

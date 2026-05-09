@@ -33,7 +33,9 @@ TEST(V2GatewayCommandParserTest, ParsesAndValidatesRoomIdentifiers) {
 
 TEST(V2GatewayCommandParserTest, ParsesBattleStartAndInputBodies) {
     const auto start_empty = v2::gateway::parse_battle_start_command_body("");
-    EXPECT_FALSE(start_empty.has_value());
+    ASSERT_TRUE(start_empty.has_value());
+    EXPECT_FALSE(start_empty->room_id.has_value());
+    EXPECT_TRUE(v2::gateway::validate_battle_start_command_body(*start_empty));
 
     const auto start_room = v2::gateway::parse_battle_start_command_body("room_alpha");
     ASSERT_TRUE(start_room.has_value());
@@ -55,10 +57,13 @@ TEST(V2GatewayCommandParserTest, ParsesBattleStartAndInputBodies) {
     EXPECT_FALSE(v2::gateway::parse_battle_input_command_body("").has_value());
 }
 
-TEST(V2GatewayCommandParserTest, RejectsBattleStartWithoutRoomId) {
-    EXPECT_FALSE(v2::gateway::parse_battle_start_command_body("").has_value());
+TEST(V2GatewayCommandParserTest, AcceptsBattleStartWithoutRoomIdAsCurrentRoom) {
+    const auto parsed = v2::gateway::parse_battle_start_command_body("");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_FALSE(parsed->room_id.has_value());
+    EXPECT_TRUE(v2::gateway::validate_battle_start_command_body(*parsed));
     EXPECT_FALSE(v2::gateway::validate_battle_start_command_body(
-        v2::gateway::ParsedBattleStartCommandBody{}));
+        v2::gateway::ParsedBattleStartCommandBody{.room_id = std::string{}}));
 }
 
 TEST(V2GatewayCommandParserTest, ParsesFinishVariantsAsStructuredReasons) {

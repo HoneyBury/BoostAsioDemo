@@ -1,11 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 
 #include "v2/actor/actor.h"
 #include "v2/battle/message_types.h"
+#include "v2/battle/runtime_world.h"
+#include "v2/ecs/world.h"
 
 namespace v2::battle {
 
@@ -34,6 +37,7 @@ private:
     std::unordered_map<std::string, std::uint32_t> last_acked_frame_;
     BattleEventSink& sink_;
     BattleRuntimeState state_;
+    std::unique_ptr<v2::ecs::World> world_;
 };
 
 }  // namespace v2::battle

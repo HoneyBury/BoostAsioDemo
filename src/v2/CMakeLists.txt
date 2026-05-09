@@ -2,7 +2,9 @@ add_library(project_v2 STATIC
     actor/actor.cpp
     actor/actor_ref.cpp
     battle/battle_actor.cpp
+    battle/runtime_world.cpp
     common/module_marker.cpp
+    ecs/world.cpp
     gateway/battle_protocol_codec.cpp
     gateway/battle_archive_store.cpp
     gateway/battle_wire_parser.cpp
@@ -13,6 +15,7 @@ add_library(project_v2 STATIC
     gateway/gateway_server_bridge.cpp
     gateway/runtime.cpp
     gateway/session_adapter.cpp
+    io/io_engine.cpp
     player/player_actor.cpp
     room/room_actor.cpp
     runtime/actor_system.cpp

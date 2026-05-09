@@ -6,11 +6,12 @@
 
 namespace v2::gateway {
 
-DemoServer::DemoServer(asio::io_context& io_context,
-                       std::uint16_t port,
-                       net::SessionOptions session_options)
-    : acceptor_(io_context, tcp::endpoint(tcp::v4(), port)),
+DemoServer::DemoServer(std::uint16_t port,
+                       net::SessionOptions session_options,
+                       std::unique_ptr<v2::io::IoEngine> io_engine)
+    : port_(port),
       session_options_(std::move(session_options)),
+      io_engine_(std::move(io_engine)),
       adapter_(actor_system_, this),
       runtime_(actor_system_, adapter_) {
     gateway_actor_ = runtime_.create_gateway_actor();
@@ -20,47 +21,57 @@ DemoServer::DemoServer(asio::io_context& io_context,
 }
 
 void DemoServer::start() {
-    LOG_INFO("v2 demo server listening on 0.0.0.0:{}", acceptor_.local_endpoint().port());
+    acceptor_ = io_engine_->listen("127.0.0.1", port_, session_options_);
+    LOG_INFO("v2 demo server listening on 127.0.0.1:{}", acceptor_->local_port());
     do_accept();
+    io_engine_->run();
 }
 
 void DemoServer::stop() {
-    boost::system::error_code ignored_ec;
-    acceptor_.close(ignored_ec);
-    for (auto& [session_id, session] : sessions_) {
-        (void)session_id;
-        session->stop();
+    {
+        std::scoped_lock lock(sessions_mutex_);
+        acceptor_.reset();
+        for (auto& [session_id, session] : sessions_) {
+            (void)session_id;
+            session->close();
+        }
+        sessions_.clear();
     }
+    io_engine_->stop();
 }
 
 void DemoServer::deliver(SessionWrite write) {
+    std::scoped_lock lock(sessions_mutex_);
     auto it = sessions_.find(write.envelope.session_id);
-    if (it == sessions_.end()) {
-        return;
+    if (it != sessions_.end()) {
+        it->second->send(write.envelope.protocol_message_id,
+                         write.envelope.request_id,
+                         write.envelope.error_code,
+                         std::move(write.envelope.body),
+                         write.envelope.flags);
     }
-    it->second->send(write.envelope.protocol_message_id,
-                     write.envelope.request_id,
-                     write.envelope.error_code,
-                     std::move(write.envelope.body),
-                     write.envelope.flags);
 }
 
 std::uint16_t DemoServer::local_port() const {
-    return acceptor_.local_endpoint().port();
+    return acceptor_ == nullptr ? 0 : acceptor_->local_port();
+}
+
+std::uint32_t DemoServer::io_core_count() const {
+    return io_engine_ == nullptr ? 0U : io_engine_->num_io_cores();
 }
 
 void DemoServer::do_accept() {
-    acceptor_.async_accept([this](const boost::system::error_code& ec, tcp::socket socket) {
-        if (ec) {
+    if (!acceptor_) {
+        return;
+    }
+    acceptor_->async_accept([this](std::unique_ptr<v2::io::IoSession> session) {
+        if (!session) {
             return;
         }
 
         const auto session_id = next_session_id_++;
-        auto session = std::make_shared<net::Session>(std::move(socket), session_options_);
-        sessions_.emplace(session_id, session);
-
         session->set_packet_handler(
-            [this, session_id](const std::shared_ptr<net::Session>&, net::Session::PacketMessage message) {
+            [this, session_id](v2::io::IoSession::PacketMessage message) {
                 (void)adapter_.handle_incoming(ClientEnvelope{
                     .session_id = session_id,
                     .protocol_message_id = message.message_id,
@@ -70,14 +81,18 @@ void DemoServer::do_accept() {
                     .body = std::move(message.body),
                 });
             });
+        session->set_close_handler([this, session_id]() {
+            runtime_.on_session_closed(session_id);
+            std::scoped_lock lock(sessions_mutex_);
+            sessions_.erase(session_id);
+        });
 
-        session->set_close_handler(
-            [this, session_id](const std::shared_ptr<net::Session>&, const boost::system::error_code&) {
-                runtime_.on_session_closed(session_id);
-                sessions_.erase(session_id);
-            });
+        {
+            std::scoped_lock lock(sessions_mutex_);
+            sessions_.emplace(session_id, std::move(session));
+            sessions_.at(session_id)->start();
+        }
 
-        session->start();
         do_accept();
     });
 }

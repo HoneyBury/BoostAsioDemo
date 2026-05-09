@@ -45,6 +45,13 @@ v2::actor::Message make_message(v2::player::BattleAssignedMsg payload) {
     return message;
 }
 
+v2::actor::Message make_message(v2::player::BattleSettlementMsg payload) {
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.payload = std::move(payload);
+    return message;
+}
+
 v2::actor::Message make_message(v2::player::BattleEndedMsg payload) {
     v2::actor::Message message;
     message.header.kind = v2::actor::MessageKind::kUser;
@@ -182,15 +189,25 @@ TEST(V2PlayerActorTest, BattleAssignedAndEndedTransitionsBackToRoom) {
         .battle_actor_id = 77,
         .battle_id = "battle_0001",
     }));
+    actor_ref.tell(make_message(v2::player::BattleSettlementMsg{
+        .battle_id = "battle_0001",
+        .reason = "surrender",
+    }));
     actor_ref.tell(make_message(v2::player::BattleEndedMsg{
         .battle_id = "battle_0001",
         .reason = "player_disconnected",
     }));
 
-    EXPECT_EQ(actor_system.dispatch_all(), 5U);
+    EXPECT_EQ(actor_system.dispatch_all(), 6U);
     EXPECT_EQ(actor_ptr->state().lifecycle, v2::player::PlayerLifecycleState::kInRoom);
     ASSERT_TRUE(actor_ptr->state().room_id.has_value());
     EXPECT_EQ(*actor_ptr->state().room_id, "room_battle");
     EXPECT_FALSE(actor_ptr->state().battle_id.has_value());
     EXPECT_FALSE(actor_ptr->state().battle_actor_id.has_value());
+    EXPECT_FALSE(actor_ptr->state().pending_battle_settlement_reason.has_value());
+    ASSERT_EQ(sink.events.size(), 2U);
+    const auto* settlement = std::get_if<v2::player::BattleSettlementAppliedMsg>(&sink.events[1]);
+    ASSERT_NE(settlement, nullptr);
+    EXPECT_EQ(settlement->battle_id, "battle_0001");
+    EXPECT_EQ(settlement->reason, "surrender");
 }

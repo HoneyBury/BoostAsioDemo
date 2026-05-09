@@ -21,6 +21,10 @@ void PlayerActor::on_message(v2::actor::Message&& message) {
         handle_battle_assigned(*battle);
         return;
     }
+    if (const auto* settlement = std::get_if<BattleSettlementMsg>(&message.payload)) {
+        handle_battle_settlement(*settlement);
+        return;
+    }
     if (const auto* ended = std::get_if<BattleEndedMsg>(&message.payload)) {
         handle_battle_ended(*ended);
         return;
@@ -104,7 +108,20 @@ void PlayerActor::handle_room_assigned(const RoomAssignedMsg& message) {
 void PlayerActor::handle_battle_assigned(const BattleAssignedMsg& message) {
     state_.battle_actor_id = message.battle_actor_id;
     state_.battle_id = message.battle_id;
+    state_.pending_battle_settlement_reason.reset();
     state_.lifecycle = PlayerLifecycleState::kInBattle;
+}
+
+void PlayerActor::handle_battle_settlement(const BattleSettlementMsg& message) {
+    if (!state_.battle_id.has_value() || *state_.battle_id != message.battle_id) {
+        return;
+    }
+
+    state_.pending_battle_settlement_reason = message.reason;
+    sink_.push(BattleSettlementAppliedMsg{
+        .battle_id = message.battle_id,
+        .reason = message.reason,
+    });
 }
 
 void PlayerActor::handle_battle_ended(const BattleEndedMsg& message) {
@@ -114,6 +131,7 @@ void PlayerActor::handle_battle_ended(const BattleEndedMsg& message) {
 
     state_.battle_actor_id.reset();
     state_.battle_id.reset();
+    state_.pending_battle_settlement_reason.reset();
     state_.lifecycle = state_.room_id.has_value()
         ? PlayerLifecycleState::kInRoom
         : PlayerLifecycleState::kOnlineIdle;

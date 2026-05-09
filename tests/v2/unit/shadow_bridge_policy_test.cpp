@@ -47,6 +47,23 @@ TEST(V2ShadowBridgePolicyTest, EmitsConfiguredBattleResponseKindsOnly) {
                                     "battle_state:kind=finished:room_id=room_alpha:battle_id=battle_0001:reason=surrender:user_id=owner"));
 }
 
+TEST(V2ShadowBridgePolicyTest, EmitPolicyCanIndependentlyGateEveryBattleStateKind) {
+    v2::gateway::GatewayServerShadowBridge::EmitPolicy emit_policy(
+        true, false, true, false, true);
+    v2::gateway::GatewayServerShadowBridge bridge({}, emit_policy, true);
+
+    EXPECT_TRUE(bridge.should_emit(net::protocol::kBattleInputPush,
+                                   "battle_input:user_id=owner:seq=3:input=move"));
+    EXPECT_FALSE(bridge.should_emit(net::protocol::kBattleStatePush,
+                                    "battle_state:kind=started:room_id=room_alpha:battle_id=battle_0001"));
+    EXPECT_TRUE(bridge.should_emit(net::protocol::kBattleStatePush,
+                                   "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=3:trigger=input"));
+    EXPECT_FALSE(bridge.should_emit(net::protocol::kBattleStatePush,
+                                    "battle_state:kind=settlement:room_id=room_alpha:battle_id=battle_0001:reason=timeout:user_id=owner"));
+    EXPECT_TRUE(bridge.should_emit(net::protocol::kBattleStatePush,
+                                   "battle_state:kind=finished:room_id=room_alpha:battle_id=battle_0001:reason=timeout:user_id=owner"));
+}
+
 TEST(V2ShadowBridgePolicyTest, BuildsMirrorPolicyFromGatewayConfig) {
     app::config::GatewayAppConfig config;
     config.v2_shadow_bridge_login = false;

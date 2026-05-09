@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -64,6 +66,19 @@ private:
     v2::actor::ActorRef target_;
 };
 
+class TimedForwardingActor final : public v2::actor::Actor {
+public:
+    explicit TimedForwardingActor(v2::actor::ActorRef target)
+        : target_(target) {}
+
+    void on_message(v2::actor::Message&& message) override {
+        tell_after(target_, std::move(message), std::chrono::milliseconds(20));
+    }
+
+private:
+    v2::actor::ActorRef target_;
+};
+
 }  // namespace
 
 TEST(V2ActorRuntimeTest, CreateActorStartsAndShutdownStops) {
@@ -118,4 +133,25 @@ TEST(V2ActorRuntimeTest, DispatchAllPromotesDelayedMessagesOnLaterRounds) {
     EXPECT_EQ(actor_system.dispatch_all(), 1U);
     ASSERT_EQ(received.size(), 1U);
     EXPECT_EQ(received.front(), "delayed-v2");
+}
+
+TEST(V2ActorRuntimeTest, DispatchAllPromotesWallClockDelayedMessagesWhenDue) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+    auto delayed = actor_system.create_actor(std::make_unique<TimedForwardingActor>(receiver));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.payload = std::string("timed-v2");
+    delayed.tell(std::move(message));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    EXPECT_TRUE(received.empty());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(received.size(), 1U);
+    EXPECT_EQ(received.front(), "timed-v2");
 }

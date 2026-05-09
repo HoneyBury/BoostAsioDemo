@@ -26,6 +26,10 @@ void RoomActor::on_message(v2::actor::Message&& message) {
         handle_battle_started(*started);
         return;
     }
+    if (const auto* settlement = std::get_if<BattleSettlementMsg>(&message.payload)) {
+        handle_battle_settlement(*settlement);
+        return;
+    }
     if (const auto* ended = std::get_if<BattleEndedMsg>(&message.payload)) {
         handle_battle_ended(*ended);
     }
@@ -109,6 +113,20 @@ void RoomActor::handle_start_battle(const StartBattleMsg& message) {
 
 void RoomActor::handle_battle_started(const BattleStartedMsg& message) {
     state_.active_battle_id = message.battle_id;
+    state_.pending_battle_settlement_reason.reset();
+}
+
+void RoomActor::handle_battle_settlement(const BattleSettlementMsg& message) {
+    if (!state_.active_battle_id.has_value() || *state_.active_battle_id != message.battle_id) {
+        return;
+    }
+
+    state_.pending_battle_settlement_reason = message.reason;
+    sink_.push(BattleSettlementAppliedMsg{
+        .room_id = state_.room_id,
+        .battle_id = message.battle_id,
+        .reason = message.reason,
+    });
 }
 
 void RoomActor::handle_battle_ended(const BattleEndedMsg& message) {
@@ -117,6 +135,7 @@ void RoomActor::handle_battle_ended(const BattleEndedMsg& message) {
     }
 
     state_.active_battle_id.reset();
+    state_.pending_battle_settlement_reason.reset();
     for (auto& member : state_.members) {
         member.ready = false;
     }

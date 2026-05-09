@@ -24,4 +24,14 @@ void ActorRef::tell_after(Message message, std::size_t dispatch_delay) const {
     system_->send_after(std::move(message), dispatch_delay);
 }
 
+void ActorRef::tell_after(Message message, std::chrono::steady_clock::duration delay) const {
+    if (!is_valid()) {
+        return;
+    }
+    if (message.header.target_actor == 0) {
+        message.header.target_actor = actor_id_;
+    }
+    system_->send_after(std::move(message), delay);
+}
+
 }  // namespace v2::actor

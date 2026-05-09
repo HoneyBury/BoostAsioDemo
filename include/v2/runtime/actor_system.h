@@ -1,10 +1,11 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <deque>
 #include <memory>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 #include "v2/actor/actor.h"
 
@@ -12,6 +13,10 @@ namespace v2::runtime {
 
 class ActorSystem {
 public:
+    using Clock = std::chrono::steady_clock;
+    using Duration = Clock::duration;
+    using TimePoint = Clock::time_point;
+
     ActorSystem() = default;
     ~ActorSystem();
 
@@ -24,6 +29,8 @@ public:
 
     void send(v2::actor::Message message);
     void send_after(v2::actor::Message message, std::size_t dispatch_delay);
+    void send_after(v2::actor::Message message, Duration delay);
+    void send_at(v2::actor::Message message, TimePoint ready_at);
     std::size_t dispatch_all();
     void shutdown();
 
@@ -40,7 +47,9 @@ private:
     void promote_scheduled_messages();
 
     struct ScheduledMessage {
+        bool use_wall_clock = false;
         std::size_t ready_after_dispatch = 0;
+        TimePoint ready_at{};
         v2::actor::Message message;
     };
 

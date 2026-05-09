@@ -20,4 +20,15 @@ void Actor::tell_after(const ActorRef& target, Message message, std::size_t disp
     target.tell_after(std::move(message), dispatch_delay);
 }
 
+void Actor::tell_after(const ActorRef& target,
+                       Message message,
+                       std::chrono::steady_clock::duration delay) const {
+    if (!target.is_valid()) {
+        return;
+    }
+    message.header.source_actor = id();
+    message.header.target_actor = target.actor_id();
+    target.tell_after(std::move(message), delay);
+}
+
 }  // namespace v2::actor

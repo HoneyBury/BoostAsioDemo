@@ -196,6 +196,10 @@ TEST(V2RoomActorTest, BattleStartedBlocksRestartUntilBattleEnded) {
     actor_ref.tell(make_room_message(v2::room::BattleStartedMsg{
         .battle_id = "battle_0001",
     }));
+    actor_ref.tell(make_room_message(v2::room::BattleSettlementMsg{
+        .battle_id = "battle_0001",
+        .reason = "surrender",
+    }));
     actor_ref.tell(make_room_message(v2::room::StartBattleMsg{
         .requester_user_id = "owner",
     }));
@@ -204,12 +208,18 @@ TEST(V2RoomActorTest, BattleStartedBlocksRestartUntilBattleEnded) {
         .reason = "player_disconnected",
     }));
 
-    EXPECT_EQ(actor_system.dispatch_all(), 7U);
+    EXPECT_EQ(actor_system.dispatch_all(), 8U);
     EXPECT_FALSE(actor_ptr->state().active_battle_id.has_value());
+    EXPECT_FALSE(actor_ptr->state().pending_battle_settlement_reason.has_value());
     EXPECT_FALSE(actor_ptr->state().members[0].ready);
     EXPECT_FALSE(actor_ptr->state().members[1].ready);
-    ASSERT_EQ(sink.events.size(), 1U);
-    const auto* rejected = std::get_if<v2::room::BattleStartRejectedMsg>(&sink.events.front());
+    ASSERT_EQ(sink.events.size(), 2U);
+    const auto* settlement = std::get_if<v2::room::BattleSettlementAppliedMsg>(&sink.events.front());
+    ASSERT_NE(settlement, nullptr);
+    EXPECT_EQ(settlement->room_id, "room_epsilon");
+    EXPECT_EQ(settlement->battle_id, "battle_0001");
+    EXPECT_EQ(settlement->reason, "surrender");
+    const auto* rejected = std::get_if<v2::room::BattleStartRejectedMsg>(&sink.events[1]);
     ASSERT_NE(rejected, nullptr);
     EXPECT_EQ(rejected->reason, "battle_already_started");
 }

@@ -26,6 +26,7 @@ private:
     void handle_login_request(const LoginRequestMsg& message);
     void handle_room_assigned(const RoomAssignedMsg& message);
     void handle_battle_assigned(const BattleAssignedMsg& message);
+    void handle_battle_settlement(const BattleSettlementMsg& message);
     void handle_battle_ended(const BattleEndedMsg& message);
     void handle_session_closed(const SessionClosedMsg& message);
 

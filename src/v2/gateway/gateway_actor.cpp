@@ -1,22 +1,11 @@
 #include "v2/gateway/gateway_actor.h"
 
 #include "net/protocol.h"
+#include "v2/gateway/gateway_command_parser.h"
 
 #include <utility>
 
 namespace v2::gateway {
-
-namespace {
-
-std::string parse_login_user_id(const std::string& body) {
-    const auto separator = body.find('|');
-    if (separator == std::string::npos) {
-        return body;
-    }
-    return body.substr(0, separator);
-}
-
-}  // namespace
 
 GatewayActor::GatewayActor(SessionWriteSink& sink,
                            GatewayCommandSink* command_sink,
@@ -82,8 +71,8 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
                 return;
             }
             if (command->type == GatewayCommandType::kLogin) {
-                const auto user_id = parse_login_user_id(command->body);
-                if (user_id.empty()) {
+                const auto login_body = parse_login_command_body(command->body);
+                if (!login_body.has_value() || !validate_login_command_body(*login_body)) {
                     emit_error(*envelope,
                                static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
                                net::protocol::to_string(net::protocol::ErrorCode::kInvalidUserId));
@@ -92,7 +81,7 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
                 emit_response(*envelope,
                               net::protocol::kLoginResponse,
                               static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                              "login_ok:" + user_id);
+                              "login_ok:" + login_body->user_id);
                 return;
             }
             emit_error(*envelope,

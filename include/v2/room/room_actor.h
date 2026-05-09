@@ -27,6 +27,7 @@ private:
     void handle_set_ready(const SetReadyMsg& message);
     void handle_start_battle(const StartBattleMsg& message);
     void handle_battle_started(const BattleStartedMsg& message);
+    void handle_battle_settlement(const BattleSettlementMsg& message);
     void handle_battle_ended(const BattleEndedMsg& message);
 
     RoomMemberState* find_member(const std::string& user_id) noexcept;

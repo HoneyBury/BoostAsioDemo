@@ -36,8 +36,6 @@ private:
     };
 
     [[nodiscard]] v2::actor::ActorRef get_or_create_player(const std::string& user_id);
-    [[nodiscard]] std::string parse_login_user_id(const std::string& body) const;
-    [[nodiscard]] std::string parse_display_name(const std::string& body) const;
     [[nodiscard]] std::string session_user_id(SessionId session_id) const;
     [[nodiscard]] std::optional<SessionId> session_id_for_user(const std::string& user_id) const;
 

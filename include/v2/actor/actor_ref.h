@@ -1,5 +1,7 @@
 #pragma once
 
+#include <chrono>
+
 #include "v2/actor/message.h"
 
 namespace v2::actor {
@@ -23,6 +25,7 @@ public:
 
     void tell(Message message) const;
     void tell_after(Message message, std::size_t dispatch_delay) const;
+    void tell_after(Message message, std::chrono::steady_clock::duration delay) const;
 
 private:
     friend class v2::runtime::ActorSystem;

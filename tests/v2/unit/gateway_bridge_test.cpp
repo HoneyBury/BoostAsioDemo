@@ -46,6 +46,26 @@ TEST(V2GatewayBridgeTest, LoginRequestReturnsLoginResponse) {
     EXPECT_EQ(writes.front().envelope.body, "login_ok:player_01");
 }
 
+TEST(V2GatewayBridgeTest, LoginRequestRejectsEmptyUserId) {
+    v2::runtime::ActorSystem actor_system;
+    v2::gateway::SessionAdapter adapter(actor_system);
+    auto gateway_actor = actor_system.create_actor(
+        std::make_unique<v2::gateway::GatewayActor>(adapter));
+    adapter.bind_gateway(gateway_actor);
+
+    v2::gateway::ClientEnvelope envelope;
+    envelope.session_id = 8;
+    envelope.protocol_message_id = net::protocol::kLoginRequest;
+    envelope.request_id = 101;
+    envelope.body = "|token:player_01";
+
+    const auto writes = adapter.handle_incoming(envelope);
+    ASSERT_EQ(writes.size(), 1U);
+    EXPECT_EQ(writes.front().envelope.protocol_message_id, net::protocol::kErrorResponse);
+    EXPECT_EQ(writes.front().envelope.error_code,
+              static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId));
+}
+
 TEST(V2GatewayBridgeTest, NonWhitelistedMessageIsRejected) {
     v2::runtime::ActorSystem actor_system;
     v2::gateway::SessionAdapter adapter(actor_system);

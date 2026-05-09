@@ -53,7 +53,32 @@ void ActorSystem::send_after(v2::actor::Message message, std::size_t dispatch_de
     }
 
     scheduled_messages_.push_back(ScheduledMessage{
+        .use_wall_clock = false,
         .ready_after_dispatch = dispatch_round_ + dispatch_delay,
+        .message = std::move(message),
+    });
+}
+
+void ActorSystem::send_after(v2::actor::Message message, Duration delay) {
+    if (shutting_down_ || message.header.target_actor == 0) {
+        return;
+    }
+    if (delay <= Duration::zero()) {
+        send(std::move(message));
+        return;
+    }
+
+    send_at(std::move(message), Clock::now() + delay);
+}
+
+void ActorSystem::send_at(v2::actor::Message message, TimePoint ready_at) {
+    if (shutting_down_ || message.header.target_actor == 0) {
+        return;
+    }
+
+    scheduled_messages_.push_back(ScheduledMessage{
+        .use_wall_clock = true,
+        .ready_at = ready_at,
         .message = std::move(message),
     });
 }
@@ -120,6 +145,15 @@ void ActorSystem::promote_scheduled_messages() {
     pending.reserve(scheduled_messages_.size());
 
     for (auto& scheduled : scheduled_messages_) {
+        if (scheduled.use_wall_clock) {
+            if (scheduled.ready_at <= Clock::now()) {
+                send(std::move(scheduled.message));
+            } else {
+                pending.push_back(std::move(scheduled));
+            }
+            continue;
+        }
+
         if (scheduled.ready_after_dispatch <= dispatch_round_) {
             send(std::move(scheduled.message));
         } else {

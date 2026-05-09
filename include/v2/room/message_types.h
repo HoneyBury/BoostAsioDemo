@@ -19,6 +19,7 @@ struct RoomRuntimeState {
     std::string owner_user_id;
     std::vector<RoomMemberState> members;
     std::optional<std::string> active_battle_id;
+    std::optional<std::string> pending_battle_settlement_reason;
 };
 
 struct CreateRoomMsg {
@@ -45,6 +46,11 @@ struct BattleStartedMsg {
     std::string battle_id;
 };
 
+struct BattleSettlementMsg {
+    std::string battle_id;
+    std::string reason;
+};
+
 struct BattleEndedMsg {
     std::string battle_id;
     std::string reason;
@@ -61,6 +67,14 @@ struct BattleStartRejectedMsg {
     std::string reason;
 };
 
-using RoomEvent = std::variant<BattleStartRequestedMsg, BattleStartRejectedMsg>;
+struct BattleSettlementAppliedMsg {
+    std::string room_id;
+    std::string battle_id;
+    std::string reason;
+};
+
+using RoomEvent = std::variant<BattleStartRequestedMsg,
+                               BattleStartRejectedMsg,
+                               BattleSettlementAppliedMsg>;
 
 }  // namespace v2::room

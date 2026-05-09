@@ -291,6 +291,10 @@ examples/v2_gateway_demo/
 - `P3.1`：actor runtime 已补最小 delayed message，当前通过 `send_after()` / `tell_after()` 以 dispatch round 方式推进
 - `P4.1`：shadow bridge 已支持 response emit 粒度控制，当前已细化到 `battle_input_push / battle_state_started / battle_state_frame / battle_state_settlement / battle_state_finished`
 - `P4.2`：`echo_server` 和 `DemoServer` 已有基于真实 socket / 配置文件的 smoke test，验证 bridge 启停和 battle finish 顺序
+- `P1.2`：gateway command body 已拆出最小 parser，当前覆盖 login / room id / ready state，并已接入 `GatewayActor` / `Runtime`
+- `P2.2`：room/player 已可消费 battle settlement typed event，在 finish 前完成最小结算状态收口
+- `P3.2`：actor runtime 已补基于 `steady_clock` 的单次 delayed message，测试已覆盖 wall-clock 到期投递
+- `P4.3`：shadow bridge response 策略测试矩阵已扩到 started / frame / settlement / finished / input push 五类 battle 响应
 
 当前明确只有原型或占位的部分：
 
@@ -299,8 +303,8 @@ examples/v2_gateway_demo/
 - `SessionAdapter` 已可挂接 demo server，但还没有接入现有 `GatewayServer` 主链
 - runtime 仍是单进程、单线程 bootstrap 编排层，不是多核 actor runtime
 - battle 输入目前只做到“受理 + 转发”，没有 authoritative simulation
-- `PlayerActor` / `RoomActor` / `BattleActor` 之间仍以最小 typed message 协作为主，没有 supervisor 树、`ask()` 和 wall-clock timer
-- delayed message 当前只是 dispatch-round 原型，不应误判为已具备正式调度器
+- `PlayerActor` / `RoomActor` / `BattleActor` 之间仍以最小 typed message 协作为主，没有 supervisor 树和 `ask()`
+- wall-clock delayed message 当前只是单次投递原型，不应误判为已具备正式调度器
 
 当前不应误判为已完成的内容：
 
@@ -377,9 +381,9 @@ examples/v2_gateway_demo/
 
 如果继续沿当前原型推进，建议下一阶段不要再扩散模块面，而是按以下顺序收口：
 
-1. 把 battle finish 后续 typed 事件链继续收口到 room/player/battle 的正式状态转移
-2. 把 dispatch-round delayed message 提升为真正 timer / scheduler，而不是继续手工驱动 tick
-3. 继续稳定 battle external schema，把 parser / validator 从 battle 推广到更多协议域
+1. 把 battle finish 后续 typed 事件链继续延伸到更真实的结算、战报和 replay 入口
+2. 把单次 delayed message 提升为可取消、可周期化的正式 timer / scheduler
+3. 继续稳定 external schema，把 parser / validator 从 battle 和 gateway 基础域推广到更多协议域
 4. 扩大 `GatewayServer` bridge 灰度与 response 策略测试矩阵，但保持旁路不替换主链
 
 不要在当前阶段同时推进多核 I/O、分布式、数据层和 ECS World。

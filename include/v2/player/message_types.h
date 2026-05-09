@@ -34,6 +34,7 @@ struct PlayerRuntimeState {
     std::optional<std::string> room_id;
     std::optional<std::uint64_t> battle_actor_id;
     std::optional<std::string> battle_id;
+    std::optional<std::string> pending_battle_settlement_reason;
 };
 
 struct LoginRequestMsg {
@@ -56,6 +57,11 @@ struct RoomAssignedMsg {
 struct BattleAssignedMsg {
     std::uint64_t battle_actor_id = 0;
     std::string battle_id;
+};
+
+struct BattleSettlementMsg {
+    std::string battle_id;
+    std::string reason;
 };
 
 struct BattleEndedMsg {
@@ -85,6 +91,14 @@ struct SessionResumePushMsg {
     bool in_battle = false;
 };
 
-using PlayerEvent = std::variant<LoginAcceptedMsg, SessionKickPushMsg, SessionResumePushMsg>;
+struct BattleSettlementAppliedMsg {
+    std::string battle_id;
+    std::string reason;
+};
+
+using PlayerEvent = std::variant<LoginAcceptedMsg,
+                                 SessionKickPushMsg,
+                                 SessionResumePushMsg,
+                                 BattleSettlementAppliedMsg>;
 
 }  // namespace v2::player

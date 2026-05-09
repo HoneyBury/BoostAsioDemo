@@ -16,6 +16,7 @@ public:
     bool load(const std::filesystem::path& path);
 
     [[nodiscard]] std::optional<std::string> get_string(const std::string& key) const;
+    [[nodiscard]] std::optional<bool> get_bool(const std::string& key) const;
     [[nodiscard]] std::optional<std::uint16_t> get_uint16(const std::string& key) const;
     [[nodiscard]] std::optional<std::uint32_t> get_uint32(const std::string& key) const;
     [[nodiscard]] std::optional<std::size_t> get_size(const std::string& key) const;
@@ -40,6 +41,8 @@ struct GatewayAppConfig {
     std::size_t max_connections = 10000;
     std::size_t max_guests = 500;              // max concurrent guest sessions
     std::size_t per_ip_connection_limit = 0;  // 0 = disabled
+    bool v2_shadow_bridge_enabled = false;
+    bool v2_shadow_bridge_emit_responses = false;
     std::uint32_t session_max_packet_size = 1024 * 1024;
     std::size_t session_max_pending_write_bytes = 256 * 1024;
     std::chrono::milliseconds session_heartbeat_check_interval{5000};

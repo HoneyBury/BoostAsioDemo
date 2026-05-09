@@ -37,6 +37,16 @@ std::optional<T> parse_integer(std::string_view value) {
     return parsed;
 }
 
+std::optional<bool> parse_bool(std::string_view value) {
+    if (value == "1" || value == "true" || value == "TRUE" || value == "on" || value == "yes") {
+        return true;
+    }
+    if (value == "0" || value == "false" || value == "FALSE" || value == "off" || value == "no") {
+        return false;
+    }
+    return std::nullopt;
+}
+
 void flatten_json_object(const json& value,
                          const std::string& prefix,
                          std::unordered_map<std::string, std::string>& output) {
@@ -153,6 +163,12 @@ void fill_gateway_from_store(const ConfigStore& store, GatewayAppConfig& config)
     if (const auto value = store.get_size("gateway.per_ip_connection_limit")) {
         config.per_ip_connection_limit = *value;
     }
+    if (const auto value = store.get_bool("gateway.v2_shadow_bridge_enabled")) {
+        config.v2_shadow_bridge_enabled = *value;
+    }
+    if (const auto value = store.get_bool("gateway.v2_shadow_bridge_emit_responses")) {
+        config.v2_shadow_bridge_emit_responses = *value;
+    }
     if (const auto value = store.get_uint32("session.max_packet_size")) {
         config.session_max_packet_size = *value;
     }
@@ -197,6 +213,11 @@ std::optional<std::string> ConfigStore::get_string(const std::string& key) const
         return std::nullopt;
     }
     return it->second;
+}
+
+std::optional<bool> ConfigStore::get_bool(const std::string& key) const {
+    const auto value = get_string(key);
+    return value ? parse_bool(*value) : std::nullopt;
 }
 
 std::optional<std::uint16_t> ConfigStore::get_uint16(const std::string& key) const {

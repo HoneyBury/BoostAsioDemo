@@ -16,6 +16,8 @@ TEST(ConfigTest, LoadsGatewayConfigFromFile) {
         output << "gateway.io_threads=4\n";
         output << "gateway.business_threads=6\n";
         output << "gateway.metrics_log_interval_ms=7000\n";
+        output << "gateway.v2_shadow_bridge_enabled=true\n";
+        output << "gateway.v2_shadow_bridge_emit_responses=false\n";
         output << "session.max_packet_size=2048\n";
         output << "session.max_pending_write_bytes=4096\n";
         output << "session.heartbeat_check_interval_ms=150\n";
@@ -31,6 +33,8 @@ TEST(ConfigTest, LoadsGatewayConfigFromFile) {
     EXPECT_EQ(config.session_max_pending_write_bytes, 4096U);
     EXPECT_EQ(config.session_heartbeat_check_interval, std::chrono::milliseconds(150));
     EXPECT_EQ(config.session_heartbeat_timeout, std::chrono::milliseconds(600));
+    EXPECT_TRUE(config.v2_shadow_bridge_enabled);
+    EXPECT_FALSE(config.v2_shadow_bridge_emit_responses);
 
     std::filesystem::remove(path);
 }
@@ -49,6 +53,8 @@ TEST(ConfigTest, LoadsGatewayConfigFromJsonFile) {
         output << "    \"metrics_log_interval_ms\": 2500,\n";
         output << "    \"metrics_prometheus_path\": \"runtime/test.prom\",\n";
         output << "    \"metrics_json_path\": \"runtime/test.json\",\n";
+        output << "    \"v2_shadow_bridge_enabled\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_responses\": true,\n";
         output << "    \"auth\": {\n";
         output << "      \"provider\": \"json_file\",\n";
         output << "      \"users_path\": \"config/auth_users.json\"\n";
@@ -79,6 +85,8 @@ TEST(ConfigTest, LoadsGatewayConfigFromJsonFile) {
     EXPECT_EQ(config.session_max_pending_write_bytes, 8192U);
     EXPECT_EQ(config.session_heartbeat_check_interval, std::chrono::milliseconds(200));
     EXPECT_EQ(config.session_heartbeat_timeout, std::chrono::milliseconds(900));
+    EXPECT_TRUE(config.v2_shadow_bridge_enabled);
+    EXPECT_TRUE(config.v2_shadow_bridge_emit_responses);
 
     std::filesystem::remove(path);
 }

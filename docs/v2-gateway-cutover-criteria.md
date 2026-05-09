@@ -9,6 +9,7 @@
 - 保留 `v1` 默认入口
 - 使用 `examples/v2_gateway_demo/` 作为 `v2` bootstrap 入口
 - 通过独立测试和文档推进 `v2` 原型，而不是直接切主链
+- 如需在现有主链上试验，仅允许启用 **startup-only** 的 `v2 shadow bridge`
 
 ## 2. 当前还差什么
 
@@ -43,6 +44,18 @@
 - `GatewayActor` ingress 规则不弱于 `v1`
 - `Runtime` 编排逻辑已和入口解耦
 - battle body 协议至少冻结到可回归状态
+
+当前已具备的最小试验缝：
+
+- `GatewayServer::set_packet_bridge(...)`
+- `gateway.v2_shadow_bridge_enabled`
+- `gateway.v2_shadow_bridge_emit_responses`
+
+当前限制：
+
+- 只建议启动时配置
+- 不支持热更新切换
+- 默认仍应保持关闭
 
 ## 4. 推荐接入顺序
 

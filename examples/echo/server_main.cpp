@@ -19,6 +19,7 @@
 #include "game/room/room_service.h"
 #include "net/message_dispatcher.h"
 #include "net/protocol.h"
+#include "v2/gateway/gateway_server_bridge.h"
 
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -93,6 +94,7 @@ int main(int argc, char* argv[]) {
     game::gateway::GatewayMetrics metrics;
     game::gateway::PushService push_service;
     std::unique_ptr<game::login::TokenValidator> token_validator;
+    std::shared_ptr<v2::gateway::GatewayServerShadowBridge> shadow_bridge;
 
     if (config.auth_provider == "json_file") {
         const auto auth_path = config.auth_users_path.value_or(std::filesystem::path("config/auth_users.json"));
@@ -152,6 +154,13 @@ int main(int argc, char* argv[]) {
             .prometheus_path = config.metrics_prometheus_path,
             .json_path = config.metrics_json_path,
         });
+    if (config.v2_shadow_bridge_enabled) {
+        shadow_bridge = std::make_shared<v2::gateway::GatewayServerShadowBridge>(
+            config.v2_shadow_bridge_emit_responses);
+        server.set_packet_bridge(shadow_bridge);
+        LOG_INFO("Enabled v2 shadow bridge (emit_responses={})",
+                 config.v2_shadow_bridge_emit_responses ? "true" : "false");
+    }
     server.set_connection_limits(config.max_connections, config.per_ip_connection_limit);
     server.start();
 
@@ -164,6 +173,10 @@ int main(int argc, char* argv[]) {
             LOG_INFO("Config hot-reload applied");
             AUDIT_LOG("config_reload", "Config file changed, reloaded");
             server.set_connection_limits(new_cfg.max_connections, new_cfg.per_ip_connection_limit);
+            if (new_cfg.v2_shadow_bridge_enabled != config.v2_shadow_bridge_enabled ||
+                new_cfg.v2_shadow_bridge_emit_responses != config.v2_shadow_bridge_emit_responses) {
+                LOG_WARN("v2 shadow bridge settings are startup-only and were not hot-reloaded");
+            }
         });
     watcher.start();
 

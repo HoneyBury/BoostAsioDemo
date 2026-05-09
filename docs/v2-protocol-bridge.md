@@ -39,6 +39,21 @@ net::Session
 - `Runtime`
   - 负责把 gateway command 编排到 `PlayerActor` / `RoomActor` / `BattleActor`
 
+当前还支持一条旁路桥接缝：
+
+```text
+GatewayServer
+  -> GatewayPacketBridge
+  -> GatewayServerShadowBridge
+  -> SessionAdapter
+  -> GatewayActor
+```
+
+说明：
+
+- 这条链路当前用于灰度镜像和试验，不替换 `v1` 默认分发
+- 默认关闭，只建议启动期通过配置打开
+
 ## 3. 当前已建模消息
 
 - `kLoginRequest`

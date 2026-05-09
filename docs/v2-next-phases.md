@@ -44,6 +44,12 @@
 - actor 亲核调度
 - 跨核 mailbox
 
+当前已补的前置接缝：
+
+- `DemoServer` 已走 `IoEngine`
+- `GatewayServer` 已支持外部 `accept` 完成后的 `Session` 接入
+- 下一步切 `GatewayServer` 到 `IoEngine` 时，应只替换 ingress/accept 来源，避免重写 session 装配和业务 handler
+
 ### 3.2 `M6` ECS world / battle runtime
 
 进入前至少满足：

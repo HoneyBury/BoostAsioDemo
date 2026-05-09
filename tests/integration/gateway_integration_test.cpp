@@ -365,6 +365,46 @@ TEST(GatewayIntegrationTest, OptionalPacketBridgeMirrorsTrafficWithoutChangingV1
     runtime.stop();
 }
 
+TEST(GatewayIntegrationTest, OptionalPacketBridgeMirrorsExternallyAttachedSessionTraffic) {
+    app::logging::init("project_tests");
+
+    auto bridge = std::make_shared<RecordingPacketBridge>();
+    GatewayTestRuntime runtime;
+    runtime.packet_bridge = bridge;
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+
+    tcp::acceptor acceptor(runtime.io_context, tcp::endpoint(asio::ip::make_address("127.0.0.1"), 0));
+
+    {
+        TestClient client;
+        client.connect(acceptor.local_endpoint().port());
+
+        tcp::socket server_socket(runtime.io_context);
+        acceptor.accept(server_socket);
+
+        auto session = std::make_shared<net::Session>(std::move(server_socket), runtime.options);
+        ASSERT_TRUE(runtime.server->attach_session(session));
+
+        const auto response = client.exchange(net::protocol::kEchoRequest, 175, "bridge_external_echo");
+        EXPECT_EQ(response.message_id, net::protocol::kEchoResponse);
+        EXPECT_EQ(response.body, "bridge_external_echo");
+    }
+
+    for (int i = 0; i < 50; ++i) {
+        if (bridge->close_count == 1) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    ASSERT_EQ(bridge->packets.size(), 1U);
+    EXPECT_EQ(bridge->packets.front().message_id, net::protocol::kEchoRequest);
+    EXPECT_EQ(bridge->packets.front().request_id, 175U);
+    EXPECT_EQ(bridge->close_count, 1U);
+
+    runtime.stop();
+}
+
 TEST(GatewayIntegrationTest, OptionalPacketBridgeMirrorsLoginRoomAndBattleTraffic) {
     app::logging::init("project_tests");
 

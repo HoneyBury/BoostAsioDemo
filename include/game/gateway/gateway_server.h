@@ -16,6 +16,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 namespace game::gateway {
@@ -49,6 +50,7 @@ public:
 
     void start();
     void stop();
+    bool attach_session(const std::shared_ptr<net::Session>& session);
     void set_connection_limits(std::size_t max_total, std::size_t per_ip);
     void set_packet_bridge(std::shared_ptr<GatewayPacketBridge> packet_bridge);
     [[nodiscard]] std::size_t active_connections() const;
@@ -57,8 +59,10 @@ public:
 private:
     void do_accept();
     void arm_metrics_timer();
+    [[nodiscard]] bool try_acquire_connection_slot(std::string_view client_ip);
+    void release_connection_slot(std::string_view client_ip);
+    [[nodiscard]] static std::string extract_ip(std::string_view remote_endpoint);
 
-    asio::io_context& io_context_;
     net::MessageDispatcher& dispatcher_;
     SessionManager& session_manager_;
     game::room::RoomManager& room_manager_;

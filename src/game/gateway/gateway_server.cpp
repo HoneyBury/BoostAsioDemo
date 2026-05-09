@@ -4,6 +4,7 @@
 #include "app/logging.h"
 #include "game/room/room_battle_lifecycle.h"
 
+#include <string_view>
 #include <utility>
 
 namespace game::gateway {
@@ -19,8 +20,7 @@ GatewayServer::GatewayServer(asio::io_context& io_context,
                              net::SessionOptions session_options,
                              std::chrono::milliseconds metrics_log_interval,
                              GatewayMetricsExportOptions metrics_export_options)
-    : io_context_(io_context),
-      dispatcher_(dispatcher),
+    : dispatcher_(dispatcher),
       session_manager_(session_manager),
       room_manager_(room_manager),
       battle_manager_(battle_manager),
@@ -70,6 +70,63 @@ void GatewayServer::stop() {
     }
 }
 
+bool GatewayServer::attach_session(const std::shared_ptr<net::Session>& session) {
+    const auto client_endpoint = session->remote_endpoint();
+    const auto client_ip = extract_ip(client_endpoint);
+    if (!try_acquire_connection_slot(client_ip)) {
+        error_code ignored_ec;
+        session->socket().close(ignored_ec);
+        return false;
+    }
+
+    session_manager_.add_session(session);
+    metrics_.on_session_accepted();
+
+    LOG_INFO("Accepted client {}", client_endpoint);
+
+    session->set_receive_observer(
+        [this](const std::shared_ptr<net::Session>&, const net::Session::PacketMessage& message) {
+            metrics_.on_packet_received(message.body.size());
+        });
+
+    session->set_send_observer(
+        [this](const std::shared_ptr<net::Session>&, const net::Session::PacketMessage& message) {
+            metrics_.on_packet_sent(message.body.size());
+        });
+
+    session->set_packet_handler(
+        [this](const std::shared_ptr<net::Session>& session_ptr, net::Session::PacketMessage message) {
+            if (packet_bridge_) {
+                packet_bridge_->on_packet(session_ptr, message);
+            }
+            dispatcher_.dispatch(session_ptr,
+                                 message.message_id,
+                                 message.request_id,
+                                 message.error_code,
+                                 std::move(message.body),
+                                 message.trace_id,
+                                 message.flags);
+        });
+
+    session->set_close_handler(
+        [this, client_ip](const std::shared_ptr<net::Session>& session_ptr, const error_code&) {
+            const auto room_id = room_manager_.room_id_of(session_ptr);
+            if (packet_bridge_) {
+                packet_bridge_->on_close(session_ptr);
+            }
+            room_manager_.remove_session(session_ptr);
+            if (room_id) {
+                game::room::clear_battle_if_room_empty(battle_manager_, room_manager_, *room_id);
+            }
+            session_manager_.remove_session(session_ptr);
+            metrics_.on_session_closed();
+            release_connection_slot(client_ip);
+        });
+
+    session->start();
+    return true;
+}
+
 std::uint16_t GatewayServer::local_port() const {
     return acceptor_.local_endpoint().port();
 }
@@ -96,91 +153,63 @@ void GatewayServer::do_accept() {
             return;
         }
 
-        // Connection limiting
-        const auto current = active_connection_count_.load(std::memory_order_relaxed);
-        if (max_connections_ > 0 && current >= max_connections_) {
-            LOG_WARN("Connection rejected: at max capacity ({})", max_connections_);
-            AUDIT_LOG("connection_rejected", "reason=max_capacity");
-            metrics_.on_packet_blocked();
-            error_code ignored;
-            socket.close(ignored);
-            do_accept();
-            return;
-        }
-
-        if (per_ip_limit_ > 0) {
-            const auto ip = socket.remote_endpoint().address().to_string();
-            std::scoped_lock lock(ip_count_mutex_);
-            if (ip_connection_counts_[ip] >= per_ip_limit_) {
-                LOG_WARN("Connection rejected: IP {} at per-IP limit ({})", ip, per_ip_limit_);
-                AUDIT_LOG("connection_rejected", "reason=per_ip_limit ip=" + ip);
-                metrics_.on_packet_blocked();
-                error_code ignored;
-                socket.close(ignored);
-                do_accept();
-                return;
-            }
-            ip_connection_counts_[ip]++;
-        }
-
-        active_connection_count_.fetch_add(1, std::memory_order_relaxed);
-
         auto session = std::make_shared<net::Session>(std::move(socket), session_options_);
-        session_manager_.add_session(session);
-        metrics_.on_session_accepted();
-
-        LOG_INFO("Accepted client {}", session->remote_endpoint());
-
-        session->set_receive_observer(
-            [this](const std::shared_ptr<net::Session>&, const net::Session::PacketMessage& message) {
-                metrics_.on_packet_received(message.body.size());
-            });
-
-        session->set_send_observer(
-            [this](const std::shared_ptr<net::Session>&, const net::Session::PacketMessage& message) {
-                metrics_.on_packet_sent(message.body.size());
-            });
-
-        session->set_packet_handler(
-            [this](const std::shared_ptr<net::Session>& session_ptr, net::Session::PacketMessage message) {
-                if (packet_bridge_) {
-                    packet_bridge_->on_packet(session_ptr, message);
-                }
-                dispatcher_.dispatch(session_ptr,
-                                     message.message_id,
-                                     message.request_id,
-                                     message.error_code,
-                                     std::move(message.body),
-                                     message.trace_id,
-                                     message.flags);
-            });
-
-        session->set_close_handler(
-            [this](const std::shared_ptr<net::Session>& session_ptr, const error_code&) {
-                const auto room_id = room_manager_.room_id_of(session_ptr);
-                if (packet_bridge_) {
-                    packet_bridge_->on_close(session_ptr);
-                }
-                room_manager_.remove_session(session_ptr);
-                if (room_id) {
-                    game::room::clear_battle_if_room_empty(battle_manager_, room_manager_, *room_id);
-                }
-                session_manager_.remove_session(session_ptr);
-                metrics_.on_session_closed();
-                active_connection_count_.fetch_sub(1, std::memory_order_relaxed);
-                if (per_ip_limit_ > 0) {
-                    const auto ip = session_ptr->remote_endpoint();
-                    const auto colon = ip.find(':');
-                    const auto addr = colon != std::string::npos ? ip.substr(0, colon) : ip;
-                    std::scoped_lock lock(ip_count_mutex_);
-                    auto& count = ip_connection_counts_[addr];
-                    if (count > 0) count--;
-                }
-            });
-
-        session->start();
+        (void)attach_session(session);
         do_accept();
     });
+}
+
+bool GatewayServer::try_acquire_connection_slot(std::string_view client_ip) {
+    const auto current = active_connection_count_.load(std::memory_order_relaxed);
+    if (max_connections_ > 0 && current >= max_connections_) {
+        LOG_WARN("Connection rejected: at max capacity ({})", max_connections_);
+        AUDIT_LOG("connection_rejected", "reason=max_capacity");
+        metrics_.on_packet_blocked();
+        return false;
+    }
+
+    if (per_ip_limit_ > 0) {
+        std::scoped_lock lock(ip_count_mutex_);
+        auto& count = ip_connection_counts_[std::string(client_ip)];
+        if (count >= per_ip_limit_) {
+            LOG_WARN("Connection rejected: IP {} at per-IP limit ({})", client_ip, per_ip_limit_);
+            AUDIT_LOG("connection_rejected", "reason=per_ip_limit ip=" + std::string(client_ip));
+            metrics_.on_packet_blocked();
+            return false;
+        }
+        ++count;
+    }
+
+    active_connection_count_.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+void GatewayServer::release_connection_slot(std::string_view client_ip) {
+    active_connection_count_.fetch_sub(1, std::memory_order_relaxed);
+    if (per_ip_limit_ == 0) {
+        return;
+    }
+
+    std::scoped_lock lock(ip_count_mutex_);
+    auto it = ip_connection_counts_.find(std::string(client_ip));
+    if (it == ip_connection_counts_.end()) {
+        return;
+    }
+
+    if (it->second > 1) {
+        --it->second;
+        return;
+    }
+
+    ip_connection_counts_.erase(it);
+}
+
+std::string GatewayServer::extract_ip(std::string_view remote_endpoint) {
+    const auto colon = remote_endpoint.rfind(':');
+    if (colon == std::string_view::npos) {
+        return std::string(remote_endpoint);
+    }
+    return std::string(remote_endpoint.substr(0, colon));
 }
 
 void GatewayServer::arm_metrics_timer() {

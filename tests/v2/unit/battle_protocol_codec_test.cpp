@@ -13,6 +13,51 @@ TEST(V2BattleProtocolCodecTest, ParsesRequestedFinishReasons) {
     EXPECT_FALSE(v2::gateway::parse_battle_finish_request("move:1,2").has_value());
 }
 
+TEST(V2BattleProtocolCodecTest, ParsesStableBattleBodiesIntoFields) {
+    const auto started =
+        v2::gateway::parse_battle_started_body("battle_started:room_id=room_alpha:battle_id=battle_0001");
+    ASSERT_TRUE(started.has_value());
+    EXPECT_EQ(started->room_id, "room_alpha");
+    EXPECT_EQ(started->battle_id, "battle_0001");
+
+    const auto started_state =
+        v2::gateway::parse_battle_state_body("battle_state:kind=started:room_id=room_alpha:battle_id=battle_0001");
+    ASSERT_TRUE(started_state.has_value());
+    EXPECT_EQ(started_state->kind, "started");
+    EXPECT_EQ(started_state->room_id, "room_alpha");
+    EXPECT_EQ(started_state->battle_id, "battle_0001");
+    EXPECT_FALSE(started_state->frame.has_value());
+
+    const auto input_response = v2::gateway::parse_battle_input_response_body("input_seq:seq=7");
+    ASSERT_TRUE(input_response.has_value());
+    EXPECT_EQ(input_response->input_seq, 7U);
+
+    const auto input_push =
+        v2::gateway::parse_battle_input_push_body("battle_input:user_id=owner:seq=3:input=move:3,2");
+    ASSERT_TRUE(input_push.has_value());
+    EXPECT_EQ(input_push->user_id, "owner");
+    EXPECT_EQ(input_push->input_seq, 3U);
+    EXPECT_EQ(input_push->input_data, "move:3,2");
+
+    const auto frame = v2::gateway::parse_battle_state_body(
+        "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=3:trigger=input:owner:3");
+    ASSERT_TRUE(frame.has_value());
+    EXPECT_EQ(frame->kind, "frame");
+    ASSERT_TRUE(frame->frame.has_value());
+    EXPECT_EQ(*frame->frame, 3U);
+    ASSERT_TRUE(frame->trigger.has_value());
+    EXPECT_EQ(*frame->trigger, "input:owner:3");
+
+    const auto finished = v2::gateway::parse_battle_state_body(
+        "battle_state:kind=finished:room_id=room_alpha:battle_id=battle_0001:reason=surrender:user_id=owner");
+    ASSERT_TRUE(finished.has_value());
+    EXPECT_EQ(finished->kind, "finished");
+    ASSERT_TRUE(finished->reason.has_value());
+    EXPECT_EQ(*finished->reason, "surrender");
+    ASSERT_TRUE(finished->user_id.has_value());
+    EXPECT_EQ(*finished->user_id, "owner");
+}
+
 TEST(V2BattleProtocolCodecTest, FormatsBattleBodiesWithStableSchema) {
     const auto started = v2::gateway::format_battle_started_body("room_alpha", "battle_0001");
     EXPECT_EQ(started, "battle_started:room_id=room_alpha:battle_id=battle_0001");

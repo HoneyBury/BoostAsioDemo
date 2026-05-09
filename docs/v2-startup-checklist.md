@@ -285,6 +285,7 @@ examples/v2_gateway_demo/
 - `P2++`：已补 battle 主动结束分支：当前通过 `kBattleInputRequest` 的 `finish:<reason>` 约定触发 `EndBattleMsg`
 - `P3`：现有 `GatewayServer` 已新增可关闭的 packet bridge seam，可旁路镜像 traffic，不改变 `v1` 默认分发结果
 - `P4`：已补 `M2-M7` 进入边界文档，明确当前不做项与后续进入条件
+- `P4+`：battle wire body 已收紧为最小键值 schema，并补了 codec 级 format / parse 回归测试
 
 当前明确只有原型或占位的部分：
 
@@ -370,8 +371,9 @@ examples/v2_gateway_demo/
 
 如果继续沿当前原型推进，建议下一阶段不要再扩散模块面，而是按以下顺序收口：
 
-1. 把 `v2_gateway_demo` 的真实收包链路补成可交互 smoke test
-2. 给 `BattleActor` 补最小 battle lifecycle，而不是直接跳到 ECS
-3. 明确 `GatewayServer` 主链接入条件和切换门槛
+1. 把 battle wire schema 抽成独立 external parser / validator，减少字符串散落比较
+2. 给 `BattleActor` 补最小结算和 battle end 后续事件，而不是直接跳到 ECS
+3. 给 runtime 补 timer / delayed message，避免后续 tick 继续手工驱动
+4. 继续扩展 `GatewayServer` bridge 灰度矩阵，但保持旁路不替换主链
 
 不要在当前阶段同时推进多核 I/O、分布式、数据层和 ECS World。

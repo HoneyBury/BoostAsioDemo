@@ -31,6 +31,7 @@ private:
     std::uint64_t next_input_seq_ = 1;
     std::uint32_t max_frames_ = 0;
     std::unordered_map<std::string, std::uint32_t> last_submitted_frame_;
+    std::unordered_map<std::string, std::uint32_t> last_acked_frame_;
     BattleEventSink& sink_;
     BattleRuntimeState state_;
 };

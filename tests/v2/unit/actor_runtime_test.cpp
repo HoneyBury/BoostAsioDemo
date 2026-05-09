@@ -361,3 +361,227 @@ TEST(V2ActorRuntimeTest, SelfSchedulingActorOwnsRepeatLifecycle) {
     std::this_thread::sleep_for(std::chrono::milliseconds(15));
     EXPECT_EQ(actor_system.dispatch_all(), 1U);
 }
+
+TEST(V2ActorRuntimeTest, SendAfterZeroDispatchDelaySendsImmediately) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("immediate");
+
+    actor_system.send_after(std::move(message), std::size_t{0});
+
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(received.size(), 1U);
+    EXPECT_EQ(received.front(), "immediate");
+}
+
+TEST(V2ActorRuntimeTest, SendAfterZeroWallClockDurationSendsImmediately) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("immediate-wall");
+
+    actor_system.send_after(std::move(message), v2::runtime::ActorSystem::Duration::zero());
+
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(received.size(), 1U);
+    EXPECT_EQ(received.front(), "immediate-wall");
+}
+
+TEST(V2ActorRuntimeTest, ScheduleAfterZeroDurationReturnsZeroAndSendsImmediately) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("zero-sched");
+
+    const auto schedule_id = actor_system.schedule_after(
+        std::move(message), v2::runtime::ActorSystem::Duration::zero());
+    EXPECT_EQ(schedule_id, 0U);
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(received.size(), 1U);
+    EXPECT_EQ(received.front(), "zero-sched");
+}
+
+TEST(V2ActorRuntimeTest, ScheduleAtNowTimePointSendsImmediately) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("at-now");
+
+    const auto schedule_id = actor_system.schedule_after(
+        std::move(message), v2::runtime::ActorSystem::Clock::now());
+    EXPECT_EQ(schedule_id, 0U);
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(received.size(), 1U);
+    EXPECT_EQ(received.front(), "at-now");
+}
+
+TEST(V2ActorRuntimeTest, ScheduleEveryWithZeroInitialDelayUsesInterval) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("zero-init");
+
+    const auto schedule_id = actor_system.schedule_every(
+        std::move(message), v2::runtime::ActorSystem::Duration::zero(), std::chrono::milliseconds(10));
+    ASSERT_NE(schedule_id, 0U);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_GE(received.size(), 1U);
+
+    EXPECT_TRUE(actor_system.cancel_schedule(schedule_id));
+}
+
+TEST(V2ActorRuntimeTest, ScheduleEveryWithZeroIntervalReturnsZero) {
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<CountingActor>());
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("zero-int");
+
+    const auto schedule_id = actor_system.schedule_every(
+        std::move(message), std::chrono::milliseconds(10), v2::runtime::ActorSystem::Duration::zero());
+    EXPECT_EQ(schedule_id, 0U);
+}
+
+TEST(V2ActorRuntimeTest, ScheduleEveryWithZeroMaxRepetitionsReturnsZero) {
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<CountingActor>());
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("zero-rep");
+
+    const auto schedule_id = actor_system.schedule_every(
+        std::move(message), std::chrono::milliseconds(10), std::chrono::milliseconds(10), 0);
+    EXPECT_EQ(schedule_id, 0U);
+}
+
+TEST(V2ActorRuntimeTest, CancelScheduleOnNonExistentIdReturnsFalse) {
+    v2::runtime::ActorSystem actor_system;
+    EXPECT_FALSE(actor_system.cancel_schedule(99999));
+}
+
+TEST(V2ActorRuntimeTest, CancelScheduleTwiceSecondCallReturnsFalse) {
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<CountingActor>());
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("double-cancel");
+
+    const auto schedule_id = actor_system.schedule_after(
+        std::move(message), std::chrono::milliseconds(500));
+    ASSERT_NE(schedule_id, 0U);
+    EXPECT_TRUE(actor_system.cancel_schedule(schedule_id));
+    EXPECT_FALSE(actor_system.cancel_schedule(schedule_id));
+}
+
+TEST(V2ActorRuntimeTest, DispatchRoundMessagesUnaffectedByCancelSchedule) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("round-msg");
+
+    actor_system.send_after(std::move(message), std::size_t{1});
+
+    EXPECT_FALSE(actor_system.cancel_schedule(1));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(received.size(), 1U);
+    EXPECT_EQ(received.front(), "round-msg");
+}
+
+TEST(V2ActorRuntimeTest, ShutdownClearsPendingWallClockSchedules) {
+    std::vector<std::string> received;
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("shutdown-clear");
+
+    const auto schedule_id = actor_system.schedule_after(
+        std::move(message), std::chrono::milliseconds(10));
+    ASSERT_NE(schedule_id, 0U);
+
+    actor_system.shutdown();
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+    EXPECT_TRUE(received.empty());
+}
+
+TEST(V2ActorRuntimeTest, DispatchAllAfterShutdownReturnsZero) {
+    v2::runtime::ActorSystem actor_system;
+    actor_system.shutdown();
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+}
+
+TEST(V2ActorRuntimeTest, MultipleActorsOneCancelledOtherDelivers) {
+    std::vector<std::string> received_a;
+    std::vector<std::string> received_b;
+
+    v2::runtime::ActorSystem actor_system;
+    auto actor_a = actor_system.create_actor(std::make_unique<RecordingActor>(received_a));
+    auto actor_b = actor_system.create_actor(std::make_unique<RecordingActor>(received_b));
+
+    v2::actor::Message msg_a;
+    msg_a.header.kind = v2::actor::MessageKind::kUser;
+    msg_a.header.target_actor = actor_a.actor_id();
+    msg_a.payload = std::string("msg-a");
+
+    v2::actor::Message msg_b;
+    msg_b.header.kind = v2::actor::MessageKind::kUser;
+    msg_b.header.target_actor = actor_b.actor_id();
+    msg_b.payload = std::string("msg-b");
+
+    const auto id_a = actor_system.schedule_after(std::move(msg_a), std::chrono::milliseconds(10));
+    const auto id_b = actor_system.schedule_after(std::move(msg_b), std::chrono::milliseconds(10));
+    ASSERT_NE(id_a, 0U);
+    ASSERT_NE(id_b, 0U);
+
+    EXPECT_TRUE(actor_system.cancel_schedule(id_a));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    EXPECT_TRUE(received_a.empty());
+    ASSERT_EQ(received_b.size(), 1U);
+    EXPECT_EQ(received_b.front(), "msg-b");
+}

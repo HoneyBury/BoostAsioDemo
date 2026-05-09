@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <utility>
 
+#include <spdlog/spdlog.h>
+
 namespace v2::runtime {
 
 ScheduleHandle::ScheduleHandle(ActorSystem* system, ActorSystem::ScheduleId schedule_id) noexcept
@@ -220,7 +222,13 @@ std::size_t ActorSystem::dispatch_all() {
         while (!cell->mailbox.empty()) {
             auto message = std::move(cell->mailbox.front());
             cell->mailbox.pop_front();
-            cell->actor->on_message(std::move(message));
+            try {
+                cell->actor->on_message(std::move(message));
+            } catch (const std::exception& e) {
+                SPDLOG_ERROR("Actor {} threw in on_message: {}", actor_id, e.what());
+            } catch (...) {
+                SPDLOG_ERROR("Actor {} threw unknown exception in on_message", actor_id);
+            }
             ++dispatched;
         }
     }

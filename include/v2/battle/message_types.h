@@ -19,6 +19,7 @@ enum class BattleFinishReason : std::uint8_t {
     kTimeout = 2,
     kFrameLimitReached = 3,
     kPlayerDisconnected = 4,
+    kUserRequested = 5,
 };
 
 [[nodiscard]] constexpr const char* to_string(BattleFinishReason reason) {
@@ -33,6 +34,8 @@ enum class BattleFinishReason : std::uint8_t {
             return "frame_limit_reached";
         case BattleFinishReason::kPlayerDisconnected:
             return "player_disconnected";
+        case BattleFinishReason::kUserRequested:
+            return "user_requested";
     }
 
     return "finished";
@@ -143,10 +146,16 @@ struct BattleSettlementPreparedMsg {
     BattleResultSummary result;
 };
 
+struct FrameAckMsg {
+    std::string user_id;
+    std::uint32_t frame_number = 0;
+};
+
 using BattleEvent = std::variant<BattleCreatedMsg,
                                  BattleInputAcceptedMsg,
                                  BattleFrameAdvancedMsg,
                                  BattleSettlementPreparedMsg,
-                                 BattleFinishedMsg>;
+                                 BattleFinishedMsg,
+                                 FrameAckMsg>;
 
 }  // namespace v2::battle

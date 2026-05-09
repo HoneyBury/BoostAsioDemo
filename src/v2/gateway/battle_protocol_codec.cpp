@@ -74,6 +74,9 @@ std::optional<v2::battle::BattleFinishReason> parse_battle_finish_request(std::s
     if (reason == "timeout") {
         return v2::battle::BattleFinishReason::kTimeout;
     }
+    if (reason == "user_requested") {
+        return v2::battle::BattleFinishReason::kUserRequested;
+    }
     return v2::battle::BattleFinishReason::kFinished;
 }
 

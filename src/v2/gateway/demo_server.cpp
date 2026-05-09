@@ -15,6 +15,8 @@ DemoServer::DemoServer(asio::io_context& io_context,
       runtime_(actor_system_, adapter_) {
     gateway_actor_ = runtime_.create_gateway_actor();
     adapter_.bind_gateway(gateway_actor_);
+    archive_store_ = std::make_unique<JsonFileBattleArchiveStore>("v2_archive");
+    runtime_.set_archive_sink(archive_store_.get());
 }
 
 void DemoServer::start() {

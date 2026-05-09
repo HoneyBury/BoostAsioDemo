@@ -1,6 +1,7 @@
 #pragma once
 
 #include "net/session.h"
+#include "v2/gateway/battle_archive_store.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 
@@ -34,6 +35,7 @@ private:
     v2::runtime::ActorSystem actor_system_;
     SessionAdapter adapter_;
     Runtime runtime_;
+    std::unique_ptr<JsonFileBattleArchiveStore> archive_store_;
     v2::actor::ActorRef gateway_actor_;
     std::unordered_map<SessionId, std::shared_ptr<net::Session>> sessions_;
     SessionId next_session_id_ = 1;

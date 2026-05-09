@@ -144,6 +144,13 @@ void BattleActor::on_message(v2::actor::Message&& message) {
         return;
     }
 
+    const auto* ack = std::get_if<FrameAckMsg>(&message.payload);
+    if (ack != nullptr) {
+        last_acked_frame_[ack->user_id] = ack->frame_number;
+        sink_.push(*ack);
+        return;
+    }
+
     const auto* disconnected = std::get_if<PlayerDisconnectedMsg>(&message.payload);
     if (disconnected == nullptr || state_.lifecycle != BattleLifecycleState::kRunning) {
         return;

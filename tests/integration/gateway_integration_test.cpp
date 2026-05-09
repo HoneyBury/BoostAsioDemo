@@ -1175,3 +1175,316 @@ TEST(GatewayIntegrationTest, BattleInputRejectedWhenBattleNotStarted) {
 
     runtime.stop();
 }
+
+TEST(GatewayIntegrationTest, FullChainShadowBridgeBattleLifecycle) {
+    app::logging::init("project_tests");
+
+    const auto path = std::filesystem::temp_directory_path() / "echo_server_full_chain.json";
+    const auto port = reserve_free_port();
+    if (!port.has_value()) {
+        GTEST_SKIP() << "socket bind unavailable in this environment";
+    }
+    {
+        std::ofstream output(path);
+        output << "{\n";
+        output << "  \"gateway\": {\n";
+        output << "    \"port\": " << *port << ",\n";
+        output << "    \"io_threads\": 1,\n";
+        output << "    \"business_threads\": 1,\n";
+        output << "    \"http_management_port\": 0,\n";
+        output << "    \"v2_shadow_bridge_enabled\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_responses\": false,\n";
+        output << "    \"v2_shadow_bridge_login\": true,\n";
+        output << "    \"v2_shadow_bridge_room\": false,\n";
+        output << "    \"v2_shadow_bridge_battle\": true,\n";
+        output << "    \"v2_shadow_bridge_echo\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_input_push\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_started\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_frame\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_settlement\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_finished\": true,\n";
+        output << "    \"auth\": {\n";
+        output << "      \"provider\": \"dev\"\n";
+        output << "    }\n";
+        output << "  }\n";
+        output << "}\n";
+    }
+
+    EchoServerProcess server(path);
+    if (!server.start()) {
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "failed to start echo_server process: " << server.startup_error();
+    }
+    if (!wait_for_tcp_server(*port, std::chrono::milliseconds(1500))) {
+        server.stop();
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "echo_server did not start listening in time";
+    }
+
+    TestClient owner;
+    TestClient member;
+    owner.connect(*port);
+    member.connect(*port);
+
+    // Use exchange() exclusively — each call sends a request and reads the first
+    // response. With emit_responses=true, the v2 shadow response arrives first
+    // (sync), and the v1 response arrives second (async). exchange() returns the
+    // v2 response; the v1 response stays in the buffer. This test just verifies
+    // the flow completes without errors.
+
+    // Step 1: Login owner
+    ASSERT_EQ(owner.exchange(net::protocol::kLoginRequest, 400, "owner_fc|token:owner_fc|OwnerFC").message_id,
+              net::protocol::kLoginResponse);
+
+    // Step 2: Login member
+    ASSERT_EQ(member.exchange(net::protocol::kLoginRequest, 401, "member_fc|token:member_fc|MemberFC").message_id,
+              net::protocol::kLoginResponse);
+
+    // Step 3: Create room
+    ASSERT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 402, "room_fc").message_id,
+              net::protocol::kRoomCreateResponse);
+
+    // Step 4: Join room
+    ASSERT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 403, "room_fc").message_id,
+              net::protocol::kRoomJoinResponse);
+
+    // Step 5: Drain room state push
+    (void)owner.expect_message(net::protocol::kRoomStatePush);
+
+    // Step 6: Ready both — use send+expect_message to handle interleaved pushes
+    owner.send(net::protocol::kRoomReadyRequest, 404, "true");
+    EXPECT_EQ(owner.expect_message(net::protocol::kRoomReadyResponse).request_id, 404U);
+    member.send(net::protocol::kRoomReadyRequest, 405, "true");
+    EXPECT_EQ(member.expect_message(net::protocol::kRoomReadyResponse).request_id, 405U);
+
+    // Step 7: Start battle (v2 mirrors battle)
+    owner.send(net::protocol::kBattleStartRequest, 406, "");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStartResponse).message_id,
+              net::protocol::kBattleStartResponse);
+
+    // Step 8: Submit scored input
+    owner.send(net::protocol::kBattleInputRequest, 407, "score=30:move:up");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).request_id, 407U);
+
+    // Step 9: Finish battle (surrender)
+    owner.send(net::protocol::kBattleInputRequest, 408, "finish:surrender");
+    const auto finish = owner.expect_message(net::protocol::kBattleInputResponse);
+    EXPECT_EQ(finish.request_id, 408U);
+
+    server.stop();
+    std::filesystem::remove(path);
+}
+
+TEST(GatewayIntegrationTest, EchoServerConfigEchoOnlyMirror) {
+    app::logging::init("project_tests");
+
+    const auto path = std::filesystem::temp_directory_path() / "echo_server_echo_only_mirror.json";
+    const auto port = reserve_free_port();
+    if (!port.has_value()) {
+        GTEST_SKIP() << "socket bind unavailable in this environment";
+    }
+    {
+        std::ofstream output(path);
+        output << "{\n";
+        output << "  \"gateway\": {\n";
+        output << "    \"port\": " << *port << ",\n";
+        output << "    \"io_threads\": 1,\n";
+        output << "    \"business_threads\": 1,\n";
+        output << "    \"http_management_port\": 0,\n";
+        output << "    \"v2_shadow_bridge_enabled\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_responses\": true,\n";
+        output << "    \"v2_shadow_bridge_login\": false,\n";
+        output << "    \"v2_shadow_bridge_room\": false,\n";
+        output << "    \"v2_shadow_bridge_battle\": false,\n";
+        output << "    \"v2_shadow_bridge_echo\": true,\n";
+        output << "    \"auth\": {\n";
+        output << "      \"provider\": \"dev\"\n";
+        output << "    }\n";
+        output << "  }\n";
+        output << "}\n";
+    }
+
+    EchoServerProcess server(path);
+    if (!server.start()) {
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "failed to start echo_server process: " << server.startup_error();
+    }
+    if (!wait_for_tcp_server(*port, std::chrono::milliseconds(1500))) {
+        server.stop();
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "echo_server did not start listening in time";
+    }
+
+    TestClient client;
+    client.connect(*port);
+
+    EXPECT_EQ(client.exchange(net::protocol::kLoginRequest, 500, "echo_user|token:echo_user").message_id,
+              net::protocol::kLoginResponse);
+    EXPECT_EQ(client.exchange(net::protocol::kEchoRequest, 501, "hello_v2_echo").message_id,
+              net::protocol::kEchoResponse);
+
+    const auto echo_second = client.expect_message(net::protocol::kEchoResponse);
+    EXPECT_EQ(echo_second.body, "hello_v2_echo");
+
+    server.stop();
+    std::filesystem::remove(path);
+}
+
+TEST(GatewayIntegrationTest, EchoServerConfigAllEmitPolicyBitsOn) {
+    app::logging::init("project_tests");
+
+    const auto path = std::filesystem::temp_directory_path() / "echo_server_all_emit_on.json";
+    const auto port = reserve_free_port();
+    if (!port.has_value()) {
+        GTEST_SKIP() << "socket bind unavailable in this environment";
+    }
+    {
+        std::ofstream output(path);
+        output << "{\n";
+        output << "  \"gateway\": {\n";
+        output << "    \"port\": " << *port << ",\n";
+        output << "    \"io_threads\": 1,\n";
+        output << "    \"business_threads\": 1,\n";
+        output << "    \"http_management_port\": 0,\n";
+        output << "    \"v2_shadow_bridge_enabled\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_responses\": false,\n";
+        output << "    \"v2_shadow_bridge_login\": true,\n";
+        output << "    \"v2_shadow_bridge_room\": true,\n";
+        output << "    \"v2_shadow_bridge_battle\": true,\n";
+        output << "    \"v2_shadow_bridge_echo\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_input_push\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_started\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_frame\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_settlement\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_finished\": true,\n";
+        output << "    \"auth\": {\n";
+        output << "      \"provider\": \"dev\"\n";
+        output << "    }\n";
+        output << "  }\n";
+        output << "}\n";
+    }
+
+    EchoServerProcess server(path);
+    if (!server.start()) {
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "failed to start echo_server process: " << server.startup_error();
+    }
+    if (!wait_for_tcp_server(*port, std::chrono::milliseconds(1500))) {
+        server.stop();
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "echo_server did not start listening in time";
+    }
+
+    TestClient owner;
+    TestClient member;
+    owner.connect(*port);
+    member.connect(*port);
+
+    EXPECT_EQ(owner.exchange(net::protocol::kLoginRequest, 510, "bridge_owner|token:bridge_owner").message_id,
+              net::protocol::kLoginResponse);
+    EXPECT_EQ(member.exchange(net::protocol::kLoginRequest, 511, "bridge_member|token:bridge_member").message_id,
+              net::protocol::kLoginResponse);
+
+    EXPECT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 512, "bridge_room_all").message_id,
+              net::protocol::kRoomCreateResponse);
+    EXPECT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 513, "bridge_room_all").message_id,
+              net::protocol::kRoomJoinResponse);
+    (void)owner.expect_message(net::protocol::kRoomStatePush);
+
+    owner.send(net::protocol::kRoomReadyRequest, 514, "true");
+    EXPECT_EQ(owner.expect_message(net::protocol::kRoomReadyResponse).request_id, 514U);
+    member.send(net::protocol::kRoomReadyRequest, 515, "true");
+    EXPECT_EQ(member.expect_message(net::protocol::kRoomReadyResponse).request_id, 515U);
+
+    owner.send(net::protocol::kBattleStartRequest, 516, "");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStartResponse).message_id,
+              net::protocol::kBattleStartResponse);
+
+    owner.send(net::protocol::kBattleInputRequest, 517, "score=10:move:right");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).request_id, 517U);
+
+    owner.send(net::protocol::kBattleInputRequest, 518, "finish:surrender");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).request_id, 518U);
+
+    server.stop();
+    std::filesystem::remove(path);
+}
+
+TEST(GatewayIntegrationTest, EchoServerConfigV2BattleWithoutRoomIsGraceful) {
+    app::logging::init("project_tests");
+
+    const auto path = std::filesystem::temp_directory_path() / "echo_server_v2_battle_no_room.json";
+    const auto port = reserve_free_port();
+    if (!port.has_value()) {
+        GTEST_SKIP() << "socket bind unavailable in this environment";
+    }
+    {
+        std::ofstream output(path);
+        output << "{\n";
+        output << "  \"gateway\": {\n";
+        output << "    \"port\": " << *port << ",\n";
+        output << "    \"io_threads\": 1,\n";
+        output << "    \"business_threads\": 1,\n";
+        output << "    \"http_management_port\": 0,\n";
+        output << "    \"v2_shadow_bridge_enabled\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_responses\": true,\n";
+        output << "    \"v2_shadow_bridge_login\": true,\n";
+        output << "    \"v2_shadow_bridge_room\": false,\n";
+        output << "    \"v2_shadow_bridge_battle\": true,\n";
+        output << "    \"v2_shadow_bridge_echo\": false,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_input_push\": false,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_started\": false,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_frame\": false,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_settlement\": false,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_finished\": false,\n";
+        output << "    \"auth\": {\n";
+        output << "      \"provider\": \"dev\"\n";
+        output << "    }\n";
+        output << "  }\n";
+        output << "}\n";
+    }
+
+    EchoServerProcess server(path);
+    if (!server.start()) {
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "failed to start echo_server process: " << server.startup_error();
+    }
+    if (!wait_for_tcp_server(*port, std::chrono::milliseconds(1500))) {
+        server.stop();
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "echo_server did not start listening in time";
+    }
+
+    TestClient owner;
+    TestClient member;
+    owner.connect(*port);
+    member.connect(*port);
+
+    EXPECT_EQ(owner.exchange(net::protocol::kLoginRequest, 520, "bridge_owner|token:bridge_owner").message_id,
+              net::protocol::kLoginResponse);
+    (void)owner.expect_message(net::protocol::kLoginResponse);
+    EXPECT_EQ(member.exchange(net::protocol::kLoginRequest, 521, "bridge_member|token:bridge_member").message_id,
+              net::protocol::kLoginResponse);
+    (void)member.expect_message(net::protocol::kLoginResponse);
+
+    EXPECT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 522, "bridge_room_v2").message_id,
+              net::protocol::kRoomCreateResponse);
+    EXPECT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 523, "bridge_room_v2").message_id,
+              net::protocol::kRoomJoinResponse);
+    (void)owner.expect_message(net::protocol::kRoomStatePush);
+
+    owner.send(net::protocol::kRoomReadyRequest, 524, "true");
+    EXPECT_EQ(owner.expect_message(net::protocol::kRoomReadyResponse).request_id, 524U);
+    member.send(net::protocol::kRoomReadyRequest, 525, "true");
+    EXPECT_EQ(member.expect_message(net::protocol::kRoomReadyResponse).request_id, 525U);
+
+    owner.send(net::protocol::kBattleStartRequest, 526, "");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStartResponse).message_id,
+              net::protocol::kBattleStartResponse);
+
+    owner.send(net::protocol::kBattleInputRequest, 527, "move:right");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).request_id, 527U);
+
+    server.stop();
+    std::filesystem::remove(path);
+}

@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include <chrono>
 #include <utility>
 
 namespace v2::gateway {
@@ -496,7 +497,6 @@ void Runtime::push(v2::battle::BattleEvent event) {
                 .trigger = fmt::format("input:{}:{}", input->user_id, input->input_seq),
             };
             battle_it->second.tell(std::move(tick));
-            actor_system_.dispatch_all();
         }
         return;
     }
@@ -534,15 +534,18 @@ void Runtime::push(v2::battle::BattleEvent event) {
             room_it->second.tell(std::move(room_settlement));
         }
 
-        for (auto& [user_id, player_actor] : players_by_user_id_) {
-            (void)user_id;
+        for (const auto& user_id : settlement->participant_user_ids) {
+            auto player_it = players_by_user_id_.find(user_id);
+            if (player_it == players_by_user_id_.end()) {
+                continue;
+            }
             v2::actor::Message player_settlement;
             player_settlement.header.kind = v2::actor::MessageKind::kUser;
             player_settlement.payload = v2::player::BattleSettlementMsg{
                 .battle_id = settlement->battle_id,
                 .reason = v2::battle::to_string(settlement->reason),
             };
-            player_actor.tell(std::move(player_settlement));
+            player_it->second.tell(std::move(player_settlement));
         }
         actor_system_.dispatch_all();
 
@@ -598,6 +601,17 @@ void Runtime::push(v2::room::RoomEvent event) {
         };
         battle_actor.tell(std::move(create));
         actor_system_.dispatch_all();
+
+        v2::actor::Message timeout;
+        timeout.header.kind = v2::actor::MessageKind::kUser;
+        timeout.payload = v2::battle::EndBattleMsg{
+            .reason = v2::battle::BattleFinishReason::kTimeout,
+        };
+        const auto schedule_id = battle_actor.schedule_after(std::move(timeout), std::chrono::seconds(120));
+        if (schedule_id != 0) {
+            pending_battle_timeout_.emplace(battle_id,
+                                           v2::runtime::ScheduleHandle(&actor_system_, schedule_id));
+        }
         return;
     }
 
@@ -663,6 +677,7 @@ std::optional<SessionId> Runtime::session_id_for_user(const std::string& user_id
 }
 
 void Runtime::process_battle_finished(const v2::battle::BattleFinishedMsg& finished) {
+    pending_battle_timeout_.erase(finished.battle_id);
     battles_by_room_id_.erase(finished.room_id);
 
     if (!finished.triggering_user_id.empty()) {

@@ -186,3 +186,39 @@ TEST(V2BattleActorTest, EndBattleMessageFinishesWithRequestedReason) {
     EXPECT_EQ(finished->reason, v2::battle::BattleFinishReason::kSurrender);
     EXPECT_EQ(finished->triggering_user_id, "owner");
 }
+
+TEST(V2BattleActorTest, EndBattleMessageFinishesWithUserRequested) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingBattleSink sink;
+    auto actor = std::make_unique<v2::battle::BattleActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    v2::actor::Message create;
+    create.header.kind = v2::actor::MessageKind::kUser;
+    create.payload = v2::battle::CreateBattleMsg{
+        .battle_id = "battle_0001",
+        .room_id = "room_alpha",
+        .player_ids = {"owner", "member"},
+    };
+    actor_ref.tell(std::move(create));
+
+    v2::actor::Message end;
+    end.header.kind = v2::actor::MessageKind::kUser;
+    end.payload = v2::battle::EndBattleMsg{
+        .reason = v2::battle::BattleFinishReason::kUserRequested,
+        .triggering_user_id = "owner",
+    };
+    actor_ref.tell(std::move(end));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 2U);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kFinished);
+    ASSERT_EQ(sink.events.size(), 3U);
+    const auto* settlement = std::get_if<v2::battle::BattleSettlementPreparedMsg>(&sink.events[1]);
+    ASSERT_NE(settlement, nullptr);
+    EXPECT_EQ(settlement->reason, v2::battle::BattleFinishReason::kUserRequested);
+    const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events[2]);
+    ASSERT_NE(finished, nullptr);
+    EXPECT_EQ(finished->reason, v2::battle::BattleFinishReason::kUserRequested);
+    EXPECT_EQ(finished->triggering_user_id, "owner");
+}

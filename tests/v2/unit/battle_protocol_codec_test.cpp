@@ -8,6 +8,8 @@ TEST(V2BattleProtocolCodecTest, ParsesRequestedFinishReasons) {
               v2::battle::BattleFinishReason::kSurrender);
     EXPECT_EQ(v2::gateway::parse_battle_finish_request("finish:timeout"),
               v2::battle::BattleFinishReason::kTimeout);
+    EXPECT_EQ(v2::gateway::parse_battle_finish_request("finish:user_requested"),
+              v2::battle::BattleFinishReason::kUserRequested);
     EXPECT_EQ(v2::gateway::parse_battle_finish_request("finish:custom"),
               v2::battle::BattleFinishReason::kFinished);
     EXPECT_FALSE(v2::gateway::parse_battle_finish_request("move:1,2").has_value());

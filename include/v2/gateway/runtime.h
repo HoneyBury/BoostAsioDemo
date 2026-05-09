@@ -91,6 +91,7 @@ private:
     std::unordered_map<std::string, BattleArchive> archived_battles_;
     std::unordered_map<std::string, PendingSettlementAck> pending_settlement_acks_;
     std::unordered_map<std::string, v2::battle::BattleFinishedMsg> deferred_finished_events_;
+    std::unordered_map<std::string, v2::runtime::ScheduleHandle> pending_battle_timeout_;
     std::uint64_t next_battle_id_ = 1;
     BattleArchiveSink* archive_sink_ = nullptr;
 };

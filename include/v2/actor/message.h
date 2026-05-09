@@ -95,7 +95,8 @@ using MessagePayload = std::variant<std::monostate,
                                     v2::battle::SubmitBattleInputMsg,
                                     v2::battle::TickBattleMsg,
                                     v2::battle::EndBattleMsg,
-                                    v2::battle::PlayerDisconnectedMsg>;
+                                    v2::battle::PlayerDisconnectedMsg,
+                                    v2::battle::FrameAckMsg>;
 
 struct MessageHeader {
     MessageKind kind = MessageKind::kUnknown;

@@ -18,6 +18,8 @@ std::optional<ParsedBattleEndAcceptedBody> parse_battle_end_accepted_body(std::s
         reason = v2::battle::BattleFinishReason::kFrameLimitReached;
     } else if (reason_text == "player_disconnected") {
         reason = v2::battle::BattleFinishReason::kPlayerDisconnected;
+    } else if (reason_text == "user_requested") {
+        reason = v2::battle::BattleFinishReason::kUserRequested;
     }
     return ParsedBattleEndAcceptedBody{.reason = reason};
 }

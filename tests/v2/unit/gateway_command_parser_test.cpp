@@ -72,6 +72,11 @@ TEST(V2GatewayCommandParserTest, ParsesFinishVariantsAsStructuredReasons) {
     EXPECT_TRUE(timeout->is_finish_request);
     EXPECT_EQ(timeout->finish_reason, v2::battle::BattleFinishReason::kTimeout);
 
+    const auto user_requested = v2::gateway::parse_battle_input_command_body("finish:user_requested");
+    ASSERT_TRUE(user_requested.has_value());
+    EXPECT_TRUE(user_requested->is_finish_request);
+    EXPECT_EQ(user_requested->finish_reason, v2::battle::BattleFinishReason::kUserRequested);
+
     const auto custom = v2::gateway::parse_battle_input_command_body("finish:custom_reason");
     ASSERT_TRUE(custom.has_value());
     EXPECT_TRUE(custom->is_finish_request);

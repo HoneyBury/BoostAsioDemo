@@ -21,6 +21,7 @@
 #include "game/room/room_service.h"
 #include "net/message_dispatcher.h"
 #include "net/protocol.h"
+#include "v2/io/io_engine.h"
 
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -107,7 +108,7 @@ int main(int argc, char* argv[]) {
     game::room::RoomService room_svc(session_mgr, push, battle_mgr, room_mgr, metrics);
     room_svc.register_handlers(dispatcher);
 
-    game::gateway::GatewayService gw_svc(session_mgr, metrics);
+    game::gateway::GatewayService gw_svc(session_mgr, metrics, &push);
     gw_svc.register_handlers(dispatcher);
 
     net::SessionOptions opts;
@@ -116,16 +117,24 @@ int main(int argc, char* argv[]) {
 
     game::gateway::GatewayServer server(io, dispatcher, session_mgr, room_mgr, battle_mgr,
                                          metrics, config.port, config.http_management_port,
-                                         opts, config.metrics_log_interval);
+                                         opts, config.metrics_log_interval,
+                                         {},
+                                         std::make_unique<v2::io::AsioIoEngine>(
+                                             static_cast<std::uint32_t>(config.io_threads)));
+    push.set_write_scheduler(
+        [&server](const game::gateway::PushService::SessionPtr& session,
+                  game::gateway::PushService::SessionWriteTask task) {
+            return server.dispatch_to_session_core(session, task);
+        });
     server.set_connection_limits(config.max_connections, config.per_ip_connection_limit);
     server.start();
 
     LOG_INFO("=== 战斗演示服务器已启动 :{} ===", server.local_port());
+    LOG_INFO("IO cores: {}", server.io_core_count());
     LOG_INFO("功能展示: 起战斗 | 帧同步 | 输入路由 | 结算 | 回放录制 | 观战");
 
-    std::vector<std::thread> workers(config.io_threads);
-    for (auto& w : workers) w = std::thread([&] { io.run(); });
-    for (auto& w : workers) w.join();
+    std::thread control_worker([&] { io.run(); });
+    control_worker.join();
     pool.join();
     return 0;
 }

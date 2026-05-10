@@ -7,8 +7,11 @@
 #include <boost/asio.hpp>
 
 #include <chrono>
+#include <atomic>
 #include <future>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 
@@ -27,11 +30,43 @@ TEST(V2IoEngineTest, DispatchesTasksToRequestedCore) {
 
     std::promise<std::uint32_t> promise;
     auto future = promise.get_future();
-    engine.dispatch_to_core(1, [&promise]() mutable {
-        promise.set_value(1);
+    engine.dispatch_to_core(1, [&promise, &engine]() mutable {
+        promise.set_value(engine.current_core_id().value_or(999U));
     });
 
     EXPECT_EQ(future.get(), 1U);
+    engine.stop();
+}
+
+TEST(V2IoEngineTest, DispatchesTasksToAllCores) {
+    app::logging::init("project_tests");
+
+    v2::io::AsioIoEngine engine(3);
+    engine.run();
+
+    std::promise<void> promise;
+    auto future = promise.get_future();
+    std::mutex mutex;
+    std::set<std::uint32_t> seen_cores;
+    std::atomic<std::size_t> completions{0};
+
+    engine.dispatch_to_all_cores(
+        [&](std::uint32_t core_id) {
+            {
+                std::scoped_lock lock(mutex);
+                seen_cores.insert(engine.current_core_id().value_or(999U));
+                seen_cores.insert(core_id);
+            }
+            if (completions.fetch_add(1, std::memory_order_relaxed) + 1 == 3U) {
+                promise.set_value();
+            }
+        });
+
+    future.get();
+    EXPECT_EQ(seen_cores.size(), 3U);
+    EXPECT_NE(seen_cores.find(0U), seen_cores.end());
+    EXPECT_NE(seen_cores.find(1U), seen_cores.end());
+    EXPECT_NE(seen_cores.find(2U), seen_cores.end());
     engine.stop();
 }
 

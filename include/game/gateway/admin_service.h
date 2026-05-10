@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/gateway/gateway_metrics.h"
+#include "game/gateway/push_service.h"
 #include "game/gateway/session_manager.h"
 
 #include <cstdint>
@@ -25,8 +26,11 @@ public:
     using StatusCallback = std::function<std::string()>;
     using ReloadCallback = std::function<void()>;
 
-    AdminService(SessionManager& sm, GatewayMetrics& m)
-        : session_manager_(sm), metrics_(m) {}
+    AdminService(SessionManager& sm, GatewayMetrics& m, PushService* push_service = nullptr)
+        : push_service_(push_service) {
+        (void)sm;
+        (void)m;
+    }
 
     void set_kick_callback(KickCallback cb) { on_kick_ = std::move(cb); }
     void set_ban_callback(BanCallback cb) { on_ban_ = std::move(cb); }
@@ -36,8 +40,7 @@ public:
     void register_handlers(net::MessageDispatcher& dispatcher);
 
 private:
-    SessionManager& session_manager_;
-    GatewayMetrics& metrics_;
+    PushService* push_service_ = nullptr;
     KickCallback on_kick_;
     BanCallback on_ban_;
     StatusCallback on_status_;

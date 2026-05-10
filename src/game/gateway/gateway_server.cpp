@@ -4,6 +4,7 @@
 #include "app/logging.h"
 #include "game/room/room_battle_lifecycle.h"
 
+#include <algorithm>
 #include <string_view>
 #include <utility>
 
@@ -49,8 +50,7 @@ void GatewayServer::start() {
     if (http_manager_) {
         http_manager_->set_metrics_provider(
             [this]() -> net::HttpMetricsSnapshot {
-                const auto snapshot =
-                    collect_runtime_metrics(metrics_, session_manager_, room_manager_, battle_manager_);
+                const auto snapshot = collect_runtime_metrics_snapshot();
                 return {
                     .prometheus_text = render_prometheus_metrics(snapshot),
                     .json_text = render_json_metrics(snapshot),
@@ -93,6 +93,115 @@ void GatewayServer::stop() {
 }
 
 bool GatewayServer::attach_session(const std::shared_ptr<net::Session>& session) {
+    return attach_session_with_core(session, std::nullopt);
+}
+
+bool GatewayServer::dispatch_to_session_core(const std::shared_ptr<net::Session>& session,
+                                             std::function<void()> task) {
+    if (!task) {
+        return false;
+    }
+
+    const auto core_id = session_io_core(session);
+    if (!core_id.has_value() || io_engine_ == nullptr) {
+        dispatch_inline_fallbacks_.fetch_add(1, std::memory_order_relaxed);
+        task();
+        return false;
+    }
+
+    dispatch_back_tasks_.fetch_add(1, std::memory_order_relaxed);
+    {
+        std::scoped_lock lock(io_core_snapshot_mutex_);
+        auto& snapshot = io_core_snapshots_by_id_[*core_id];
+        snapshot.core_id = *core_id;
+        ++snapshot.dispatch_back_tasks;
+    }
+    io_engine_->dispatch_to_core(*core_id, std::move(task));
+    return true;
+}
+
+std::uint32_t GatewayServer::io_core_count() const noexcept {
+    return io_engine_ == nullptr ? 0U : io_engine_->num_io_cores();
+}
+
+std::optional<std::uint32_t> GatewayServer::current_io_core() const noexcept {
+    return io_engine_ == nullptr ? std::nullopt : io_engine_->current_core_id();
+}
+
+std::optional<std::uint32_t> GatewayServer::session_io_core(
+    const std::shared_ptr<net::Session>& session) const {
+    if (!session) {
+        return std::nullopt;
+    }
+
+    std::scoped_lock lock(session_core_mutex_);
+    const auto it = session_cores_by_ptr_.find(session.get());
+    if (it == session_cores_by_ptr_.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+std::vector<GatewayIoCoreSnapshot> GatewayServer::io_core_snapshot() const {
+    std::vector<GatewayIoCoreSnapshot> snapshots;
+    const auto core_count = io_core_count();
+    snapshots.reserve(core_count);
+    for (std::uint32_t core_id = 0; core_id < core_count; ++core_id) {
+        snapshots.push_back(GatewayIoCoreSnapshot{
+            .core_id = core_id,
+            .active_sessions = 0,
+            .accepted_sessions = 0,
+            .dispatch_back_tasks = 0,
+        });
+    }
+    {
+        std::scoped_lock lock(io_core_snapshot_mutex_);
+        for (const auto& [core_id, snapshot] : io_core_snapshots_by_id_) {
+            if (core_id < snapshots.size()) {
+                snapshots[core_id] = snapshot;
+            } else {
+                snapshots.push_back(snapshot);
+            }
+        }
+    }
+
+    std::sort(snapshots.begin(),
+              snapshots.end(),
+              [](const GatewayIoCoreSnapshot& lhs, const GatewayIoCoreSnapshot& rhs) {
+                  return lhs.core_id < rhs.core_id;
+              });
+    return snapshots;
+}
+
+std::uint64_t GatewayServer::dispatch_back_task_count() const noexcept {
+    return dispatch_back_tasks_.load(std::memory_order_relaxed);
+}
+
+std::uint64_t GatewayServer::dispatch_inline_fallback_count() const noexcept {
+    return dispatch_inline_fallbacks_.load(std::memory_order_relaxed);
+}
+
+bool GatewayServer::dispatch_to_all_io_cores(std::function<void(std::uint32_t core_id)> task) {
+    if (io_engine_ == nullptr || !task) {
+        return false;
+    }
+    io_engine_->dispatch_to_all_cores(std::move(task));
+    return true;
+}
+
+GatewayRuntimeMetricsSnapshot GatewayServer::collect_runtime_metrics_snapshot(
+    const GatewayMetricsSnapshot* previous,
+    double elapsed_sec) const {
+    auto snapshot = collect_runtime_metrics(
+        metrics_, session_manager_, room_manager_, battle_manager_, previous, elapsed_sec);
+    snapshot.dispatch_back_tasks = dispatch_back_task_count();
+    snapshot.dispatch_inline_fallbacks = dispatch_inline_fallback_count();
+    snapshot.io_cores = io_core_snapshot();
+    return snapshot;
+}
+
+bool GatewayServer::attach_session_with_core(const std::shared_ptr<net::Session>& session,
+                                             std::optional<std::uint32_t> io_core_id) {
     const auto client_endpoint = session->remote_endpoint();
     const auto client_ip = extract_ip(client_endpoint);
     if (!try_acquire_connection_slot(client_ip)) {
@@ -104,7 +213,23 @@ bool GatewayServer::attach_session(const std::shared_ptr<net::Session>& session)
     session_manager_.add_session(session);
     metrics_.on_session_accepted();
 
-    LOG_INFO("Accepted client {}", client_endpoint);
+    if (io_core_id.has_value()) {
+        std::scoped_lock lock(session_core_mutex_);
+        session_cores_by_ptr_[session.get()] = *io_core_id;
+    }
+    if (io_core_id.has_value()) {
+        std::scoped_lock lock(io_core_snapshot_mutex_);
+        auto& snapshot = io_core_snapshots_by_id_[*io_core_id];
+        snapshot.core_id = *io_core_id;
+        ++snapshot.accepted_sessions;
+        ++snapshot.active_sessions;
+    }
+
+    if (io_core_id.has_value()) {
+        LOG_INFO("Accepted client {} on io_core={}", client_endpoint, *io_core_id);
+    } else {
+        LOG_INFO("Accepted client {}", client_endpoint);
+    }
 
     session->set_receive_observer(
         [this](const std::shared_ptr<net::Session>&, const net::Session::PacketMessage& message) {
@@ -172,7 +297,7 @@ void GatewayServer::do_accept() {
         }
 
         auto session = std::make_shared<net::Session>(std::move(socket), session_options_);
-        (void)attach_session(session);
+        (void)attach_session_with_core(session, std::nullopt);
         do_accept();
     });
 }
@@ -182,11 +307,12 @@ void GatewayServer::do_accept_with_io_engine() {
         return;
     }
 
-    io_acceptor_->async_accept_native([this](std::shared_ptr<net::Session> session) {
+    const auto accept_core_id = io_acceptor_->owning_core_id();
+    io_acceptor_->async_accept_native([this, accept_core_id](std::shared_ptr<net::Session> session) {
         if (session == nullptr) {
             return;
         }
-        (void)attach_session(session);
+        (void)attach_session_with_core(session, accept_core_id);
         do_accept_with_io_engine();
     });
 }
@@ -195,6 +321,16 @@ bool GatewayServer::release_session_state(const std::shared_ptr<net::Session>& s
                                           std::string_view client_ip) {
     if (!session_manager_.contains(session)) {
         return false;
+    }
+
+    std::optional<std::uint32_t> io_core_id;
+    {
+        std::scoped_lock lock(session_core_mutex_);
+        const auto it = session_cores_by_ptr_.find(session.get());
+        if (it != session_cores_by_ptr_.end()) {
+            io_core_id = it->second;
+            session_cores_by_ptr_.erase(it);
+        }
     }
 
     const auto room_id = room_manager_.room_id_of(session);
@@ -208,6 +344,13 @@ bool GatewayServer::release_session_state(const std::shared_ptr<net::Session>& s
     session_manager_.remove_session(session);
     metrics_.on_session_closed();
     release_connection_slot(client_ip);
+    if (io_core_id.has_value()) {
+        std::scoped_lock lock(io_core_snapshot_mutex_);
+        auto it = io_core_snapshots_by_id_.find(*io_core_id);
+        if (it != io_core_snapshots_by_id_.end() && it->second.active_sessions > 0) {
+            --it->second.active_sessions;
+        }
+    }
     return true;
 }
 
@@ -284,20 +427,34 @@ void GatewayServer::arm_metrics_timer() {
         }
         last_metrics_export_time_ = now;
 
-        const auto runtime_snapshot =
-            collect_runtime_metrics(metrics_, session_manager_, room_manager_, battle_manager_,
-                                    prev_ptr, elapsed_sec);
+        const auto runtime_snapshot = collect_runtime_metrics_snapshot(prev_ptr, elapsed_sec);
         previous_metrics_snapshot_ = runtime_snapshot.counters;
 
+        std::string io_core_summary;
+        if (!runtime_snapshot.io_cores.empty()) {
+            io_core_summary = " io_cores=[";
+            for (std::size_t index = 0; index < runtime_snapshot.io_cores.size(); ++index) {
+                const auto& core = runtime_snapshot.io_cores[index];
+                if (index > 0) {
+                    io_core_summary += ",";
+                }
+                io_core_summary += std::to_string(core.core_id);
+                io_core_summary += ":";
+                io_core_summary += std::to_string(core.active_sessions);
+            }
+            io_core_summary += "]";
+        }
+
         LOG_INFO("Gateway metrics: {}, active_sessions={}, auth_sessions={}, rooms={}, battles={}, "
-                 "pkts_recv/s={:.1f}, pkts_sent/s={:.1f}",
+                 "pkts_recv/s={:.1f}, pkts_sent/s={:.1f}{}",
                  metrics_.summary(),
                  runtime_snapshot.active_sessions,
                  runtime_snapshot.authenticated_sessions,
                  runtime_snapshot.active_rooms,
                  runtime_snapshot.active_battles,
                  runtime_snapshot.rates.received_packets_per_sec,
-                 runtime_snapshot.rates.sent_packets_per_sec);
+                 runtime_snapshot.rates.sent_packets_per_sec,
+                 io_core_summary);
 
         if (!write_metrics_files(runtime_snapshot, metrics_export_options_)) {
             LOG_WARN("Failed to export metrics files");

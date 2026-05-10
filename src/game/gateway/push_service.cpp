@@ -2,14 +2,41 @@
 
 namespace game::gateway {
 
+void PushService::set_write_scheduler(SessionWriteScheduler scheduler) {
+    std::scoped_lock lock(scheduler_mutex_);
+    write_scheduler_ = std::move(scheduler);
+}
+
+void PushService::dispatch_write(const SessionPtr& session, SessionWriteTask task) const {
+    if (!session || !task) {
+        return;
+    }
+
+    SessionWriteScheduler scheduler;
+    {
+        std::scoped_lock lock(scheduler_mutex_);
+        scheduler = write_scheduler_;
+    }
+
+    if (scheduler && scheduler(session, task)) {
+        return;
+    }
+
+    task();
+}
+
 void PushService::send_ok(const SessionPtr& session,
                           std::uint16_t message_id,
                           std::uint32_t request_id,
                           std::string body) const {
-    session->send(message_id,
-                  request_id,
-                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                  std::move(body));
+    dispatch_write(
+        session,
+        [session, message_id, request_id, body = std::move(body)]() mutable {
+            session->send(message_id,
+                          request_id,
+                          static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                          std::move(body));
+        });
 }
 
 void PushService::send_error(const SessionPtr& session,
@@ -20,19 +47,27 @@ void PushService::send_error(const SessionPtr& session,
         body = net::protocol::to_string(error_code);
     }
 
-    session->send(net::protocol::kErrorResponse,
-                  request_id,
-                  static_cast<std::int32_t>(error_code),
-                  std::move(body));
+    dispatch_write(
+        session,
+        [session, request_id, error_code, body = std::move(body)]() mutable {
+            session->send(net::protocol::kErrorResponse,
+                          request_id,
+                          static_cast<std::int32_t>(error_code),
+                          std::move(body));
+        });
 }
 
 void PushService::send_push(const SessionPtr& session,
                             std::uint16_t message_id,
                             std::string body) const {
-    session->send(message_id,
-                  0,
-                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                  std::move(body));
+    dispatch_write(
+        session,
+        [session, message_id, body = std::move(body)]() mutable {
+            session->send(message_id,
+                          0,
+                          static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                          std::move(body));
+        });
 }
 
 void PushService::broadcast(const std::vector<SessionPtr>& sessions,

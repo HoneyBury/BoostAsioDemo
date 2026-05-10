@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -57,6 +58,8 @@ public:
     // Strand-per-core: session dispatched to the core it was accepted on.
     virtual void dispatch_to_core(std::uint32_t core_id,
                                   std::function<void()> task) = 0;
+    virtual void dispatch_to_all_cores(std::function<void(std::uint32_t core_id)> task) = 0;
+    [[nodiscard]] virtual std::optional<std::uint32_t> current_core_id() const noexcept = 0;
 
     // Listen on address, calling on_accept on the accepting core.
     virtual std::unique_ptr<IoAcceptor> listen(
@@ -75,6 +78,8 @@ public:
     [[nodiscard]] std::uint32_t num_io_cores() const noexcept override;
     void dispatch_to_core(std::uint32_t core_id,
                           std::function<void()> task) override;
+    void dispatch_to_all_cores(std::function<void(std::uint32_t core_id)> task) override;
+    [[nodiscard]] std::optional<std::uint32_t> current_core_id() const noexcept override;
     std::unique_ptr<IoAcceptor> listen(
         const char* address, std::uint16_t port, net::SessionOptions session_options = {}) override;
     void run() override;

@@ -8,8 +8,12 @@
 
 namespace game::gateway {
 
-GatewayService::GatewayService(SessionManager& session_manager, GatewayMetrics& metrics)
-    : session_manager_(session_manager), metrics_(metrics) {}
+GatewayService::GatewayService(SessionManager& session_manager,
+                               GatewayMetrics& metrics,
+                               PushService* push_service)
+    : session_manager_(session_manager),
+      metrics_(metrics),
+      push_service_(push_service) {}
 
 void GatewayService::register_handlers(net::MessageDispatcher& dispatcher) const {
     // v1.1.3 / T05: 白名单与限频必须是 client ingress 层策略，在投递到 business_pool
@@ -24,8 +28,15 @@ void GatewayService::register_handlers(net::MessageDispatcher& dispatcher) const
 
     dispatcher.register_handler(
         net::protocol::kHeartbeatRequest,
-        [](const net::DispatchContext& context) {
+        [this](const net::DispatchContext& context) {
             // 心跳包不进入复杂业务流程，直接由网关层回包。
+            if (push_service_ != nullptr) {
+                push_service_->send_ok(context.session,
+                                       net::protocol::kHeartbeatResponse,
+                                       context.request_id,
+                                       "pong");
+                return;
+            }
             context.session->send(net::protocol::kHeartbeatResponse,
                                   context.request_id,
                                   static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
@@ -51,10 +62,16 @@ bool GatewayService::should_allow_message(const net::DispatchContext& context) c
     }
 
     metrics_.on_packet_blocked();
-    context.session->send(net::protocol::kErrorResponse,
-                          context.request_id,
-                          static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
-                          net::protocol::to_string(net::protocol::ErrorCode::kAuthRequired));
+    if (push_service_ != nullptr) {
+        push_service_->send_error(context.session,
+                                  context.request_id,
+                                  net::protocol::ErrorCode::kAuthRequired);
+    } else {
+        context.session->send(net::protocol::kErrorResponse,
+                              context.request_id,
+                              static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                              net::protocol::to_string(net::protocol::ErrorCode::kAuthRequired));
+    }
     return false;
 }
 
@@ -87,10 +104,16 @@ bool GatewayService::check_rate_limit(const net::DispatchContext& context) const
 
     metrics_.on_packet_blocked();
     AUDIT_LOG("rate_limited", "session=" + context.session->remote_endpoint());
-    context.session->send(net::protocol::kErrorResponse,
-                          context.request_id,
-                          static_cast<std::int32_t>(net::protocol::ErrorCode::kRateLimited),
-                          net::protocol::to_string(net::protocol::ErrorCode::kRateLimited));
+    if (push_service_ != nullptr) {
+        push_service_->send_error(context.session,
+                                  context.request_id,
+                                  net::protocol::ErrorCode::kRateLimited);
+    } else {
+        context.session->send(net::protocol::kErrorResponse,
+                              context.request_id,
+                              static_cast<std::int32_t>(net::protocol::ErrorCode::kRateLimited),
+                              net::protocol::to_string(net::protocol::ErrorCode::kRateLimited));
+    }
     return false;
 }
 

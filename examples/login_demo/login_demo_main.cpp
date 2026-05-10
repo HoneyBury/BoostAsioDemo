@@ -25,6 +25,7 @@
 #include "game/room/room_manager.h"
 #include "net/message_dispatcher.h"
 #include "net/protocol.h"
+#include "v2/io/io_engine.h"
 
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -98,7 +99,7 @@ int main(int argc, char* argv[]) {
     // =================================================================
     // 4. 二进制 Admin — demo-only、无权限；默认主链不注册（见 docs/v1-governance-layers.md §6）
     // =================================================================
-    game::gateway::AdminService admin(session_mgr, metrics);
+    game::gateway::AdminService admin(session_mgr, metrics, &push);
     admin.set_status_callback([&] {
         return "{\"auth_provider\":\"" + config.auth_provider +
                "\",\"sessions\":" + std::to_string(session_mgr.snapshot().active_sessions) + "}";
@@ -108,7 +109,7 @@ int main(int argc, char* argv[]) {
     // =================================================================
     // 5. 网关 + 安全层 — 连接限制 + 登录防护
     // =================================================================
-    game::gateway::GatewayService gw_svc(session_mgr, metrics);
+    game::gateway::GatewayService gw_svc(session_mgr, metrics, &push);
     gw_svc.register_handlers(dispatcher);
 
     net::SessionOptions session_opts;
@@ -117,7 +118,15 @@ int main(int argc, char* argv[]) {
 
     game::gateway::GatewayServer server(io, dispatcher, session_mgr, room_mgr, battle_mgr,
                                          metrics, config.port, config.http_management_port,
-                                         session_opts, config.metrics_log_interval);
+                                         session_opts, config.metrics_log_interval,
+                                         {},
+                                         std::make_unique<v2::io::AsioIoEngine>(
+                                             static_cast<std::uint32_t>(config.io_threads)));
+    push.set_write_scheduler(
+        [&server](const game::gateway::PushService::SessionPtr& session,
+                  game::gateway::PushService::SessionWriteTask task) {
+            return server.dispatch_to_session_core(session, task);
+        });
     server.set_connection_limits(config.max_connections, config.per_ip_connection_limit);
     server.start();
 
@@ -156,11 +165,11 @@ int main(int argc, char* argv[]) {
     sig_handler.start();
 
     LOG_INFO("=== 登录演示服务器已启动 :{} ===", server.local_port());
+    LOG_INFO("IO cores: {}", server.io_core_count());
     LOG_INFO("功能展示: dev/json_file/http 鉴权 | Token TTL | 顶号踢线 | 审计日志 | 优雅关闭");
 
-    std::vector<std::thread> workers(config.io_threads);
-    for (auto& w : workers) w = std::thread([&] { io.run(); });
-    for (auto& w : workers) w.join();
+    std::thread control_worker([&] { io.run(); });
+    control_worker.join();
     pool.join();
     watcher.stop();
     return 0;

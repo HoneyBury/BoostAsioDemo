@@ -25,8 +25,11 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <atomic>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -40,6 +43,11 @@ namespace bp = boost::process::v1;
 using tcp = asio::ip::tcp;
 
 struct GatewayTestRuntime {
+    struct PushDispatchObservation {
+        std::mutex mutex;
+        std::vector<std::optional<std::uint32_t>> observed_cores;
+    };
+
     asio::io_context io_context;
     boost::asio::thread_pool business_pool{2};
     net::MessageDispatcher dispatcher{business_pool};
@@ -58,6 +66,8 @@ struct GatewayTestRuntime {
     std::unique_ptr<game::battle::BattleService> battle_service;
     std::thread io_thread;
     std::string startup_error;
+    std::shared_ptr<PushDispatchObservation> push_dispatch_observation =
+        std::make_shared<PushDispatchObservation>();
 
     bool start() {
         try {
@@ -65,7 +75,7 @@ struct GatewayTestRuntime {
                 return battle_manager.battle_started(room_id);
             });
 
-            gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics);
+            gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics, &push_service);
             login_service =
                 std::make_unique<game::login::LoginService>(session_manager, push_service, room_manager, token_validator, metrics);
             room_service =
@@ -80,11 +90,11 @@ struct GatewayTestRuntime {
 
             dispatcher.register_handler(
                 net::protocol::kEchoRequest,
-                [](const net::DispatchContext& context) {
-                    context.session->send(net::protocol::kEchoResponse,
-                                          context.request_id,
-                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                                          context.body);
+                [this](const net::DispatchContext& context) {
+                    push_service.send_ok(context.session,
+                                         net::protocol::kEchoResponse,
+                                         context.request_id,
+                                         context.body);
                 });
 
             server = std::make_unique<game::gateway::GatewayServer>(
@@ -100,6 +110,19 @@ struct GatewayTestRuntime {
                 std::chrono::milliseconds(1000),
                 game::gateway::GatewayMetricsExportOptions{},
                 std::make_unique<v2::io::AsioIoEngine>(2));
+            auto* server_ptr = server.get();
+            auto push_observation = push_dispatch_observation;
+            push_service.set_write_scheduler(
+                [server_ptr, push_observation](const game::gateway::PushService::SessionPtr& session,
+                                               game::gateway::PushService::SessionWriteTask task) {
+                    return server_ptr->dispatch_to_session_core(
+                        session,
+                        [server_ptr, push_observation, task = std::move(task)]() mutable {
+                            std::scoped_lock lock(push_observation->mutex);
+                            push_observation->observed_cores.push_back(server_ptr->current_io_core());
+                            task();
+                        });
+                });
             if (packet_bridge) {
                 server->set_packet_bridge(packet_bridge);
             }
@@ -269,6 +292,17 @@ bool wait_for_tcp_server(std::uint16_t port, std::chrono::milliseconds timeout) 
     return false;
 }
 
+bool wait_until(std::chrono::milliseconds timeout, const std::function<bool()>& predicate) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (predicate()) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return predicate();
+}
+
 class EchoServerProcess {
 public:
     explicit EchoServerProcess(const std::filesystem::path& config_path)
@@ -405,6 +439,111 @@ TEST(GatewayIntegrationTest, OptionalPacketBridgeMirrorsExternallyAttachedSessio
     EXPECT_EQ(bridge->packets.front().request_id, 175U);
     EXPECT_EQ(bridge->close_count, 1U);
 
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, GatewayServerTracksSessionIoCoreAndDispatchesBackToOwningCore) {
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+    ASSERT_EQ(runtime.server->io_core_count(), 2U);
+
+    TestClient client;
+    client.connect(runtime.server->local_port());
+
+    ASSERT_TRUE(wait_until(std::chrono::milliseconds(300), [&]() {
+        return runtime.session_manager.snapshot().active_sessions == 1;
+    }));
+
+    const auto sessions = runtime.session_manager.all_sessions();
+    ASSERT_EQ(sessions.size(), 1U);
+
+    const auto session_core = runtime.server->session_io_core(sessions.front());
+    ASSERT_TRUE(session_core.has_value());
+    EXPECT_LT(*session_core, runtime.server->io_core_count());
+
+    std::promise<std::optional<std::uint32_t>> dispatched_core_promise;
+    auto dispatched_core = dispatched_core_promise.get_future();
+    EXPECT_TRUE(runtime.server->dispatch_to_session_core(
+        sessions.front(),
+        [&runtime, &dispatched_core_promise]() mutable {
+            dispatched_core_promise.set_value(runtime.server->current_io_core());
+        }));
+
+    EXPECT_EQ(dispatched_core.get(), session_core);
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, PushServiceBusinessResponsesReturnToOwningIoCore) {
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+
+    TestClient client;
+    client.connect(runtime.server->local_port());
+
+    const auto login = client.exchange(net::protocol::kLoginRequest, 601, "core_user|token:core_user");
+    EXPECT_EQ(login.message_id, net::protocol::kLoginResponse);
+
+    const auto room = client.exchange(net::protocol::kRoomCreateRequest, 602, "core_room");
+    EXPECT_EQ(room.message_id, net::protocol::kRoomCreateResponse);
+
+    ASSERT_TRUE(wait_until(std::chrono::milliseconds(1500), [&runtime]() {
+        return runtime.server->dispatch_back_task_count() >= 2U;
+    }));
+
+    const auto sessions = runtime.session_manager.all_sessions();
+    ASSERT_EQ(sessions.size(), 1U);
+    const auto session_core = runtime.server->session_io_core(sessions.front());
+    ASSERT_TRUE(session_core.has_value());
+
+    {
+        std::scoped_lock lock(runtime.push_dispatch_observation->mutex);
+        ASSERT_FALSE(runtime.push_dispatch_observation->observed_cores.empty());
+        for (const auto& observed_core : runtime.push_dispatch_observation->observed_cores) {
+            ASSERT_TRUE(observed_core.has_value());
+            EXPECT_EQ(*observed_core, *session_core);
+        }
+    }
+
+    EXPECT_GE(runtime.server->dispatch_back_task_count(), 2U);
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, GatewayServerCanFanOutTasksAcrossAllIoCores) {
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+
+    std::promise<void> promise;
+    auto future = promise.get_future();
+    std::mutex mutex;
+    std::set<std::uint32_t> seen_cores;
+    std::atomic<bool> completed{false};
+
+    ASSERT_TRUE(runtime.server->dispatch_to_all_io_cores(
+        [&](std::uint32_t core_id) {
+            {
+                std::scoped_lock lock(mutex);
+                seen_cores.insert(core_id);
+                if (const auto current_core = runtime.server->current_io_core(); current_core.has_value()) {
+                    seen_cores.insert(*current_core);
+                }
+                if (seen_cores.size() >= runtime.server->io_core_count() &&
+                    !completed.exchange(true, std::memory_order_relaxed)) {
+                    promise.set_value();
+                }
+            }
+        }));
+
+    future.get();
+    EXPECT_EQ(seen_cores.size(), runtime.server->io_core_count());
+    EXPECT_EQ(runtime.server->dispatch_back_task_count(), 0U);
     runtime.stop();
 }
 

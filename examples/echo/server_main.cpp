@@ -120,7 +120,7 @@ int main(int argc, char* argv[]) {
         token_validator = std::make_unique<game::login::DevTokenValidator>();
     }
 
-    game::gateway::GatewayService gateway_service(session_manager, metrics);
+    game::gateway::GatewayService gateway_service(session_manager, metrics, &push_service);
     game::login::LoginService login_service(session_manager, push_service, room_manager, *token_validator, metrics);
     game::room::RoomService room_service(session_manager, push_service, battle_manager, room_manager, metrics);
     game::battle::BattleService battle_service(session_manager, push_service, room_manager, battle_manager, metrics);
@@ -132,12 +132,12 @@ int main(int argc, char* argv[]) {
 
     dispatcher.register_handler(
         net::protocol::kEchoRequest,
-        [](const net::DispatchContext& context) {
+        [&push_service](const net::DispatchContext& context) {
             // Echo 示例仍然保留，用于快速验证网络链路是否通畅。
-            context.session->send(net::protocol::kEchoResponse,
-                                  context.request_id,
-                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                                  context.body);
+            push_service.send_ok(context.session,
+                                 net::protocol::kEchoResponse,
+                                 context.request_id,
+                                 context.body);
         });
 
     game::gateway::GatewayServer server(
@@ -156,6 +156,11 @@ int main(int argc, char* argv[]) {
             .json_path = config.metrics_json_path,
         },
         std::make_unique<v2::io::AsioIoEngine>(static_cast<std::uint32_t>(config.io_threads)));
+    push_service.set_write_scheduler(
+        [&server](const game::gateway::PushService::SessionPtr& session,
+                  game::gateway::PushService::SessionWriteTask task) {
+            return server.dispatch_to_session_core(session, task);
+        });
     if (config.v2_shadow_bridge_enabled) {
         const auto mirror_policy = v2::gateway::make_shadow_bridge_policy(config);
         const auto emit_policy = v2::gateway::make_shadow_bridge_emit_policy(config);

@@ -85,10 +85,14 @@ void LoginService::register_handlers(net::MessageDispatcher& dispatcher) const {
             if (replaced_session && replaced_session != context.session) {
                 const auto transferred =
                     transfer_room_for_duplicate_login(room_manager_, replaced_session, context.session);
-                push_service_.send_push(replaced_session,
-                                        net::protocol::kSessionKickedPush,
-                                        transferred ? "session_kicked:duplicate_login:room_transferred"
-                                                    : "session_kicked:duplicate_login");
+                // Duplicate-login kick must preserve send-before-close ordering on the old session.
+                // `Session::send()` and `Session::stop()` both serialize onto the same strand, while
+                // an extra io-core hop can reorder them and drop the kick push before close.
+                replaced_session->send(net::protocol::kSessionKickedPush,
+                                       0,
+                                       static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                       transferred ? "session_kicked:duplicate_login:room_transferred"
+                                                   : "session_kicked:duplicate_login");
                 replaced_session->stop();
             }
 

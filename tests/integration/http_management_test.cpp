@@ -47,7 +47,7 @@ protected:
                 return battle_manager.battle_started(room_id);
             });
 
-            gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics);
+            gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics, &push_service);
             login_service = std::make_unique<game::login::LoginService>(
                 session_manager, push_service, room_manager, *token_validator, metrics);
             room_service = std::make_unique<game::room::RoomService>(
@@ -73,6 +73,11 @@ protected:
                 std::chrono::milliseconds(60000),
                 game::gateway::GatewayMetricsExportOptions{},
                 std::make_unique<v2::io::AsioIoEngine>(2));
+            push_service.set_write_scheduler(
+                [this](const game::gateway::PushService::SessionPtr& session,
+                       game::gateway::PushService::SessionWriteTask task) {
+                    return server->dispatch_to_session_core(session, task);
+                });
             server->start();
 
             io_thread = std::thread([this]() { io_context.run(); });
@@ -141,12 +146,16 @@ TEST_F(HttpManagementTest, MetricsEndpointReturnsPrometheusText) {
     EXPECT_NE(body.find("# TYPE gateway_sessions_accepted_total counter"), std::string::npos);
     EXPECT_NE(body.find("gateway_sessions_accepted_total "), std::string::npos);
     EXPECT_NE(body.find("gateway_active_sessions "), std::string::npos);
+    EXPECT_NE(body.find("gateway_io_core_active_sessions{core=\"0\"}"), std::string::npos);
+    EXPECT_NE(body.find("gateway_dispatch_back_tasks_total "), std::string::npos);
 }
 
 TEST_F(HttpManagementTest, MetricsJsonEndpointReturnsJson) {
     const auto body = http_request(http::verb::get, "/metrics/json").body();
     EXPECT_NE(body.find("\"accepted_sessions\""), std::string::npos);
     EXPECT_NE(body.find("\"active_rooms\""), std::string::npos);
+    EXPECT_NE(body.find("\"io_cores\""), std::string::npos);
+    EXPECT_NE(body.find("\"dispatch_back_tasks\""), std::string::npos);
 }
 
 TEST_F(HttpManagementTest, UnknownPathReturnsNotFound) {

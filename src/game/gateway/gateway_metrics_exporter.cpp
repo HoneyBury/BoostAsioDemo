@@ -56,7 +56,7 @@ GatewayRuntimeMetricsSnapshot collect_runtime_metrics(const GatewayMetrics& metr
 
 std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
     const auto r = snapshot.rates;
-    return fmt::format(
+    auto text = fmt::format(
         "# TYPE gateway_sessions_accepted_total counter\n"
         "gateway_sessions_accepted_total {}\n"
         "# TYPE gateway_sessions_closed_total counter\n"
@@ -85,6 +85,10 @@ std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snaps
         "gateway_active_rooms {}\n"
         "# TYPE gateway_active_battles gauge\n"
         "gateway_active_battles {}\n"
+        "# TYPE gateway_dispatch_back_tasks_total counter\n"
+        "gateway_dispatch_back_tasks_total {}\n"
+        "# TYPE gateway_dispatch_inline_fallbacks_total counter\n"
+        "gateway_dispatch_inline_fallbacks_total {}\n"
         "# TYPE gateway_sessions_accepted_rate gauge\n"
         "gateway_sessions_accepted_rate {:.2f}\n"
         "# TYPE gateway_packets_received_rate gauge\n"
@@ -111,15 +115,44 @@ std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snaps
         snapshot.authenticated_sessions,
         snapshot.active_rooms,
         snapshot.active_battles,
+        snapshot.dispatch_back_tasks,
+        snapshot.dispatch_inline_fallbacks,
         r.accepted_sessions_per_sec,
         r.received_packets_per_sec,
         r.sent_packets_per_sec,
         r.received_bytes_per_sec,
         r.sent_bytes_per_sec,
         r.login_successes_per_sec);
+
+    if (!snapshot.io_cores.empty()) {
+        text += "# TYPE gateway_io_core_active_sessions gauge\n";
+        text += "# TYPE gateway_io_core_accepted_sessions_total counter\n";
+        for (const auto& core : snapshot.io_cores) {
+            text += fmt::format("gateway_io_core_active_sessions{{core=\"{}\"}} {}\n",
+                                core.core_id,
+                                core.active_sessions);
+            text += fmt::format("gateway_io_core_accepted_sessions_total{{core=\"{}\"}} {}\n",
+                                core.core_id,
+                                core.accepted_sessions);
+            text += fmt::format("gateway_io_core_dispatch_back_tasks_total{{core=\"{}\"}} {}\n",
+                                core.core_id,
+                                core.dispatch_back_tasks);
+        }
+    }
+
+    return text;
 }
 
 std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
+    json io_cores = json::array();
+    for (const auto& core : snapshot.io_cores) {
+        io_cores.push_back({
+            {"core_id", core.core_id},
+            {"active_sessions", core.active_sessions},
+            {"accepted_sessions", core.accepted_sessions},
+        });
+    }
+
     json document = {
         {"accepted_sessions", snapshot.counters.accepted_sessions},
         {"closed_sessions", snapshot.counters.closed_sessions},
@@ -135,6 +168,9 @@ std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
         {"authenticated_sessions", snapshot.authenticated_sessions},
         {"active_rooms", snapshot.active_rooms},
         {"active_battles", snapshot.active_battles},
+        {"dispatch_back_tasks", snapshot.dispatch_back_tasks},
+        {"dispatch_inline_fallbacks", snapshot.dispatch_inline_fallbacks},
+        {"io_cores", std::move(io_cores)},
         {"sessions_accepted_per_sec", std::round(snapshot.rates.accepted_sessions_per_sec * 100.0) / 100.0},
         {"packets_received_per_sec", std::round(snapshot.rates.received_packets_per_sec * 100.0) / 100.0},
         {"packets_sent_per_sec", std::round(snapshot.rates.sent_packets_per_sec * 100.0) / 100.0},

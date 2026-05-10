@@ -6,10 +6,19 @@
 #include "game/room/room_manager.h"
 
 #include <filesystem>
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace game::gateway {
+
+struct GatewayIoCoreSnapshot {
+    std::uint32_t core_id = 0;
+    std::uint64_t active_sessions = 0;
+    std::uint64_t accepted_sessions = 0;
+    std::uint64_t dispatch_back_tasks = 0;
+};
 
 struct GatewayRuntimeMetricsSnapshot {
     GatewayMetricsSnapshot counters;
@@ -18,6 +27,9 @@ struct GatewayRuntimeMetricsSnapshot {
     std::uint64_t authenticated_sessions = 0;
     std::uint64_t active_rooms = 0;
     std::uint64_t active_battles = 0;
+    std::uint64_t dispatch_back_tasks = 0;
+    std::uint64_t dispatch_inline_fallbacks = 0;
+    std::vector<GatewayIoCoreSnapshot> io_cores;
 };
 
 struct GatewayMetricsExportOptions {

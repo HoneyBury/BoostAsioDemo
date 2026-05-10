@@ -20,6 +20,7 @@
 #include "game/room/room_service.h"
 #include "net/message_dispatcher.h"
 #include "net/protocol.h"
+#include "v2/io/io_engine.h"
 
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -79,7 +80,7 @@ int main(int argc, char* argv[]) {
     // =================================================================
     dispatcher.register_handler(9999, [&](const net::DispatchContext& ctx) {
         room_mgr.broadcast_to_room("demo_room", [&](const auto& member) {
-            member->send(3009, 0, 0, "COW 广播快照演示");
+            push.send_push(member, 3009, "COW 广播快照演示");
         });
     });
 
@@ -90,7 +91,7 @@ int main(int argc, char* argv[]) {
     game::login::LoginService login_svc(session_mgr, push, room_mgr, validator, metrics);
     login_svc.register_handlers(dispatcher);
 
-    game::gateway::GatewayService gw_svc(session_mgr, metrics);
+    game::gateway::GatewayService gw_svc(session_mgr, metrics, &push);
     gw_svc.register_handlers(dispatcher);
 
     net::SessionOptions opts;
@@ -99,16 +100,24 @@ int main(int argc, char* argv[]) {
 
     game::gateway::GatewayServer server(io, dispatcher, session_mgr, room_mgr, battle_mgr,
                                          metrics, config.port, config.http_management_port,
-                                         opts, config.metrics_log_interval);
+                                         opts, config.metrics_log_interval,
+                                         {},
+                                         std::make_unique<v2::io::AsioIoEngine>(
+                                             static_cast<std::uint32_t>(config.io_threads)));
+    push.set_write_scheduler(
+        [&server](const game::gateway::PushService::SessionPtr& session,
+                  game::gateway::PushService::SessionWriteTask task) {
+            return server.dispatch_to_session_core(session, task);
+        });
     server.set_connection_limits(config.max_connections, config.per_ip_connection_limit);
     server.start();
 
     LOG_INFO("=== 房间演示服务器已启动 :{} ===", server.local_port());
+    LOG_INFO("IO cores: {}", server.io_core_count());
     LOG_INFO("功能展示: 创建/加入/离开/准备 | 房间广播 | COW 快照 | 房主机制 | 会话迁移");
 
-    std::vector<std::thread> workers(config.io_threads);
-    for (auto& w : workers) w = std::thread([&] { io.run(); });
-    for (auto& w : workers) w.join();
+    std::thread control_worker([&] { io.run(); });
+    control_worker.join();
     pool.join();
     return 0;
 }

@@ -14,11 +14,14 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace game::gateway {
 
@@ -53,15 +56,30 @@ public:
     void start();
     void stop();
     bool attach_session(const std::shared_ptr<net::Session>& session);
+    bool dispatch_to_session_core(const std::shared_ptr<net::Session>& session,
+                                  std::function<void()> task);
     void set_connection_limits(std::size_t max_total, std::size_t per_ip);
     void set_packet_bridge(std::shared_ptr<GatewayPacketBridge> packet_bridge);
     [[nodiscard]] std::size_t active_connections() const;
     [[nodiscard]] std::uint16_t local_port() const;
+    [[nodiscard]] std::uint32_t io_core_count() const noexcept;
+    [[nodiscard]] std::optional<std::uint32_t> current_io_core() const noexcept;
+    [[nodiscard]] std::optional<std::uint32_t> session_io_core(
+        const std::shared_ptr<net::Session>& session) const;
+    [[nodiscard]] std::vector<GatewayIoCoreSnapshot> io_core_snapshot() const;
+    [[nodiscard]] std::uint64_t dispatch_back_task_count() const noexcept;
+    [[nodiscard]] std::uint64_t dispatch_inline_fallback_count() const noexcept;
+    bool dispatch_to_all_io_cores(std::function<void(std::uint32_t core_id)> task);
 
 private:
     void do_accept();
     void do_accept_with_io_engine();
     void arm_metrics_timer();
+    [[nodiscard]] GatewayRuntimeMetricsSnapshot collect_runtime_metrics_snapshot(
+        const GatewayMetricsSnapshot* previous = nullptr,
+        double elapsed_sec = 0.0) const;
+    bool attach_session_with_core(const std::shared_ptr<net::Session>& session,
+                                  std::optional<std::uint32_t> io_core_id);
     bool release_session_state(const std::shared_ptr<net::Session>& session,
                                std::string_view client_ip);
     [[nodiscard]] bool try_acquire_connection_slot(std::string_view client_ip);
@@ -88,6 +106,12 @@ private:
     std::atomic<std::size_t> active_connection_count_{0};
     std::mutex ip_count_mutex_;
     std::unordered_map<std::string, std::size_t> ip_connection_counts_;
+    mutable std::mutex session_core_mutex_;
+    std::unordered_map<const net::Session*, std::uint32_t> session_cores_by_ptr_;
+    mutable std::mutex io_core_snapshot_mutex_;
+    std::unordered_map<std::uint32_t, GatewayIoCoreSnapshot> io_core_snapshots_by_id_;
+    std::atomic<std::uint64_t> dispatch_back_tasks_{0};
+    std::atomic<std::uint64_t> dispatch_inline_fallbacks_{0};
     std::shared_ptr<GatewayPacketBridge> packet_bridge_;
 };
 

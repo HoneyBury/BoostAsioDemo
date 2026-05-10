@@ -3,8 +3,6 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <unordered_map>
-
 #include "v2/actor/actor.h"
 #include "v2/battle/message_types.h"
 #include "v2/battle/runtime_world.h"
@@ -30,11 +28,9 @@ public:
 
 private:
     void finish_battle(BattleFinishReason reason, std::string triggering_user_id);
+    void sync_replay_inputs_from_world();
+    void sync_state_from_world();
 
-    std::uint64_t next_input_seq_ = 1;
-    std::uint32_t max_frames_ = 0;
-    std::unordered_map<std::string, std::uint32_t> last_submitted_frame_;
-    std::unordered_map<std::string, std::uint32_t> last_acked_frame_;
     BattleEventSink& sink_;
     BattleRuntimeState state_;
     std::unique_ptr<v2::ecs::World> world_;

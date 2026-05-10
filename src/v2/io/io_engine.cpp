@@ -9,6 +9,8 @@ using tcp = asio::ip::tcp;
 
 namespace {
 
+thread_local std::optional<std::uint32_t> g_current_io_core_id;
+
 class AsioIoSession final : public IoSession {
 public:
     AsioIoSession(std::shared_ptr<net::Session> session, std::uint32_t core_id)
@@ -146,6 +148,24 @@ void AsioIoEngine::dispatch_to_core(std::uint32_t core_id,
     asio::post(cores_[index]->io_context, std::move(task));
 }
 
+void AsioIoEngine::dispatch_to_all_cores(std::function<void(std::uint32_t core_id)> task) {
+    if (cores_.empty() || !task) {
+        return;
+    }
+
+    for (std::size_t index = 0; index < cores_.size(); ++index) {
+        asio::post(
+            cores_[index]->io_context,
+            [task, index]() mutable {
+                task(static_cast<std::uint32_t>(index));
+            });
+    }
+}
+
+std::optional<std::uint32_t> AsioIoEngine::current_core_id() const noexcept {
+    return g_current_io_core_id;
+}
+
 std::unique_ptr<IoAcceptor> AsioIoEngine::listen(
     const char* address,
     std::uint16_t port,
@@ -166,9 +186,12 @@ void AsioIoEngine::run() {
     }
     running_ = true;
     threads_.reserve(cores_.size());
-    for (auto& core : cores_) {
-        threads_.emplace_back([io_context = &core->io_context]() {
+    for (std::size_t index = 0; index < cores_.size(); ++index) {
+        auto* io_context = &cores_[index]->io_context;
+        threads_.emplace_back([io_context, index]() {
+            g_current_io_core_id = static_cast<std::uint32_t>(index);
             io_context->run();
+            g_current_io_core_id.reset();
         });
     }
 }

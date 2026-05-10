@@ -79,6 +79,58 @@ TEST(V2BattleActorTest, SubmitInputEmitsAcceptedEvent) {
     EXPECT_EQ(accepted->input_seq, 1U);
 }
 
+TEST(V2BattleActorTest, DuplicateSubmittedFrameIsIgnoredAndAckStillEmitsEvent) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingBattleSink sink;
+    auto actor = std::make_unique<v2::battle::BattleActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    v2::actor::Message create;
+    create.header.kind = v2::actor::MessageKind::kUser;
+    create.payload = v2::battle::CreateBattleMsg{
+        .battle_id = "battle_0001",
+        .room_id = "room_alpha",
+        .player_ids = {"owner", "member"},
+    };
+    actor_ref.tell(std::move(create));
+
+    v2::actor::Message first_input;
+    first_input.header.kind = v2::actor::MessageKind::kUser;
+    first_input.payload = v2::battle::SubmitBattleInputMsg{
+        .user_id = "owner",
+        .request_id = 77,
+        .input_data = "move:1,2",
+        .submitted_frame = 2,
+    };
+    actor_ref.tell(std::move(first_input));
+
+    v2::actor::Message duplicate_input;
+    duplicate_input.header.kind = v2::actor::MessageKind::kUser;
+    duplicate_input.payload = v2::battle::SubmitBattleInputMsg{
+        .user_id = "owner",
+        .request_id = 78,
+        .input_data = "move:3,4",
+        .submitted_frame = 2,
+    };
+    actor_ref.tell(std::move(duplicate_input));
+
+    v2::actor::Message ack;
+    ack.header.kind = v2::actor::MessageKind::kUser;
+    ack.payload = v2::battle::FrameAckMsg{
+        .user_id = "owner",
+        .frame_number = 9,
+    };
+    actor_ref.tell(std::move(ack));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 4U);
+    ASSERT_EQ(actor_ptr->state().replay_inputs.size(), 1U);
+    ASSERT_EQ(sink.events.size(), 3U);
+    EXPECT_TRUE(std::holds_alternative<v2::battle::BattleCreatedMsg>(sink.events[0]));
+    EXPECT_TRUE(std::holds_alternative<v2::battle::BattleInputAcceptedMsg>(sink.events[1]));
+    EXPECT_TRUE(std::holds_alternative<v2::battle::FrameAckMsg>(sink.events[2]));
+}
+
 TEST(V2BattleActorTest, PlayerDisconnectFinishesBattle) {
     v2::runtime::ActorSystem actor_system;
     RecordingBattleSink sink;
@@ -129,6 +181,17 @@ TEST(V2BattleActorTest, TickAdvancesFrameAndCanFinishNormally) {
     };
     actor_ref.tell(std::move(create));
 
+    v2::actor::Message input;
+    input.header.kind = v2::actor::MessageKind::kUser;
+    input.payload = v2::battle::SubmitBattleInputMsg{
+        .user_id = "owner",
+        .request_id = 90,
+        .input_data = "move:1,2",
+        .score = 5,
+        .submitted_frame = 1,
+    };
+    actor_ref.tell(std::move(input));
+
     for (int i = 0; i < 3; ++i) {
         v2::actor::Message tick;
         tick.header.kind = v2::actor::MessageKind::kUser;
@@ -136,16 +199,20 @@ TEST(V2BattleActorTest, TickAdvancesFrameAndCanFinishNormally) {
         actor_ref.tell(std::move(tick));
     }
 
-    EXPECT_EQ(actor_system.dispatch_all(), 4U);
+    EXPECT_EQ(actor_system.dispatch_all(), 5U);
     EXPECT_EQ(actor_ptr->state().frame_number, 3U);
     EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kFinished);
-    ASSERT_EQ(sink.events.size(), 6U);
-    const auto* frame = std::get_if<v2::battle::BattleFrameAdvancedMsg>(&sink.events[1]);
+    ASSERT_EQ(sink.events.size(), 7U);
+    const auto* frame = std::get_if<v2::battle::BattleFrameAdvancedMsg>(&sink.events[2]);
     ASSERT_NE(frame, nullptr);
     EXPECT_EQ(frame->frame_number, 1U);
-    const auto* settlement = std::get_if<v2::battle::BattleSettlementPreparedMsg>(&sink.events[4]);
+    const auto* settlement = std::get_if<v2::battle::BattleSettlementPreparedMsg>(&sink.events[5]);
     ASSERT_NE(settlement, nullptr);
     EXPECT_EQ(settlement->reason, v2::battle::BattleFinishReason::kFrameLimitReached);
+    ASSERT_EQ(settlement->replay_inputs.size(), 1U);
+    EXPECT_EQ(settlement->replay_inputs[0].trigger, "test_tick");
+    ASSERT_TRUE(settlement->result.winner_user_id.has_value());
+    EXPECT_EQ(*settlement->result.winner_user_id, "owner");
     const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events.back());
     ASSERT_NE(finished, nullptr);
     EXPECT_EQ(finished->reason, v2::battle::BattleFinishReason::kFrameLimitReached);

@@ -35,6 +35,7 @@
 #include "net/message_dispatcher.h"
 #include "net/protocol.h"
 #include "net/rate_limiter.h"
+#include "v2/io/io_engine.h"
 
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -76,7 +77,7 @@ int main(int argc, char* argv[]) {
     //    - reload_config (5004): 触发配置热加载
     //    - admin_response (5005): 接收管理指令执行结果
     // =================================================================
-    game::gateway::AdminService admin(session_mgr, metrics);
+    game::gateway::AdminService admin(session_mgr, metrics, &push);
 
     admin.set_kick_callback([&](const std::string& user_id) {
         for (const auto& s : session_mgr.all_sessions()) {
@@ -128,7 +129,7 @@ int main(int argc, char* argv[]) {
     game::login::LoginService login_svc(session_mgr, push, room_mgr, validator, metrics);
     login_svc.register_handlers(dispatcher);
 
-    game::gateway::GatewayService gw_svc(session_mgr, metrics);
+    game::gateway::GatewayService gw_svc(session_mgr, metrics, &push);
     gw_svc.register_handlers(dispatcher);
 
     game::persistence::JsonFilePlayerStore player_store("runtime/players");
@@ -139,7 +140,15 @@ int main(int argc, char* argv[]) {
 
     game::gateway::GatewayServer server(io, dispatcher, session_mgr, room_mgr, battle_mgr,
                                          metrics, config.port, config.http_management_port,
-                                         opts, config.metrics_log_interval);
+                                         opts, config.metrics_log_interval,
+                                         {},
+                                         std::make_unique<v2::io::AsioIoEngine>(
+                                             static_cast<std::uint32_t>(config.io_threads)));
+    push.set_write_scheduler(
+        [&server](const game::gateway::PushService::SessionPtr& session,
+                  game::gateway::PushService::SessionWriteTask task) {
+            return server.dispatch_to_session_core(session, task);
+        });
     server.set_connection_limits(config.max_connections, config.per_ip_connection_limit);
     server.start();
 
@@ -175,11 +184,11 @@ int main(int argc, char* argv[]) {
     sig_handler.start();
 
     LOG_INFO("=== 管理演示服务器已启动 :{} ===", server.local_port());
+    LOG_INFO("IO cores: {}", server.io_core_count());
     LOG_INFO("功能展示（均为演示拼装）: Admin(5001-5005,demo-only) | /health(stub)+/metrics | 速率限制 | 审计日志 | 优雅关闭 | 配置热加载");
 
-    std::vector<std::thread> workers(config.io_threads);
-    for (auto& w : workers) w = std::thread([&] { io.run(); });
-    for (auto& w : workers) w.join();
+    std::thread control_worker([&] { io.run(); });
+    control_worker.join();
     pool.join();
     watcher.stop();
     return 0;

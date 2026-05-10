@@ -25,7 +25,7 @@ TEST(ServiceRegistrationTest, RegistersCoreBusinessHandlersAndMiddleware) {
     game::gateway::PushService push_service;
     game::login::DevTokenValidator token_validator;
 
-    game::gateway::GatewayService gateway_service(session_manager, metrics);
+    game::gateway::GatewayService gateway_service(session_manager, metrics, &push_service);
     game::login::LoginService login_service(session_manager, push_service, room_manager, token_validator, metrics);
     game::room::RoomService room_service(session_manager, push_service, battle_manager, room_manager, metrics);
     game::battle::BattleService battle_service(session_manager, push_service, room_manager, battle_manager, metrics);

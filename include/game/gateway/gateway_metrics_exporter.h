@@ -18,6 +18,7 @@ struct GatewayIoCoreSnapshot {
     std::uint64_t active_sessions = 0;
     std::uint64_t accepted_sessions = 0;
     std::uint64_t dispatch_back_tasks = 0;
+    std::uint64_t maintenance_probes = 0;
 };
 
 struct GatewayRuntimeMetricsSnapshot {
@@ -29,6 +30,7 @@ struct GatewayRuntimeMetricsSnapshot {
     std::uint64_t active_battles = 0;
     std::uint64_t dispatch_back_tasks = 0;
     std::uint64_t dispatch_inline_fallbacks = 0;
+    std::uint64_t maintenance_probe_tasks = 0;
     std::vector<GatewayIoCoreSnapshot> io_cores;
 };
 
@@ -47,6 +49,7 @@ struct GatewayMetricsExportOptions {
 
 [[nodiscard]] std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snapshot);
 [[nodiscard]] std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot);
+[[nodiscard]] std::string render_diagnostics_metrics(const GatewayRuntimeMetricsSnapshot& snapshot);
 
 bool write_metrics_files(const GatewayRuntimeMetricsSnapshot& snapshot,
                          const GatewayMetricsExportOptions& options);

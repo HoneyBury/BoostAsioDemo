@@ -120,7 +120,7 @@ int main(int argc, char* argv[]) {
         token_validator = std::make_unique<game::login::DevTokenValidator>();
     }
 
-    game::gateway::GatewayService gateway_service(session_manager, metrics, &push_service);
+    game::gateway::GatewayService gateway_service(session_manager, metrics, push_service);
     game::login::LoginService login_service(session_manager, push_service, room_manager, *token_validator, metrics);
     game::room::RoomService room_service(session_manager, push_service, battle_manager, room_manager, metrics);
     game::battle::BattleService battle_service(session_manager, push_service, room_manager, battle_manager, metrics);

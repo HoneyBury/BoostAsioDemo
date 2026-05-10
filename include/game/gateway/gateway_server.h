@@ -69,12 +69,14 @@ public:
     [[nodiscard]] std::vector<GatewayIoCoreSnapshot> io_core_snapshot() const;
     [[nodiscard]] std::uint64_t dispatch_back_task_count() const noexcept;
     [[nodiscard]] std::uint64_t dispatch_inline_fallback_count() const noexcept;
+    [[nodiscard]] std::uint64_t maintenance_probe_task_count() const noexcept;
     bool dispatch_to_all_io_cores(std::function<void(std::uint32_t core_id)> task);
 
 private:
     void do_accept();
     void do_accept_with_io_engine();
     void arm_metrics_timer();
+    void schedule_io_core_probe();
     [[nodiscard]] GatewayRuntimeMetricsSnapshot collect_runtime_metrics_snapshot(
         const GatewayMetricsSnapshot* previous = nullptr,
         double elapsed_sec = 0.0) const;
@@ -112,6 +114,7 @@ private:
     std::unordered_map<std::uint32_t, GatewayIoCoreSnapshot> io_core_snapshots_by_id_;
     std::atomic<std::uint64_t> dispatch_back_tasks_{0};
     std::atomic<std::uint64_t> dispatch_inline_fallbacks_{0};
+    std::atomic<std::uint64_t> maintenance_probe_tasks_{0};
     std::shared_ptr<GatewayPacketBridge> packet_bridge_;
 };
 

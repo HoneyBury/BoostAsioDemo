@@ -24,15 +24,18 @@ public:
 
     void on_message(v2::actor::Message&& message) override;
 
-    [[nodiscard]] const BattleRuntimeState& state() const noexcept { return state_; }
+    [[nodiscard]] BattleRuntimeState state() const;
 
 private:
     void finish_battle(BattleFinishReason reason, std::string triggering_user_id);
-    void sync_replay_inputs_from_world();
-    void sync_state_from_world();
+    [[nodiscard]] BattleLifecycleState lifecycle() const;
+    [[nodiscard]] std::vector<BattleParticipantState> participants() const;
+    [[nodiscard]] std::vector<BattleReplayInputRecord> replay_inputs() const;
 
     BattleEventSink& sink_;
-    BattleRuntimeState state_;
+    std::string battle_id_;
+    std::string room_id_;
+    std::uint32_t frame_number_ = 0;
     std::unique_ptr<v2::ecs::World> world_;
 };
 

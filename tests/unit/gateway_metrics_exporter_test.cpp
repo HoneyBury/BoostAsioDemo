@@ -24,11 +24,13 @@ TEST(GatewayMetricsExporterTest, RendersPrometheusAndJsonOutputs) {
     snapshot.active_battles = 1;
     snapshot.dispatch_back_tasks = 9;
     snapshot.dispatch_inline_fallbacks = 1;
+    snapshot.maintenance_probe_tasks = 4;
     snapshot.io_cores.push_back({
         .core_id = 0,
         .active_sessions = 4,
         .accepted_sessions = 7,
         .dispatch_back_tasks = 8,
+        .maintenance_probes = 4,
     });
 
     const auto prometheus = game::gateway::render_prometheus_metrics(snapshot);
@@ -36,12 +38,18 @@ TEST(GatewayMetricsExporterTest, RendersPrometheusAndJsonOutputs) {
     EXPECT_NE(prometheus.find("gateway_active_battles 1"), std::string::npos);
     EXPECT_NE(prometheus.find("gateway_io_core_active_sessions{core=\"0\"} 4"), std::string::npos);
     EXPECT_NE(prometheus.find("gateway_dispatch_back_tasks_total 9"), std::string::npos);
+    EXPECT_NE(prometheus.find("gateway_io_core_maintenance_probes_total{core=\"0\"} 4"), std::string::npos);
 
     const auto json_text = game::gateway::render_json_metrics(snapshot);
     EXPECT_NE(json_text.find("\"accepted_sessions\": 10"), std::string::npos);
     EXPECT_NE(json_text.find("\"active_rooms\": 2"), std::string::npos);
     EXPECT_NE(json_text.find("\"core_id\": 0"), std::string::npos);
     EXPECT_NE(json_text.find("\"dispatch_back_tasks\": 9"), std::string::npos);
+    EXPECT_NE(json_text.find("\"maintenance_probe_tasks\": 4"), std::string::npos);
+
+    const auto diagnostics = game::gateway::render_diagnostics_metrics(snapshot);
+    EXPECT_NE(diagnostics.find("gateway_diagnostics"), std::string::npos);
+    EXPECT_NE(diagnostics.find("io_core id=0 active_sessions=4 accepted_sessions=7"), std::string::npos);
 }
 
 TEST(GatewayMetricsExporterTest, WritesMetricsFilesToDisk) {

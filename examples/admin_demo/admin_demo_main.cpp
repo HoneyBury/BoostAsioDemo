@@ -14,6 +14,7 @@
 //   curl http://localhost:9080/health       → liveness stub
 //   curl http://localhost:9080/metrics      → Prometheus 指标
 //   curl http://localhost:9080/metrics/json → JSON 指标
+//   curl http://localhost:9080/metrics/diagnostics → per-core 诊断视图
 
 #include "app/audit_log.h"
 #include "app/config.h"
@@ -77,7 +78,7 @@ int main(int argc, char* argv[]) {
     //    - reload_config (5004): 触发配置热加载
     //    - admin_response (5005): 接收管理指令执行结果
     // =================================================================
-    game::gateway::AdminService admin(session_mgr, metrics, &push);
+    game::gateway::AdminService admin(session_mgr, metrics, push);
 
     admin.set_kick_callback([&](const std::string& user_id) {
         for (const auto& s : session_mgr.all_sessions()) {
@@ -129,7 +130,7 @@ int main(int argc, char* argv[]) {
     game::login::LoginService login_svc(session_mgr, push, room_mgr, validator, metrics);
     login_svc.register_handlers(dispatcher);
 
-    game::gateway::GatewayService gw_svc(session_mgr, metrics, &push);
+    game::gateway::GatewayService gw_svc(session_mgr, metrics, push);
     gw_svc.register_handlers(dispatcher);
 
     game::persistence::JsonFilePlayerStore player_store("runtime/players");

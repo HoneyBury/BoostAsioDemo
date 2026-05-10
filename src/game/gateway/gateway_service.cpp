@@ -10,7 +10,7 @@ namespace game::gateway {
 
 GatewayService::GatewayService(SessionManager& session_manager,
                                GatewayMetrics& metrics,
-                               PushService* push_service)
+                               PushService& push_service)
     : session_manager_(session_manager),
       metrics_(metrics),
       push_service_(push_service) {}
@@ -30,16 +30,9 @@ void GatewayService::register_handlers(net::MessageDispatcher& dispatcher) const
         net::protocol::kHeartbeatRequest,
         [this](const net::DispatchContext& context) {
             // 心跳包不进入复杂业务流程，直接由网关层回包。
-            if (push_service_ != nullptr) {
-                push_service_->send_ok(context.session,
-                                       net::protocol::kHeartbeatResponse,
-                                       context.request_id,
-                                       "pong");
-                return;
-            }
-            context.session->send(net::protocol::kHeartbeatResponse,
+            push_service_.send_ok(context.session,
+                                  net::protocol::kHeartbeatResponse,
                                   context.request_id,
-                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                                   "pong");
         });
 }
@@ -62,16 +55,9 @@ bool GatewayService::should_allow_message(const net::DispatchContext& context) c
     }
 
     metrics_.on_packet_blocked();
-    if (push_service_ != nullptr) {
-        push_service_->send_error(context.session,
-                                  context.request_id,
-                                  net::protocol::ErrorCode::kAuthRequired);
-    } else {
-        context.session->send(net::protocol::kErrorResponse,
-                              context.request_id,
-                              static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
-                              net::protocol::to_string(net::protocol::ErrorCode::kAuthRequired));
-    }
+    push_service_.send_error(context.session,
+                             context.request_id,
+                             net::protocol::ErrorCode::kAuthRequired);
     return false;
 }
 
@@ -104,16 +90,9 @@ bool GatewayService::check_rate_limit(const net::DispatchContext& context) const
 
     metrics_.on_packet_blocked();
     AUDIT_LOG("rate_limited", "session=" + context.session->remote_endpoint());
-    if (push_service_ != nullptr) {
-        push_service_->send_error(context.session,
-                                  context.request_id,
-                                  net::protocol::ErrorCode::kRateLimited);
-    } else {
-        context.session->send(net::protocol::kErrorResponse,
-                              context.request_id,
-                              static_cast<std::int32_t>(net::protocol::ErrorCode::kRateLimited),
-                              net::protocol::to_string(net::protocol::ErrorCode::kRateLimited));
-    }
+    push_service_.send_error(context.session,
+                             context.request_id,
+                             net::protocol::ErrorCode::kRateLimited);
     return false;
 }
 

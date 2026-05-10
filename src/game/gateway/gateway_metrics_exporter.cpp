@@ -6,6 +6,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 
 namespace game::gateway {
 namespace {
@@ -89,6 +90,8 @@ std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snaps
         "gateway_dispatch_back_tasks_total {}\n"
         "# TYPE gateway_dispatch_inline_fallbacks_total counter\n"
         "gateway_dispatch_inline_fallbacks_total {}\n"
+        "# TYPE gateway_io_core_maintenance_probes_total counter\n"
+        "gateway_io_core_maintenance_probes_total {}\n"
         "# TYPE gateway_sessions_accepted_rate gauge\n"
         "gateway_sessions_accepted_rate {:.2f}\n"
         "# TYPE gateway_packets_received_rate gauge\n"
@@ -117,6 +120,7 @@ std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snaps
         snapshot.active_battles,
         snapshot.dispatch_back_tasks,
         snapshot.dispatch_inline_fallbacks,
+        snapshot.maintenance_probe_tasks,
         r.accepted_sessions_per_sec,
         r.received_packets_per_sec,
         r.sent_packets_per_sec,
@@ -137,6 +141,9 @@ std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snaps
             text += fmt::format("gateway_io_core_dispatch_back_tasks_total{{core=\"{}\"}} {}\n",
                                 core.core_id,
                                 core.dispatch_back_tasks);
+            text += fmt::format("gateway_io_core_maintenance_probes_total{{core=\"{}\"}} {}\n",
+                                core.core_id,
+                                core.maintenance_probes);
         }
     }
 
@@ -150,6 +157,8 @@ std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
             {"core_id", core.core_id},
             {"active_sessions", core.active_sessions},
             {"accepted_sessions", core.accepted_sessions},
+            {"dispatch_back_tasks", core.dispatch_back_tasks},
+            {"maintenance_probes", core.maintenance_probes},
         });
     }
 
@@ -170,6 +179,7 @@ std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
         {"active_battles", snapshot.active_battles},
         {"dispatch_back_tasks", snapshot.dispatch_back_tasks},
         {"dispatch_inline_fallbacks", snapshot.dispatch_inline_fallbacks},
+        {"maintenance_probe_tasks", snapshot.maintenance_probe_tasks},
         {"io_cores", std::move(io_cores)},
         {"sessions_accepted_per_sec", std::round(snapshot.rates.accepted_sessions_per_sec * 100.0) / 100.0},
         {"packets_received_per_sec", std::round(snapshot.rates.received_packets_per_sec * 100.0) / 100.0},
@@ -179,6 +189,80 @@ std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
         {"login_successes_per_sec", std::round(snapshot.rates.login_successes_per_sec * 100.0) / 100.0},
     };
     return document.dump(2);
+}
+
+std::string render_diagnostics_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
+    auto text = fmt::format(
+        "gateway_diagnostics\n"
+        "active_sessions={}\n"
+        "authenticated_sessions={}\n"
+        "active_rooms={}\n"
+        "active_battles={}\n"
+        "dispatch_back_tasks={}\n"
+        "dispatch_inline_fallbacks={}\n"
+        "maintenance_probe_tasks={}\n"
+        "io_core_count={}\n",
+        snapshot.active_sessions,
+        snapshot.authenticated_sessions,
+        snapshot.active_rooms,
+        snapshot.active_battles,
+        snapshot.dispatch_back_tasks,
+        snapshot.dispatch_inline_fallbacks,
+        snapshot.maintenance_probe_tasks,
+        snapshot.io_cores.size());
+
+    if (snapshot.io_cores.empty()) {
+        text += "io_cores=none\n";
+        return text;
+    }
+
+    std::uint64_t total_active_sessions = 0;
+    std::uint64_t total_accepted_sessions = 0;
+    std::uint64_t max_active_sessions = 0;
+    std::uint64_t min_active_sessions = std::numeric_limits<std::uint64_t>::max();
+    std::uint32_t busiest_core = 0;
+    std::uint32_t idle_cores = 0;
+
+    for (const auto& core : snapshot.io_cores) {
+        total_active_sessions += core.active_sessions;
+        total_accepted_sessions += core.accepted_sessions;
+        if (core.active_sessions > max_active_sessions) {
+            max_active_sessions = core.active_sessions;
+            busiest_core = core.core_id;
+        }
+        min_active_sessions = std::min(min_active_sessions, core.active_sessions);
+        if (core.active_sessions == 0) {
+            ++idle_cores;
+        }
+    }
+
+    text += fmt::format(
+        "io_balance total_active_sessions={} total_accepted_sessions={} busiest_core={} max_active_sessions={} "
+        "min_active_sessions={} idle_cores={}\n",
+        total_active_sessions,
+        total_accepted_sessions,
+        busiest_core,
+        max_active_sessions,
+        min_active_sessions == std::numeric_limits<std::uint64_t>::max() ? 0 : min_active_sessions,
+        idle_cores);
+
+    for (const auto& core : snapshot.io_cores) {
+        const auto active_ratio = total_active_sessions == 0
+            ? 0.0
+            : (static_cast<double>(core.active_sessions) * 100.0 /
+               static_cast<double>(total_active_sessions));
+        text += fmt::format(
+            "io_core id={} active_sessions={} accepted_sessions={} dispatch_back_tasks={} maintenance_probes={} "
+            "active_ratio_pct={:.1f}\n",
+            core.core_id,
+            core.active_sessions,
+            core.accepted_sessions,
+            core.dispatch_back_tasks,
+            core.maintenance_probes,
+            active_ratio);
+    }
+
+    return text;
 }
 
 bool write_metrics_files(const GatewayRuntimeMetricsSnapshot& snapshot,

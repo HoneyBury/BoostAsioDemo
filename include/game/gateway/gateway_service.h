@@ -16,7 +16,7 @@ class GatewayService {
 public:
     GatewayService(SessionManager& session_manager,
                    GatewayMetrics& metrics,
-                   PushService* push_service = nullptr);
+                   PushService& push_service);
 
     void register_handlers(net::MessageDispatcher& dispatcher) const;
 
@@ -34,7 +34,7 @@ private:
 
     SessionManager& session_manager_;
     GatewayMetrics& metrics_;
-    PushService* push_service_ = nullptr;
+    PushService& push_service_;
     mutable std::mutex rate_limit_mutex_;
     mutable std::unordered_map<const net::Session*, RateLimitEntry> rate_limits_;
 };

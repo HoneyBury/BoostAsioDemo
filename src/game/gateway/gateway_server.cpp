@@ -54,11 +54,13 @@ void GatewayServer::start() {
                 return {
                     .prometheus_text = render_prometheus_metrics(snapshot),
                     .json_text = render_json_metrics(snapshot),
+                    .diagnostics_text = render_diagnostics_metrics(snapshot),
                 };
             });
         http_manager_->start();
     }
 
+    schedule_io_core_probe();
     arm_metrics_timer();
     if (io_acceptor_ != nullptr) {
         do_accept_with_io_engine();
@@ -152,6 +154,7 @@ std::vector<GatewayIoCoreSnapshot> GatewayServer::io_core_snapshot() const {
             .active_sessions = 0,
             .accepted_sessions = 0,
             .dispatch_back_tasks = 0,
+            .maintenance_probes = 0,
         });
     }
     {
@@ -181,6 +184,10 @@ std::uint64_t GatewayServer::dispatch_inline_fallback_count() const noexcept {
     return dispatch_inline_fallbacks_.load(std::memory_order_relaxed);
 }
 
+std::uint64_t GatewayServer::maintenance_probe_task_count() const noexcept {
+    return maintenance_probe_tasks_.load(std::memory_order_relaxed);
+}
+
 bool GatewayServer::dispatch_to_all_io_cores(std::function<void(std::uint32_t core_id)> task) {
     if (io_engine_ == nullptr || !task) {
         return false;
@@ -196,8 +203,23 @@ GatewayRuntimeMetricsSnapshot GatewayServer::collect_runtime_metrics_snapshot(
         metrics_, session_manager_, room_manager_, battle_manager_, previous, elapsed_sec);
     snapshot.dispatch_back_tasks = dispatch_back_task_count();
     snapshot.dispatch_inline_fallbacks = dispatch_inline_fallback_count();
+    snapshot.maintenance_probe_tasks = maintenance_probe_task_count();
     snapshot.io_cores = io_core_snapshot();
     return snapshot;
+}
+
+void GatewayServer::schedule_io_core_probe() {
+    if (io_engine_ == nullptr) {
+        return;
+    }
+
+    io_engine_->dispatch_to_all_cores([this](std::uint32_t core_id) {
+        maintenance_probe_tasks_.fetch_add(1, std::memory_order_relaxed);
+        std::scoped_lock lock(io_core_snapshot_mutex_);
+        auto& snapshot = io_core_snapshots_by_id_[core_id];
+        snapshot.core_id = core_id;
+        ++snapshot.maintenance_probes;
+    });
 }
 
 bool GatewayServer::attach_session_with_core(const std::shared_ptr<net::Session>& session,
@@ -460,6 +482,7 @@ void GatewayServer::arm_metrics_timer() {
             LOG_WARN("Failed to export metrics files");
         }
 
+        schedule_io_core_probe();
         arm_metrics_timer();
     });
 }

@@ -56,11 +56,10 @@ void LoginService::register_handlers(net::MessageDispatcher& dispatcher) const {
         [this](const net::DispatchContext& context) {
             const auto request = parse_login_request(context.body);
             if (!request || request->user_id.empty()) {
-                context.session->send(
-                    net::protocol::kErrorResponse,
+                push_service_.send_error(
+                    context.session,
                     context.request_id,
-                    static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
-                    net::protocol::to_string(net::protocol::ErrorCode::kInvalidUserId));
+                    net::protocol::ErrorCode::kInvalidUserId);
                 return;
             }
 

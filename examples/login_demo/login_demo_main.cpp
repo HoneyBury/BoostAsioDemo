@@ -99,7 +99,7 @@ int main(int argc, char* argv[]) {
     // =================================================================
     // 4. 二进制 Admin — demo-only、无权限；默认主链不注册（见 docs/v1-governance-layers.md §6）
     // =================================================================
-    game::gateway::AdminService admin(session_mgr, metrics, &push);
+    game::gateway::AdminService admin(session_mgr, metrics, push);
     admin.set_status_callback([&] {
         return "{\"auth_provider\":\"" + config.auth_provider +
                "\",\"sessions\":" + std::to_string(session_mgr.snapshot().active_sessions) + "}";
@@ -109,7 +109,7 @@ int main(int argc, char* argv[]) {
     // =================================================================
     // 5. 网关 + 安全层 — 连接限制 + 登录防护
     // =================================================================
-    game::gateway::GatewayService gw_svc(session_mgr, metrics, &push);
+    game::gateway::GatewayService gw_svc(session_mgr, metrics, push);
     gw_svc.register_handlers(dispatcher);
 
     net::SessionOptions session_opts;

@@ -47,14 +47,10 @@ void AdminService::register_handlers(net::MessageDispatcher& dispatcher) {
             audit_admin_invoke(ctx, "server_status", {});
             auto status = on_status_ ? on_status_() : "{}";
             if (ctx.session) {
-                if (push_service_ != nullptr) {
-                    push_service_->send_ok(ctx.session,
-                                           net::protocol::kAdminResponse,
-                                           ctx.request_id,
-                                           std::move(status));
-                } else {
-                    ctx.session->send(net::protocol::kAdminResponse, ctx.request_id, 0, std::move(status));
-                }
+                push_service_.send_ok(ctx.session,
+                                      net::protocol::kAdminResponse,
+                                      ctx.request_id,
+                                      std::move(status));
             }
         });
 
@@ -66,14 +62,10 @@ void AdminService::register_handlers(net::MessageDispatcher& dispatcher) {
                 on_reload_();
             }
             if (ctx.session) {
-                if (push_service_ != nullptr) {
-                    push_service_->send_ok(ctx.session,
-                                           net::protocol::kAdminResponse,
-                                           ctx.request_id,
-                                           "reload_ok");
-                } else {
-                    ctx.session->send(net::protocol::kAdminResponse, ctx.request_id, 0, "reload_ok");
-                }
+                push_service_.send_ok(ctx.session,
+                                      net::protocol::kAdminResponse,
+                                      ctx.request_id,
+                                      "reload_ok");
             }
         });
 
@@ -85,14 +77,10 @@ void AdminService::register_handlers(net::MessageDispatcher& dispatcher) {
                 on_kick_(ctx.body);
             }
             if (ctx.session) {
-                if (push_service_ != nullptr) {
-                    push_service_->send_ok(ctx.session,
-                                           net::protocol::kAdminResponse,
-                                           ctx.request_id,
-                                           "kick_ok");
-                } else {
-                    ctx.session->send(net::protocol::kAdminResponse, ctx.request_id, 0, "kick_ok");
-                }
+                push_service_.send_ok(ctx.session,
+                                      net::protocol::kAdminResponse,
+                                      ctx.request_id,
+                                      "kick_ok");
             }
         });
 
@@ -103,14 +91,10 @@ void AdminService::register_handlers(net::MessageDispatcher& dispatcher) {
                 on_ban_(ctx.body, 3600);
             }
             if (ctx.session) {
-                if (push_service_ != nullptr) {
-                    push_service_->send_ok(ctx.session,
-                                           net::protocol::kAdminResponse,
-                                           ctx.request_id,
-                                           "ban_ok");
-                } else {
-                    ctx.session->send(net::protocol::kAdminResponse, ctx.request_id, 0, "ban_ok");
-                }
+                push_service_.send_ok(ctx.session,
+                                      net::protocol::kAdminResponse,
+                                      ctx.request_id,
+                                      "ban_ok");
             }
         });
 }

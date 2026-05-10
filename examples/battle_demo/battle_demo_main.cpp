@@ -108,7 +108,7 @@ int main(int argc, char* argv[]) {
     game::room::RoomService room_svc(session_mgr, push, battle_mgr, room_mgr, metrics);
     room_svc.register_handlers(dispatcher);
 
-    game::gateway::GatewayService gw_svc(session_mgr, metrics, &push);
+    game::gateway::GatewayService gw_svc(session_mgr, metrics, push);
     gw_svc.register_handlers(dispatcher);
 
     net::SessionOptions opts;

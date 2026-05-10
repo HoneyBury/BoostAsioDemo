@@ -31,8 +31,9 @@ TEST(AdminServiceTest, RegistersAllAdminHandlers) {
     net::MessageDispatcher dispatcher(pool);
     game::gateway::SessionManager sm;
     game::gateway::GatewayMetrics metrics;
+    game::gateway::PushService push;
 
-    game::gateway::AdminService admin(sm, metrics);
+    game::gateway::AdminService admin(sm, metrics, push);
     admin.register_handlers(dispatcher);
 
     EXPECT_TRUE(dispatcher.has_handler(net::protocol::kAdminKickPlayer));
@@ -49,8 +50,9 @@ TEST(AdminServiceTest, ServerStatusCallback) {
     net::MessageDispatcher dispatcher(pool);
     game::gateway::SessionManager sm;
     game::gateway::GatewayMetrics metrics;
+    game::gateway::PushService push;
 
-    game::gateway::AdminService admin(sm, metrics);
+    game::gateway::AdminService admin(sm, metrics, push);
     admin.set_status_callback([] { return "{\"status\":\"ok\"}"; });
     admin.register_handlers(dispatcher);
 
@@ -64,12 +66,13 @@ TEST(AdminServiceTest, DispatchInvokesCallbacksWithoutGatewayDefaultWiring) {
     net::MessageDispatcher dispatcher(pool);
     game::gateway::SessionManager sm;
     game::gateway::GatewayMetrics metrics;
+    game::gateway::PushService push;
 
     auto kick_promise = std::make_shared<std::promise<std::string>>();
     auto ban_promise = std::make_shared<std::promise<std::string>>();
     auto reload_promise = std::make_shared<std::promise<bool>>();
 
-    game::gateway::AdminService admin(sm, metrics);
+    game::gateway::AdminService admin(sm, metrics, push);
     admin.set_kick_callback([kick_promise](const std::string& user_id) {
         kick_promise->set_value(user_id);
     });
@@ -99,8 +102,9 @@ TEST(AdminServiceTest, WritesAdminInvokeAuditWithRequiredKeysAndSanitizedExcerpt
     net::MessageDispatcher dispatcher(pool);
     game::gateway::SessionManager sm;
     game::gateway::GatewayMetrics metrics;
+    game::gateway::PushService push;
 
-    game::gateway::AdminService admin(sm, metrics);
+    game::gateway::AdminService admin(sm, metrics, push);
     admin.register_handlers(dispatcher);
 
     const std::string payload = "10.0.0.1\"\n\t\\oops";

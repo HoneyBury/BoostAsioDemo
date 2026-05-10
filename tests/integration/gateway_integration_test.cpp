@@ -68,6 +68,8 @@ struct GatewayTestRuntime {
     std::string startup_error;
     std::shared_ptr<PushDispatchObservation> push_dispatch_observation =
         std::make_shared<PushDispatchObservation>();
+    std::shared_ptr<std::atomic<bool>> push_scheduler_active =
+        std::make_shared<std::atomic<bool>>(true);
 
     bool start() {
         try {
@@ -75,7 +77,7 @@ struct GatewayTestRuntime {
                 return battle_manager.battle_started(room_id);
             });
 
-            gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics, &push_service);
+            gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics, push_service);
             login_service =
                 std::make_unique<game::login::LoginService>(session_manager, push_service, room_manager, token_validator, metrics);
             room_service =
@@ -112,14 +114,22 @@ struct GatewayTestRuntime {
                 std::make_unique<v2::io::AsioIoEngine>(2));
             auto* server_ptr = server.get();
             auto push_observation = push_dispatch_observation;
+            auto push_scheduler_active_flag = push_scheduler_active;
+            push_scheduler_active_flag->store(true, std::memory_order_relaxed);
             push_service.set_write_scheduler(
-                [server_ptr, push_observation](const game::gateway::PushService::SessionPtr& session,
-                                               game::gateway::PushService::SessionWriteTask task) {
+                [server_ptr, push_observation, push_scheduler_active_flag](
+                    const game::gateway::PushService::SessionPtr& session,
+                    game::gateway::PushService::SessionWriteTask task) {
+                    if (!push_scheduler_active_flag->load(std::memory_order_relaxed)) {
+                        return false;
+                    }
                     return server_ptr->dispatch_to_session_core(
                         session,
-                        [server_ptr, push_observation, task = std::move(task)]() mutable {
-                            std::scoped_lock lock(push_observation->mutex);
-                            push_observation->observed_cores.push_back(server_ptr->current_io_core());
+                        [server_ptr, push_observation, push_scheduler_active_flag, task = std::move(task)]() mutable {
+                            if (push_scheduler_active_flag->load(std::memory_order_relaxed)) {
+                                std::scoped_lock lock(push_observation->mutex);
+                                push_observation->observed_cores.push_back(server_ptr->current_io_core());
+                            }
                             task();
                         });
                 });
@@ -136,6 +146,8 @@ struct GatewayTestRuntime {
     }
 
     void stop() {
+        push_scheduler_active->store(false, std::memory_order_relaxed);
+        push_service.set_write_scheduler({});
         if (server) {
             server->stop();
         }
@@ -544,6 +556,29 @@ TEST(GatewayIntegrationTest, GatewayServerCanFanOutTasksAcrossAllIoCores) {
     future.get();
     EXPECT_EQ(seen_cores.size(), runtime.server->io_core_count());
     EXPECT_EQ(runtime.server->dispatch_back_task_count(), 0U);
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, GatewayServerSchedulesMaintenanceProbeAcrossAllIoCores) {
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+
+    ASSERT_TRUE(wait_until(std::chrono::milliseconds(500), [&runtime]() {
+        const auto snapshots = runtime.server->io_core_snapshot();
+        if (snapshots.size() != runtime.server->io_core_count()) {
+            return false;
+        }
+        for (const auto& snapshot : snapshots) {
+            if (snapshot.maintenance_probes == 0) {
+                return false;
+            }
+        }
+        return true;
+    }));
+
+    EXPECT_GE(runtime.server->maintenance_probe_task_count(), runtime.server->io_core_count());
     runtime.stop();
 }
 

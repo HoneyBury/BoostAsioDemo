@@ -47,7 +47,7 @@ protected:
                 return battle_manager.battle_started(room_id);
             });
 
-            gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics, &push_service);
+            gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics, push_service);
             login_service = std::make_unique<game::login::LoginService>(
                 session_manager, push_service, room_manager, *token_validator, metrics);
             room_service = std::make_unique<game::room::RoomService>(
@@ -156,6 +156,14 @@ TEST_F(HttpManagementTest, MetricsJsonEndpointReturnsJson) {
     EXPECT_NE(body.find("\"active_rooms\""), std::string::npos);
     EXPECT_NE(body.find("\"io_cores\""), std::string::npos);
     EXPECT_NE(body.find("\"dispatch_back_tasks\""), std::string::npos);
+    EXPECT_NE(body.find("\"maintenance_probe_tasks\""), std::string::npos);
+}
+
+TEST_F(HttpManagementTest, MetricsDiagnosticsEndpointReturnsReadableCoreSummary) {
+    const auto body = http_request(http::verb::get, "/metrics/diagnostics").body();
+    EXPECT_NE(body.find("gateway_diagnostics"), std::string::npos);
+    EXPECT_NE(body.find("io_balance"), std::string::npos);
+    EXPECT_NE(body.find("io_core id=0"), std::string::npos);
 }
 
 TEST_F(HttpManagementTest, UnknownPathReturnsNotFound) {

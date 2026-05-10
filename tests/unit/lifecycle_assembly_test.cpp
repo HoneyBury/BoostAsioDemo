@@ -82,7 +82,7 @@ struct LifecycleRuntime {
                 return battle_manager.battle_started(room_id);
             });
 
-            gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics, &push_service);
+            gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics, push_service);
             login_service =
                 std::make_unique<game::login::LoginService>(session_manager, push_service, room_manager, token_validator, metrics);
             room_service =

@@ -26,7 +26,7 @@ public:
     using StatusCallback = std::function<std::string()>;
     using ReloadCallback = std::function<void()>;
 
-    AdminService(SessionManager& sm, GatewayMetrics& m, PushService* push_service = nullptr)
+    AdminService(SessionManager& sm, GatewayMetrics& m, PushService& push_service)
         : push_service_(push_service) {
         (void)sm;
         (void)m;
@@ -40,7 +40,7 @@ public:
     void register_handlers(net::MessageDispatcher& dispatcher);
 
 private:
-    PushService* push_service_ = nullptr;
+    PushService& push_service_;
     KickCallback on_kick_;
     BanCallback on_ban_;
     StatusCallback on_status_;

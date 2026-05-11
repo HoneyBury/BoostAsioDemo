@@ -915,9 +915,9 @@ void Runtime::push(v2::battle::BattleEvent event) {
     }
 
     if (const auto* input = std::get_if<v2::battle::BattleInputAcceptedMsg>(&event)) {
-        const auto session_id = session_id_for_user(input->user_id);
-        if (session_id.has_value()) {
-            auto pending = pending_battle_input_.find(*session_id);
+        const auto sid = session_id_for_user(input->user_id);
+        if (sid.has_value()) {
+            auto pending = pending_battle_input_.find(*sid);
             if (pending != pending_battle_input_.end()) {
                 emit(net::protocol::kBattleInputResponse,
                      pending->second.session_id,

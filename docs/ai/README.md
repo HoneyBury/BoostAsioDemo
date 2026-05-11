@@ -4,19 +4,21 @@
 
 ## 当前阶段说明
 
-基于近期 `git log` 与现有 `v2` 文档，当前项目 `develop` 分支已经进入 **v2.0 实作阶段**，不再是“仅限 v1.x 维护”或“v2 只做启动骨架”的状态。
+当前项目 `develop` 分支已进入 **v2.0.0 完成后阶段**，七大模块（M1-M7）已全部落地，R1-R4 发布基础设施（cmake --install、Docker、systemd、CI/CD、监控面板）已完成。473 测试通过。
 
 当前判断依据：
 
-- 近期提交已连续落地 `M2`、`M4`、`M5`、`M6` 相关实现
-- `docs/v2-startup-checklist.md` 已明确写明“当前 `develop` 已进入 `v2` 实作阶段”
-- `docs/v2-roadmap.md`、`docs/v2-next-phases.md` 已记录全部七大模块（M1-M7）完成状态，315 单元测试 + 28 集成测试通过
+- `docs/v2-startup-checklist.md` §7.5 和 §11：全部七大模块完成
+- `docs/v2-roadmap.md`：M1-M7 状态全部为 `done`
+- `docs/v2-enterprise-roadmap.md`：v2.0.1 → v3.0.0 完整版本规划
+- `docs/architecture-acceptance-criteria.md`：10 个维度的量化验收标准
 
 因此，本目录中的 Agent 提示词默认应按以下方式理解项目状态：
 
-1. `develop` 主线默认按 `v2` 任务处理。
+1. `develop` 主线默认按 `v2.0.1+` 迭代任务处理（当前阶段：**生产加固**）。
 2. `v1` 文档仍然是兼容链路、桥接边界、历史回归和现网语义的重要事实源。
-3. 任何 `v2` 开发都必须区分“已落地能力”“当前进行中能力”“尚未进入实现的规划项”，不得把 roadmap 全量目标误当成现状。
+3. 任何新任务都必须参照 `v2-enterprise-roadmap.md` 确定所属版本和验收标准。
+4. 当前 v2.0.0 整体评级为 **”高级”阶段**（核心能力完整），v2.3.0 目标为 **”企业”阶段**。
 
 ## 文档列表
 

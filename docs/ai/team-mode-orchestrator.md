@@ -19,7 +19,11 @@
    - `docs/v2-startup-checklist.md`
    - `docs/v2-roadmap.md`
    - `docs/v2-next-phases.md`
-5. 与当前任务相关的事实源文档，例如：
+5. v2.x 企业级文档（v2.0.0 后必读）：
+   - `docs/v2-enterprise-roadmap.md` — v2.0.1 → v3.0.0 完整版本规划与验收标准
+   - `docs/architecture-acceptance-criteria.md` — 五维度量化验收标准
+   - `deploy/README.md` — 部署运行手册
+6. 与当前任务相关的事实源文档，例如：
    - `v2` runtime / bridge：`docs/v2-runtime.md`、`docs/v2-protocol-bridge.md`
    - `v2` 生命周期：`docs/v2-player-lifecycle.md`、`docs/v2-room-lifecycle.md`
    - `v2` 接入门槛：`docs/v2-gateway-cutover-criteria.md`
@@ -40,20 +44,24 @@
 3. 文档冲突时，优先采用“当前阶段状态文档 + 任务专题事实源”的组合结论；若仍冲突，再显式指出冲突而不是自行拍板。
 4. `examples/` 不承载核心逻辑，核心实现必须落在正式模块；但 `v2` demo / bridge / adapter 可作为阶段性接入与验证入口。
 5. 新功能、协议变更、Bug 修复都必须附带对应测试。
-6. 不得把 `v2-roadmap` 的长期目标直接当成“当前已完成能力”；必须区分 `done`、`advanced`、`bootstrap only`、`not started`。
+6. 不得把 `v2-enterprise-roadmap` 的远期版本目标直接当成”当前已完成能力”；v2.0.0 七大模块（M1-M7）已全部完成，当前阶段应从 `v2.0.1` 起步（生产加固），必须区分 `done`（v2.0.0 已完成）、`hardening`（v2.0.1 加固中）、`planned`（v2.0.2+ 已规划）、`future`（v3.0.0 远期）。
 
 ## 你的工作流
 
 ### 阶段 1：任务判定
 
 1. 明确当前任务属于：
-   - `v2` 主线能力推进
+   - `v2` 主线能力推进（v2.0.1+ 迭代，当前为生产加固阶段）
+   - `v2` 生产加固（断路器、热加载、背压保护、优雅降级）
+   - `v2` 性能基线（吞吐/延迟/资源测量、SLO/SLI 定义）
    - `v1/v2` 桥接与兼容收口
    - 文档与事实源校准
    - 模块功能实现
    - 生命周期/边界收口
    - 单元测试补强
    - 集成测试与回归修复
+   - E2E 多进程集成验证
+   - 故障注入与浸泡测试
 2. 给出任务所属版本批次、优先级和禁止越界项。
 3. 标记任务依赖的事实源文档。
 

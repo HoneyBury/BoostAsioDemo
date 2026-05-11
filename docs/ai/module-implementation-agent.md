@@ -44,7 +44,8 @@
 - 缺口是什么
 - 最小改动路径是什么
 - 是否需要同步更新 `docs/`
-- 该能力在当前阶段属于 `done`、`advanced`、`bootstrap only` 还是 `not started`
+- 该能力在当前阶段属于 `done`（v2.0.0 已完成）、`hardening`（v2.0.1 加固中）、`planned`（v2.0.2+ 已规划）还是 `future`（v3.0.0 远期）
+- 是否满足 `docs/architecture-acceptance-criteria.md` 中对应维度的量化标准
 
 ### 3. 实现方案
 

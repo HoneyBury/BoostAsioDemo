@@ -1,6 +1,7 @@
 #pragma once
 
 #include "net/session.h"
+#include "net/http_manager.h"
 #include "v2/io/io_engine.h"
 #include "v2/gateway/backend_metrics.h"
 #include "v2/gateway/battle_data_store.h"
@@ -13,6 +14,7 @@
 #include <optional>
 #include <mutex>
 #include <memory>
+#include <thread>
 #include <unordered_map>
 #include <functional>
 #include <vector>
@@ -21,6 +23,7 @@ namespace v2::gateway {
 
 struct DemoServerOptions {
     std::optional<std::uint32_t> acceptor_core_id;
+    std::optional<std::uint16_t> http_management_port;
     std::optional<GatewayServiceBridge::BackendConfig> login_backend_config;
     std::optional<GatewayServiceBridge::BackendConfig> room_backend_config;
     std::optional<GatewayServiceBridge::BackendConfig> battle_backend_config;
@@ -54,6 +57,7 @@ public:
                net::SessionOptions session_options = {},
                DemoServerOptions options = {},
                std::unique_ptr<v2::io::IoEngine> io_engine = std::make_unique<v2::io::AsioIoEngine>(1));
+    ~DemoServer();
 
     void start();
     void stop();
@@ -91,6 +95,11 @@ private:
     mutable std::mutex scheduler_mutex_;
     SessionWriteScheduler write_scheduler_;
     SessionId next_session_id_ = 1;
+
+    // HTTP management (optional, created when http_management_port is set)
+    std::unique_ptr<boost::asio::io_context> management_io_;
+    std::unique_ptr<net::HttpManager> http_manager_;
+    std::unique_ptr<std::thread> management_thread_;
 };
 
 }  // namespace v2::gateway

@@ -1,0 +1,14 @@
+{
+  "login_backend": {
+    "port": 9202,
+    "io_threads": 2,
+    "metrics_log_interval_ms": 5000,
+    "metrics_prometheus_path": "runtime/metrics/login_backend.prom",
+    "metrics_json_path": "runtime/metrics/login_backend.json",
+    "auth": {
+      "provider": "dev",
+      "token_prefix": "token:",
+      "session_timeout_ms": 3600000
+    }
+  }
+}

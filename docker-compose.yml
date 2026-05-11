@@ -1,6 +1,7 @@
 version: "3.8"
 
 services:
+  # === v2 Gateway (client entry point) ===
   gateway:
     build: .
     container_name: boost-gateway
@@ -12,14 +13,94 @@ services:
       - gateway_logs:/app/logs
       - gateway_runtime:/app/runtime
     restart: unless-stopped
+    command:
+      - "--management-port"
+      - "9080"
+      - "--login-host"
+      - "login-backend"
+      - "--login-port"
+      - "9202"
+      - "--room-host"
+      - "room-backend"
+      - "--room-port"
+      - "9302"
+      - "--battle-host"
+      - "battle-backend"
+      - "--battle-port"
+      - "9303"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9080/health"]
       interval: 10s
       timeout: 3s
       retries: 3
       start_period: 5s
+    depends_on:
+      login-backend:
+        condition: service_healthy
+      room-backend:
+        condition: service_healthy
+      battle-backend:
+        condition: service_healthy
 
-  # Optional: mock auth service for testing HttpTokenValidator
+  # === v2 Login Backend ===
+  login-backend:
+    build: .
+    container_name: boost-login-backend
+    ports:
+      - "9202:9202"
+    volumes:
+      - ./config:/app/config:ro
+      - login_logs:/app/logs
+    restart: unless-stopped
+    entrypoint: ["/app/bin/v2_login_backend"]
+    command: ["9202"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9202/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # === v2 Room Backend ===
+  room-backend:
+    build: .
+    container_name: boost-room-backend
+    ports:
+      - "9302:9302"
+    volumes:
+      - ./config:/app/config:ro
+      - room_logs:/app/logs
+    restart: unless-stopped
+    entrypoint: ["/app/bin/v2_room_backend"]
+    command: ["9302"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9302/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # === v2 Battle Backend ===
+  battle-backend:
+    build: .
+    container_name: boost-battle-backend
+    ports:
+      - "9303:9303"
+    volumes:
+      - ./config:/app/config:ro
+      - battle_logs:/app/logs
+      - battle_archive:/app/v2_archive
+    restart: unless-stopped
+    entrypoint: ["/app/bin/v2_battle_backend"]
+    command: ["9303"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9303/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # === Mock Auth (optional, for token validation testing) ===
   mock-auth:
     image: nginx:alpine
     container_name: boost-mock-auth
@@ -33,3 +114,7 @@ services:
 volumes:
   gateway_logs:
   gateway_runtime:
+  login_logs:
+  room_logs:
+  battle_logs:
+  battle_archive:

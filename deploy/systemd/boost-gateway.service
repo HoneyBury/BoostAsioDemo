@@ -1,0 +1,36 @@
+[Unit]
+Description=BoostAsioDemo v2 Gateway
+Documentation=https://github.com/example/BoostAsioDemo
+After=network.target boost-login-backend.service boost-room-backend.service boost-battle-backend.service
+Requires=boost-login-backend.service boost-room-backend.service boost-battle-backend.service
+
+[Service]
+Type=simple
+User=boost-gateway
+Group=boost-gateway
+ExecStart=/usr/local/bin/v2_gateway_demo \
+    --login-host 127.0.0.1 --login-port 9202 \
+    --room-host 127.0.0.1 --room-port 9302 \
+    --battle-host 127.0.0.1 --battle-port 9303
+WorkingDirectory=/var/lib/boost-gateway
+Restart=on-failure
+RestartSec=3s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=boost-gateway
+
+# Runtime directories
+RuntimeDirectory=boost-gateway
+RuntimeDirectoryMode=0750
+StateDirectory=boost-gateway
+StateDirectoryMode=0750
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/boost-gateway /var/log/boost-gateway
+ReadOnlyPaths=/usr/local/share/boost_gateway/config
+
+[Install]
+WantedBy=multi-user.target

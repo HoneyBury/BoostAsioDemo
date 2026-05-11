@@ -10,7 +10,18 @@
     "auth": {
       "provider": "dev",
       "users_path": "config/auth_users.json"
-    }
+    },
+    "v2_shadow_bridge_enabled": false,
+    "v2_shadow_bridge_emit_responses": false,
+    "v2_shadow_bridge_login": true,
+    "v2_shadow_bridge_room": true,
+    "v2_shadow_bridge_battle": true,
+    "v2_shadow_bridge_echo": false,
+    "v2_shadow_bridge_emit_battle_input_push": true,
+    "v2_shadow_bridge_emit_battle_state_started": true,
+    "v2_shadow_bridge_emit_battle_state_frame": true,
+    "v2_shadow_bridge_emit_battle_state_settlement": true,
+    "v2_shadow_bridge_emit_battle_state_finished": true
   },
   "session": {
     "max_packet_size": 1048576,

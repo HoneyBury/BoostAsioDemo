@@ -1,0 +1,29 @@
+[Unit]
+Description=BoostAsioDemo v2 Room Backend
+Documentation=https://github.com/example/BoostAsioDemo
+After=network.target boost-login-backend.service
+
+[Service]
+Type=simple
+User=boost-gateway
+Group=boost-gateway
+ExecStart=/usr/local/bin/v2_room_backend 9302
+WorkingDirectory=/var/lib/boost-gateway/room
+Restart=on-failure
+RestartSec=2s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=boost-room-backend
+
+RuntimeDirectory=boost-gateway/room
+RuntimeDirectoryMode=0750
+StateDirectory=boost-gateway/room
+StateDirectoryMode=0750
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/boost-gateway/room /var/log/boost-gateway
+
+[Install]
+WantedBy=multi-user.target

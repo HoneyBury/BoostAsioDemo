@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(boost_gateway
-    VERSION 1.2.5
+    VERSION 2.0.0
     DESCRIPTION "A high-performance C++ game server framework"
     LANGUAGES CXX
 )
@@ -46,6 +46,9 @@ install(TARGETS
     battle_demo
     admin_demo
     v2_gateway_demo
+    v2_battle_backend
+    v2_room_backend
+    v2_login_backend
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
@@ -65,10 +68,33 @@ install(FILES
     docs/development-priority.md
     docs/v1-structure-upgrade-decision.md
     docs/release-process.md
+    docs/v2-roadmap.md
+    docs/v2-design.md
+    docs/v2-startup-checklist.md
+    docs/v2-next-phases.md
+    docs/v2-runtime.md
+    docs/v2-protocol-bridge.md
+    docs/v2-player-lifecycle.md
+    docs/v2-room-lifecycle.md
+    docs/v2-gateway-cutover-criteria.md
+    docs/v2-service-split-plan.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
 )
 
 install(FILES
     docs/releases/v1.2.5.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/releases"
+)
+
+install(FILES
+    deploy/README.md
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/deploy"
+)
+
+install(FILES
+    deploy/systemd/boost-gateway.service
+    deploy/systemd/boost-login-backend.service
+    deploy/systemd/boost-room-backend.service
+    deploy/systemd/boost-battle-backend.service
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/deploy/systemd"
 )

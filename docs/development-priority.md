@@ -1,14 +1,13 @@
 # 开发优先级看板
 
-> **当前阶段**：`v1.x` 维护期。**优先级看板与 `docs/v1-maturity-matrix.md` 冲突时以矩阵为准**。本看板从 `v1.1.1` 起按 `docs/development-optimization.md` §11 任务表组织，不再以"扩展方向 / 优化方向 / 测试方向"散列优先级。
+> **当前阶段**：`v1.x` 维护已完成，`v2.0.0` 七大模块（M1-M7）全部落地。本文档为 `v1.x` 维护期历史记录，不再作为当前开发优先级依据。当前开发参见 `docs/v2-roadmap.md`。
 
 ## 1. 维护规则
 
 - 每完成一项核心任务，同步更新状态
 - 每次调整技术方向或优先级顺序，同步更新原因
 - 状态约定：`todo` `doing` `done` `blocked`
-- 严格按版本批次推进，不跨批
-- **`v2.0.0` 范畴在 `v1.2.0` 决策点之前不进入开发**
+- **`v2.0.0` 已于 2026-05-12 完成七大模块（M1-M7），`v1.2.0` 决策点已执行（不转正 typed protocol/bus）
 
 ## 2. v1.0.0 已完成 (P0–P7)
 
@@ -161,15 +160,16 @@ v1.2.1   业务边界测试加固（T17） ✅
 v1.2.2   治理边界测试加固（T18） ✅
 v1.2.3   生命周期与装配测试加固（T19） ✅
 v1.2.4   持久化/审计/回放测试加固（T20） ✅
-v1.2.5   CI / Docker / 发布链路稳定性修复 ✅ 当前
+v1.2.5   CI / Docker / 发布链路稳定性修复 ✅
+v2.0.0   七大模块全部落地 ✅ 2026-05-12
 ```
 
-> **强约束**：在 `v1.2.0` 决策点之前**不进入 v2.0.0 范畴**（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面，详见 `docs/v2-roadmap.md` 与 `docs/v2-design.md`）。
+> **v1.2.0 决策已执行**：`v1.x` 维护期结束，`v2.0.0` 七大模块（M1-M7）全部落地，315 单元测试 + 28 集成测试通过。
 
 ## 5. 最近一次更新
 
-- 日期：`2026-05-08`
-- 版本：`v1.2.5` / 发布链路稳定性修复：CI、Docker 与测试发现可靠性已补强；`v1.2.4` 的 **T18–T20 + T21** 结论保持不变，结构升级决策仍见 **`docs/v1-structure-upgrade-decision.md`**。
+- 日期：`2026-05-12`
+- 版本：`v2.0.0` — `v1.x` 维护期结束。七大模块（M1-M7）全部落地：Actor 模型、多核 I/O（含 SO_REUSEPORT + 核心亲和）、内存架构（BumpArena + ObjectPool + CacheLine）、分布式 S0-S4 服务拆分、数据层 v2（LruCache + WriteBehind + Snapshotable + CachedBattleDataStore）、AOI/ECS battle world、运维成熟度（DiagnosticsManager + HealthCheck + FeatureFlags + TraceContext+Span）。315 单元测试 + 28 集成测试。
 - 历次更新：
   - `2026-05-08` `v1.2.5` — Windows CI 稳定性、Docker 依赖获取与 `gtest_discover_tests` timeout 修复
   - `2026-05-07` `v1.2.4` — **`persistence_replay_audit_test.cpp`**、**`docs/v1-structure-upgrade-decision.md`**

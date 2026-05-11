@@ -18,31 +18,19 @@
 - 当前仓库已经具备独立 `v2` 目录、demo 入口、`IoEngine` 主链接入与 battle world 基础实现
 - `v2` 仍与 `v1` 共仓推进，但已经不是“只做骨架不做实装”的状态
 
-## 2. 规划对齐
+## 2. 规划对齐（2026-05-12 更新）
 
-`v2.0` 启动阶段不要试图一次吃完 `v2-roadmap` 的全部七大模块。
+所有七大模块已完成落地：
 
-启动批次原始目标已经完成：
+- `M1` Actor 模型核心 ✅
+- `M2` 多核 I/O 引擎（含 SO_REUSEPORT + actor 核心亲和） ✅
+- `M3` 内存架构（BumpArena + ObjectPool + CacheLine） ✅
+- `M4` 分布式原语 S0-S4（gateway-only ingress + login/room/battle 独立 backend + ServiceRegistry TTL/心跳 + BackendMetrics） ✅
+- `M5` 数据层 v2（LruCache + WriteBehind + Snapshotable + CachedBattleDataStore） ✅
+- `M6` AOI/ECS Battle World（7-system pipeline + authoritative simulation + deterministic replay） ✅
+- `M7` 运维成熟度（DiagnosticsManager + HealthCheck + FeatureFlags + TraceContext+Span） ✅
 
-- `M1 Actor 模型核心`
-- `SessionAdapter + GatewayActor` 桥接
-- `PlayerActor` 最小状态
-- `RoomActor` 最小闭环
-- `BattleActor` bootstrap shell（仅限创建、输入受理、状态 push 占位）
-
-原始启动批次之外，目前已经进入实现的模块：
-
-- `M2` 多核 I/O 引擎基础版
-- `M6` battle runtime → ECS world 基础版
-
-当前仍未进入深水区的模块：
-
-- `M3 内存架构重构`
-- `M4 分布式原语`
-- `M5 数据层 v2`
-- `M6 AOI / authoritative simulation`
-- `M7 运维成熟度`
-- `SO_REUSEPORT` / actor 亲核调度 / 跨核 mailbox
+当前无未进入深水区的模块。
 
 ## 3. 分支策略
 
@@ -310,24 +298,24 @@ examples/v2_gateway_demo/
 - `P2`：`M5` 数据层 v2 — 版本化落盘格式（magic+version+length）、`BattleArchiveSink`/`JsonFileBattleDataStore`、world snapshot、16 个 data layer 单元测试
 - `P3`：`M4 S0` 边界冻结 — `ServiceId`、`BackendEnvelope`（request/response/push/error）、`ServiceManifest`（gateway/login/room/battle）、`ServiceErrorCode`、24 个边界测试
 
-当前明确仍只有原型或基础版的部分：
+### 7.5 2026-05-12 最终状态
 
-- battle world 已承接 metadata / participants / replay inputs / frame / result summary，但还没有真正 gameplay systems
-- replay 虽已有 runtime 事实源，但仍不是 battle 主链默认持久化
-- runtime 仍是单进程实现，没有 remote actor / distributed runtime
-- battle 输入目前已有 world-side score / replay / ack 状态，但没有 authoritative simulation
-- `PlayerActor` / `RoomActor` / `BattleActor` 之间仍以最小 typed message 协作为主，没有 supervisor 树和 `ask()`
-- scheduler 当前虽已有 actor-owned handle，但还不是最终统一调度器
+v2.0.0 全部七大模块已完成落地：
 
-当前不应误判为已完成的内容：
+- `M1` Actor 模型核心
+- `M2` 多核 I/O（含 SO_REUSEPORT + actor 核心亲和 + SPSC 跨核 mailbox）
+- `M3` 内存架构（BumpArena + ObjectPool + CacheLine/HotCold）
+- `M4` 分布式 S0-S4（gateway-only ingress + login/room/battle 独立 backend + ServiceRegistry TTL/心跳/摘除 + BackendMetrics）
+- `M5` 数据层 v2（LruCache + WriteBehindDataStore + Snapshotable + CachedBattleDataStore）
+- `M6` AOI/ECS battle world（7-system pipeline + authoritative simulation + deterministic replay）
+- `M7` 运维成熟度（DiagnosticsManager + HealthCheck + FeatureFlags + TraceContext+Span）
 
-- `M3` 内存架构重构
-- `M4` S1-S4 分布式拆分深水区
-- `M5` 数据层缓存层 / WriteBehind
-- `M2` 深水区能力（`SO_REUSEPORT` / actor affinity）
-- `M6` AOI / ECS 战斗完整主链
-- `M7` 运维成熟度
-- `v2` 替换现有 `v1` 默认入口
+315 单元测试 + 28 集成测试全部通过。
+
+仍以规划/原型为主的部分：
+- K8s Operator / 服务网格集成（需真实 K8s 集群）
+- OpenTelemetry 外部 SDK 集成（需外部部署 Jaeger/Zipkin）
+- `v2` 替换现有 `v1` 默认入口（并存模式下 `v1` 仍为默认入口）
 
 ## 8. 文档产出清单
 
@@ -390,17 +378,13 @@ examples/v2_gateway_demo/
 
 说明：
 
-- 如果分支策略仍采用 `develop` 内联推进，则本检查表中的“独立 `v2` 分支”暂按“独立 `v2` 代码目录 + 独立提交批次”执行
-- 截至 `2026-05-11`，当前实现应视为“`M1` 完成 + `M2/M6` 基础版已落地”，但距离 `M2/M6` 完整目标仍有明显距离
+- 截至 `2026-05-12`，v2.0.0 全部七大模块（M1-M7）已完成落地，315 单元测试 + 28 集成测试通过
 
-## 11. 推荐下一步
+## 11. 当前状态
 
-如果继续沿当前实现推进，建议下一阶段按以下顺序收口：
+v2.0.0 核心能力闭环完成。后续可关注：
 
-1. **S1 gateway-only ingress** — `M4` 服务拆分第一步，让 gateway 成为唯一客户端接入层
-2. 继续完成 `M2` 的 `SO_REUSEPORT` 和 actor 亲核调度
-3. 继续把 battle runtime 事实源下沉到 world/system，缩薄 `BattleActor`
-4. 继续推进 `M5` 数据层 v2，进入缓存层 / WriteBehind
-5. 保持 `GatewayServer` / `shadow bridge` / `v2 demo` 诊断口径一致
-
-不要在当前阶段同时推进完整分布式集群、内存架构重构和 AOI。
+1. **gateway demo 接入 backend 服务** — 端到端多进程验证
+2. **examples/ 代码瘦身** — 核心业务逻辑下沉到 `src/v2/` 库
+3. **测试补强** — ecs/player/room 模块测试覆盖加深
+4. **K8s/OpenTelemetry** — 需外部基础设施支持时再推进

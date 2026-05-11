@@ -1,0 +1,29 @@
+[Unit]
+Description=BoostAsioDemo v2 Battle Backend
+Documentation=https://github.com/example/BoostAsioDemo
+After=network.target boost-login-backend.service
+
+[Service]
+Type=simple
+User=boost-gateway
+Group=boost-gateway
+ExecStart=/usr/local/bin/v2_battle_backend 9303
+WorkingDirectory=/var/lib/boost-gateway/battle
+Restart=on-failure
+RestartSec=2s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=boost-battle-backend
+
+RuntimeDirectory=boost-gateway/battle
+RuntimeDirectoryMode=0750
+StateDirectory=boost-gateway/battle
+StateDirectoryMode=0750
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/boost-gateway/battle /var/log/boost-gateway
+
+[Install]
+WantedBy=multi-user.target

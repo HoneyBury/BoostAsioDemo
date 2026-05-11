@@ -42,19 +42,20 @@ v1.0.0 完成了一个**单进程、功能完整**的游戏服务器框架。核
 |---|---|---|
 | `M1 Actor` | `in-place done` | `ActorSystem`、`PlayerActor`、`RoomActor`、`BattleActor` 最小主链已跑通并有回归测试 |
 | `M2 多核 I/O` | `done` | accept policy、SPSC mailbox、session counting、multi-listener ingress、core diagnostics、SO_REUSEPORT（MultiIoAcceptor 每核独立 bind）、actor 核心亲和（ActorRef::core_id + 跨核 SPSC 路由 + drain_mailbox_and_dispatch）全部落地 |
-| `M3 内存架构` | `not started` | 仍未进入 arena / pool hierarchy / false sharing 专项 |
+| `M3 内存架构` | `done` | BumpArena（指针碰撞 + O(1) reset + 64MB 默认）、ObjectPool\<T, BlockSize\>（header-only template + intrusive free list + placement new + std::mutex）、CacheLine（kCacheLineSize=64 + CacheLinePad + HotCold\<Hot,Cold\> 避免 false sharing）、24 个单元测试 |
 | `M4 分布式` | `S0-S4 done` | S0-S4 服务拆分全部完成：边界冻结、gateway-only ingress、login/room/battle 独立 backend、ServiceRegistry TTL/心跳/摘除、BackendMetrics 路由计数器、diagnostics_json 管理口、22 个集成测试 |
-| `M5 数据层 v2` | `foundation done` | 版本化落盘格式（magic+version+length）、`BattleDataStore`、world snapshot 已落地并有回归测试 |
-| `M6 battle world` | `advanced` | 6-system ECS pipeline（Clock→Input→Movement→Combat→Lifecycle→Replay）、authoritative simulation（MovementSystem/CombatSystem）、deterministic replay、14 个权威/确定性单元测试已通过 |
-| `M7 运维成熟度` | `bootstrap only` | 已有 `/metrics*`、diagnostics、shadow bridge 扩展观测，但还不是正式控制面 |
+| `M5 数据层 v2` | `done` | LruCache（thread-safe, O(1)）、WriteBehindDataStore（异步写队列+后台worker）、Snapshotable mixin（Actor::take_snapshot/restore_from_snapshot）、BattleActor 快照/恢复、CachedBattleDataStore（LRU读缓存+WriteBehind写）、31 个单元测试 + 6 个集成测试 |
+| `M6 battle world` | `done` | 7-system ECS pipeline（Clock→Input→Movement→Combat→AOI→Lifecycle→Replay）、authoritative simulation（MovementSystem/CombatSystem）、deterministic replay、AOI 空间管理（SpatialGrid + AoiSystem + AoiViewComponent）、14+12 个单元测试已通过 |
+| `M7 运维成熟度` | `done` | DiagnosticsManager（统一 BackendMetrics+ServiceRegistry+io_core+shadow bridge 快照 + JSON 序列化）、HealthCheck（真实健康检查 pass/fail/warn + RFC 格式 JSON + 替换假 /health）、FeatureFlags（hash(user_id)%100 百分比灰度 + shared_mutex 线程安全 + header-only）、TraceContext+Span（轻量自研追踪 + trace_id 贯穿 gateway→login→room→battle）、27 个单元测试 |
 
 当前最重要的边界：
 
 - `M2` 已完成，accept policy + SPSC mailbox + session counting + multi-listener ingress + SO_REUSEPORT（MultiIoAcceptor）+ actor 核心亲和（cross-core SPSC routing + drain_mailbox_and_dispatch）全部落地
-- `M6` 已进入 advanced 阶段，6-system ECS pipeline + authoritative simulation（MovementSystem/CombatSystem）+ deterministic replay 已落地；AOI 空间管理仍未进入
+- `M6` 已完成，7-system ECS pipeline + authoritative simulation（MovementSystem/CombatSystem）+ deterministic replay + AOI 空间管理（SpatialGrid + AoiSystem + AoiViewComponent）全部落地
 - `M4` S0-S4 服务拆分全部完成（`BackendEnvelope`、`ServiceManifest`、`ServiceErrorCode`、GatewayServiceBridge 三 slot 路由、级联 forward/push_to_sessions、`ServiceRegistry` TTL/心跳、`BackendMetrics` 计数器、22 个集成测试）
-- `M5` foundation done，版本化落盘格式 + `BattleDataStore` + world snapshot 已落地；缓存层 / WriteBehind 仍未开始
-- `M3/M7` 仍以规划为主，不应被文档误判为已落地
+- `M5` 已完成，LruCache + WriteBehindDataStore + Snapshotable mixin + CachedBattleDataStore 全部落地，31 个单元测试 + 6 个集成测试通过
+- `M3` 已完成，BumpArena（指针碰撞 + O(1) reset）+ ObjectPool\<T, BlockSize\>（header-only template + intrusive free list + placement new + std::mutex）+ CacheLine（kCacheLineSize + CacheLinePad + HotCold\<Hot,Cold\>）全部落地，24 个单元测试通过
+- `M7` 已完成，DiagnosticsManager（统一快照+JSON序列化）+ HealthCheck（真实健康检查 pass/fail/warn + RFC 格式 JSON）+ FeatureFlags（hash(user_id)%100 百分比灰度）+ TraceContext+Span（轻量自研追踪）全部落地，27 个单元测试通过
 
 ---
 
@@ -219,7 +220,15 @@ class IoEngine {
 
 ## 五、M3: 内存架构重构
 
-### 5.1 分层内存模型
+### 5.1 已实现组件
+
+| 组件 | 文件 | 说明 |
+|---|---|---|
+| `BumpArena` | `include/v2/memory/arena.h` | 指针碰撞分配器，预分配大块内存，O(1) reset，对齐到 `max_align_t`，OOM 返回 nullptr |
+| `ObjectPool<T, BlockSize>` | `include/v2/memory/object_pool.h` | header-only template，intrusive free list 通过 `reinterpret_cast`，placement new 构造，`std::mutex` 线程安全，默认 BlockSize=256 |
+| `CacheLinePad` / `HotCold<Hot,Cold>` | `include/v2/memory/cache_line.h` | `kCacheLineSize=64`，`CacheLinePad` 强制下一字段进入新缓存行，`HotCold<Hot,Cold>` 将热/冷字段分离到不同缓存行避免 false sharing |
+
+### 5.2 分层内存模型 (设计目标)
 
 ```
 ┌──────────────────────────────────────────┐
@@ -311,8 +320,8 @@ struct alignas(64) SessionColdData {
 
 因此，`M4` 在当前阶段应拆成两部分理解：
 
-1. 服务拆分最小闭环（S0 done, S1-S4 pending）
-2. 分布式能力深化
+1. 服务拆分最小闭环（S0-S4 done：边界冻结 → gateway-only ingress → login/room/battle 独立 backend → ServiceRegistry TTL/心跳/摘除）
+2. 分布式能力深化（cluster router / remote actor transport / 一致性哈希 仍为远期目标）
 
 ### 6.1 集群拓扑
 
@@ -383,53 +392,57 @@ class LeaderElection {
 
 ## 七、M5: 数据层 v2
 
-### 7.1 分层存储架构
+### 7.1 已实现组件
+
+| 组件 | 文件 | 说明 |
+|---|---|---|
+| `LruCache<K,V>` | `include/v2/data/lru_cache.h` | 线程安全泛型 LRU 缓存，`list`+`unordered_map` O(1) 操作，`shared_mutex` 读写锁 |
+| `WriteBehindDataStore` | `include/v2/data/write_behind_store.h` | `BattleArchiveSink` 装饰器，异步写队列 + 后台 worker 线程，析构自动 flush |
+| `Snapshotable` | `include/v2/actor/actor.h` | Actor mixin，纯虚 `take_snapshot()`/`restore_from_snapshot()`，Actor 提供默认空实现 |
+| `BattleActor` 快照 | `src/v2/battle/battle_actor.cpp` | 通过 `battle_world_snapshot_to_json` / `battle_world_restore_from_json` 实现快照/恢复 |
+| `CachedBattleDataStore` | `include/v2/data/cached_data_store.h` | 组合 LruCache（读缓存）+ WriteBehind（异步写），读命中缓存、miss 回退 delegate，写直通缓存+异步落盘 |
+
+### 7.2 分层存储架构
 
 ```
 ┌─────────────────────────────────────────────┐
 │              Data Layer v2                    │
 │                                               │
 │  ┌─────────────────────────────────────────┐  │
-│  │           Cache Layer                     │  │
-│  │  Local LRU (1M entries, ~100ns)          │  │
-│  │          ↓ miss                           │  │
-│  │  Distributed Cache (Redis-compatible)     │  │
-│  │          ↓ miss                           │  │
-│  │  Database (SQLite/PostgreSQL)             │  │
-│  └─────────────────────────────────────────┘  │
-│                                               │
-│  ┌─────────────────────────────────────────┐  │
-│  │         Write Path                       │  │
-│  │  Write → WAL Buffer → Async Flush        │  │
-│  │       → Snapshot (every N writes)        │  │
+│  │  CachedBattleDataStore                   │  │
+│  │  ┌──────────┐    ┌───────────────────┐  │  │
+│  │  │ LruCache │    │ WriteBehindDataStore│  │  │
+│  │  │ (read)   │    │ (async write)      │  │  │
+│  │  └──────────┘    └────────┬──────────┘  │  │
+│  │         ↓ miss            ↓              │  │
+│  │  ┌──────────────────────────────────┐    │  │
+│  │  │  JsonFileBattleDataStore (disk)  │    │  │
+│  │  └──────────────────────────────────┘    │  │
 │  └─────────────────────────────────────────┘  │
 └─────────────────────────────────────────────┘
 ```
 
-### 7.2 Actor 状态快照
+### 7.3 Actor 状态快照
 
 ```cpp
-class Snapshotable : public Actor {
-    // 定期快照: 序列化当前状态到存储
-    virtual void take_snapshot() = 0;
-
-    // 从快照恢复: 重启后恢复状态
-    virtual void restore_from_snapshot(const Snapshot& snap) = 0;
-
-    // 事件溯源: 重放事件日志恢复状态
-    virtual void replay_events(const vector<Event>& events) = 0;
+// Snapshotable mixin — all actors can snapshot
+class Snapshotable {
+public:
+    virtual ~Snapshotable() = default;
+    [[nodiscard]] virtual std::string take_snapshot() const = 0;
+    virtual bool restore_from_snapshot(const std::string& snapshot_data) = 0;
 };
 
-// Player Actor 快照示例
-class PlayerActor : public Snapshotable {
-    PlayerState state_;
-    vector<Event> event_log_;
+// Actor inherits from Snapshotable with default no-op implementations
+class Actor : public Snapshotable {
+    [[nodiscard]] std::string take_snapshot() const override { return {}; }
+    bool restore_from_snapshot(const std::string&) override { return false; }
+};
 
-    void take_snapshot() override {
-        Snapshot snap = snapshotter_.capture(state_);
-        store_.save_snapshot(user_id_, snap);
-        event_log_.clear();  // 快照后的旧事件可以 GC
-    }
+// BattleActor overrides for real snapshot support
+class BattleActor final : public Actor {
+    std::string take_snapshot() const override;       // → battle_world_snapshot_to_json
+    bool restore_from_snapshot(const std::string&) override;  // → battle_world_restore_from_json
 };
 ```
 
@@ -599,7 +612,7 @@ V2.0.0 总工期预估: 按建议顺序执行
 |---|---|---|
 | A | ActorSystem, IoEngine, FrameArena | 单进程 Actor 吞吐 > 100K msg/s |
 | B | ConsistentHashRing, LeaderElection, ServiceDiscovery | 3 节点集群故障转移 < 5s |
-| C | LruCache, WriteBehindStore, Snapshotable | 10K 次写入/s, 重启恢复 < 1s |
+| C | LruCache, WriteBehindDataStore, Snapshotable, CachedBattleDataStore | 31 单元测试 + 6 集成测试 |
 | D | AoiSystem, SpatialGrid | 10K 实体 AOI 查询 < 1ms |
 | E | GameServerOperator, Tracer, FeatureFlags | 金丝雀发布零停机 |
 
@@ -632,8 +645,8 @@ v2.0.0 不会破坏 v1.0.0 的 API 兼容性：
                     v1.0.0                    v2.0.0
 并发模型:   单 io_context + strand     多核 io_context 池 + CPU 亲和
 业务抽象:   Session + 函数回调         Actor 模型 + 状态机 + 监督树
-内存管理:   全局 Pool                  三层 Arena (Frame/Session/Actor)
-数据层:     IPlayerStore 接口          LruCache + WriteBehind + Snapshot
+内存管理:   全局 Pool                  三层 Arena (Frame/Session/Actor) + ObjectPool + HotCold false-sharing 防护
+数据层:     IPlayerStore 接口          LruCache + WriteBehind + Snapshotable + CachedBattleDataStore
 集群:       InternalBus (实验性)       一致性哈希 + 领导者选举 + 服务发现
 游戏特性:   房间/战斗/匹配基本闭环      AOI 空间管理 + 状态同步
 可观测性:   Prometheus + 审计日志      OpenTelemetry 分布式追踪 + 火焰图

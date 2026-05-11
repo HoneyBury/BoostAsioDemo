@@ -1,4 +1,4 @@
-# Multi-stage build for the boost gateway server
+# Multi-stage build for BoostAsioDemo v2.0.0
 # Build stage
 FROM ubuntu:24.04 AS builder
 
@@ -27,7 +27,6 @@ COPY config/ config/
 
 RUN cmake --preset default
 RUN cmake --build --preset default --parallel
-RUN ctest --preset default
 
 # Runtime stage
 FROM ubuntu:24.04 AS runtime
@@ -37,17 +36,28 @@ ENV LC_ALL=C.UTF-8
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+RUN mkdir -p /app/bin /app/logs /app/runtime /app/config
 
-COPY --from=builder /src/build/default/examples/echo/echo_server /app/echo_server
-COPY --from=builder /src/build/default/examples/echo/echo_client /app/echo_client
-COPY --from=builder /src/build/default/examples/pressure/gateway_pressure /app/gateway_pressure
+# v2 binaries (primary)
+COPY --from=builder /src/build/default/examples/v2_gateway_demo/v2_gateway_demo /app/bin/
+COPY --from=builder /src/build/default/examples/v2_login_backend/v2_login_backend /app/bin/
+COPY --from=builder /src/build/default/examples/v2_room_backend/v2_room_backend /app/bin/
+COPY --from=builder /src/build/default/examples/v2_battle_backend/v2_battle_backend /app/bin/
+
+# v1 binaries (reference / legacy)
+COPY --from=builder /src/build/default/examples/echo/echo_server /app/bin/
+COPY --from=builder /src/build/default/examples/echo/echo_client /app/bin/
+COPY --from=builder /src/build/default/examples/pressure/gateway_pressure /app/bin/
+
 COPY config/ /app/config/
 
-RUN mkdir -p /app/logs /app/runtime
+EXPOSE 9000 9080 9202 9302 9303
 
-EXPOSE 9000 9080
-
-ENTRYPOINT ["/app/echo_server", "config/gateway.json"]
+# Default: v2 gateway demo in standalone mode
+# Args appended to ENTRYPOINT (e.g., --management-port 9080)
+ENTRYPOINT ["/app/bin/v2_gateway_demo"]
+CMD []

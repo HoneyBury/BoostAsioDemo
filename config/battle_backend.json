@@ -1,0 +1,18 @@
+{
+  "battle_backend": {
+    "port": 9303,
+    "io_threads": 2,
+    "metrics_log_interval_ms": 5000,
+    "metrics_prometheus_path": "runtime/metrics/battle_backend.prom",
+    "metrics_json_path": "runtime/metrics/battle_backend.json",
+    "tick_rate_ms": 50,
+    "max_battles": 500,
+    "battle_idle_timeout_ms": 600000,
+    "frame_input_timeout_ms": 30000,
+    "archive": {
+      "enabled": true,
+      "replay_path": "v2_archive/replays",
+      "result_path": "v2_archive/results"
+    }
+  }
+}

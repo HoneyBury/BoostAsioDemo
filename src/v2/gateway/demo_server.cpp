@@ -2,6 +2,8 @@
 
 #include "app/logging.h"
 
+#include <boost/asio.hpp>
+
 #include <nlohmann/json.hpp>
 
 #include <utility>
@@ -56,7 +58,27 @@ DemoServer::DemoServer(std::uint16_t port,
     runtime_.set_archive_sink(archive_store_.get());
 }
 
+DemoServer::~DemoServer() = default;
+
 void DemoServer::start() {
+    if (options_.http_management_port.has_value()) {
+        management_io_ = std::make_unique<boost::asio::io_context>();
+        http_manager_ = std::make_unique<net::HttpManager>(
+            management_io_->get_executor(), *options_.http_management_port);
+        http_manager_->set_health_provider([this]() { return diagnostics_json(); });
+        http_manager_->set_metrics_provider([this]() {
+            const auto json = diagnostics_json();
+            return net::HttpMetricsSnapshot{
+                .prometheus_text = json,
+                .json_text = json,
+                .diagnostics_text = json,
+                .diagnostics_json_text = json,
+            };
+        });
+        http_manager_->start();
+        management_thread_ = std::make_unique<std::thread>([this]() { management_io_->run(); });
+        LOG_INFO("v2 demo server HTTP management listening on :{}", *options_.http_management_port);
+    }
     acceptor_ = io_engine_->listen("127.0.0.1",
                                    port_,
                                    session_options_,
@@ -67,6 +89,20 @@ void DemoServer::start() {
 }
 
 void DemoServer::stop() {
+    // Stop HTTP management before tearing down sessions
+    if (http_manager_) {
+        http_manager_->stop();
+    }
+    if (management_io_) {
+        management_io_->stop();
+    }
+    if (management_thread_ && management_thread_->joinable()) {
+        management_thread_->join();
+    }
+    management_thread_.reset();
+    http_manager_.reset();
+    management_io_.reset();
+
     {
         std::scoped_lock lock(sessions_mutex_);
         acceptor_.reset();

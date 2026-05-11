@@ -1,0 +1,12 @@
+{
+  "room_backend": {
+    "port": 9302,
+    "io_threads": 2,
+    "metrics_log_interval_ms": 5000,
+    "metrics_prometheus_path": "runtime/metrics/room_backend.prom",
+    "metrics_json_path": "runtime/metrics/room_backend.json",
+    "max_rooms": 1000,
+    "max_members_per_room": 4,
+    "room_idle_timeout_ms": 600000
+  }
+}

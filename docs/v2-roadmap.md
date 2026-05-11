@@ -43,16 +43,16 @@ v1.0.0 完成了一个**单进程、功能完整**的游戏服务器框架。核
 | `M1 Actor` | `in-place done` | `ActorSystem`、`PlayerActor`、`RoomActor`、`BattleActor` 最小主链已跑通并有回归测试 |
 | `M2 多核 I/O` | `advanced` | accept policy、SPSC mailbox、session counting、multi-listener ingress、core diagnostics 已落地 |
 | `M3 内存架构` | `not started` | 仍未进入 arena / pool hierarchy / false sharing 专项 |
-| `M4 分布式` | `S0 done` | 边界冻结已完成：`BackendEnvelope`、`ServiceManifest`、`ServiceErrorCode`；S1 gateway-only ingress 待启动 |
+| `M4 分布式` | `S0-S4 done` | S0-S4 服务拆分全部完成：边界冻结、gateway-only ingress、login/room/battle 独立 backend、ServiceRegistry TTL/心跳/摘除、BackendMetrics 路由计数器、diagnostics_json 管理口、22 个集成测试 |
 | `M5 数据层 v2` | `foundation done` | 版本化落盘格式（magic+version+length）、`BattleDataStore`、world snapshot 已落地并有回归测试 |
-| `M6 battle world` | `advanced` | 4-system 拆分、ECS world、battle metadata/replay/result/snapshot 已收口到 world helper |
+| `M6 battle world` | `advanced` | 6-system ECS pipeline（Clock→Input→Movement→Combat→Lifecycle→Replay）、authoritative simulation（MovementSystem/CombatSystem）、deterministic replay、14 个权威/确定性单元测试已通过 |
 | `M7 运维成熟度` | `bootstrap only` | 已有 `/metrics*`、diagnostics、shadow bridge 扩展观测，但还不是正式控制面 |
 
 当前最重要的边界：
 
 - `M2` 已进入 advanced 阶段，accept policy + SPSC mailbox + session counting 已落地；`SO_REUSEPORT` 和 actor 亲核调度仍未完成
-- `M6` 已进入 advanced 阶段，4-system 拆分 + world helper 已收口；authoritative simulation / AOI / deterministic replay 仍未进入
-- `M4` S0 边界冻结已完成（`BackendEnvelope`、`ServiceManifest`、`ServiceErrorCode`），S1 gateway-only ingress 为下一阶段入口
+- `M6` 已进入 advanced 阶段，6-system ECS pipeline + authoritative simulation（MovementSystem/CombatSystem）+ deterministic replay 已落地；AOI 空间管理仍未进入
+- `M4` S0-S4 服务拆分全部完成（`BackendEnvelope`、`ServiceManifest`、`ServiceErrorCode`、GatewayServiceBridge 三 slot 路由、级联 forward/push_to_sessions、`ServiceRegistry` TTL/心跳、`BackendMetrics` 计数器、22 个集成测试）
 - `M5` foundation done，版本化落盘格式 + `BattleDataStore` + world snapshot 已落地；缓存层 / WriteBehind 仍未开始
 - `M3/M7` 仍以规划为主，不应被文档误判为已落地
 

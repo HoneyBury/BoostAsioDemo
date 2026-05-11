@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "v2/gateway/gateway_actor.h"
+#include "v2/gateway/gateway_service_bridge.h"
 #include "v2/battle/battle_actor.h"
 #include "v2/player/player_actor.h"
 #include "v2/room/room_actor.h"
@@ -49,6 +50,7 @@ public:
 
     [[nodiscard]] std::optional<BattleArchive> archived_battle(std::string_view battle_id) const;
     void set_archive_sink(BattleArchiveSink* sink) noexcept { archive_sink_ = sink; }
+    void set_service_bridge(std::unique_ptr<GatewayServiceBridge> bridge);
 
 private:
     struct PendingResponse {
@@ -94,6 +96,7 @@ private:
     std::unordered_map<std::string, v2::runtime::ScheduleHandle> pending_battle_timeout_;
     std::uint64_t next_battle_id_ = 1;
     BattleArchiveSink* archive_sink_ = nullptr;
+    std::unique_ptr<GatewayServiceBridge> bridge_;
 };
 
 }  // namespace v2::gateway

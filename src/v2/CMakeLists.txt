@@ -4,6 +4,7 @@ add_library(project_v2 STATIC
     battle/battle_actor.cpp
     battle/battle_snapshot.cpp
     battle/runtime_world.cpp
+    battle/game_systems.cpp
     common/module_marker.cpp
     data/replay_format.cpp
     ecs/world.cpp
@@ -14,6 +15,7 @@ add_library(project_v2 STATIC
     service/backend_server.cpp
     service/error_codes.cpp
     service/service_manifest.cpp
+    service/service_registry.cpp
     gateway/gateway_service_bridge.cpp
     gateway/battle_protocol_codec.cpp
     gateway/battle_wire_parser.cpp

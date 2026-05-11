@@ -1,7 +1,9 @@
 #pragma once
 
+#include "v2/gateway/backend_metrics.h"
 #include "v2/service/backend_connection.h"
 #include "v2/service/error_codes.h"
+#include "v2/service/service_registry.h"
 
 #include <cstdint>
 #include <memory>
@@ -25,7 +27,10 @@ public:
     };
 
     explicit GatewayServiceBridge(
-        std::optional<BackendConfig> login_config = std::nullopt);
+        std::optional<BackendConfig> login_config = std::nullopt,
+        std::optional<BackendConfig> room_config = std::nullopt,
+        std::optional<BackendConfig> battle_config = std::nullopt,
+        std::shared_ptr<BackendMetrics> metrics = nullptr);
     ~GatewayServiceBridge();
 
     GatewayServiceBridge(const GatewayServiceBridge&) = delete;
@@ -40,6 +45,11 @@ public:
 
     [[nodiscard]] bool is_backend_available(v2::service::ServiceId service) const;
 
+    void set_service_registry(
+        std::shared_ptr<v2::service::ServiceRegistry> registry);
+    [[nodiscard]] std::shared_ptr<BackendMetrics> get_metrics() const;
+    [[nodiscard]] std::shared_ptr<v2::service::ServiceRegistry> get_registry() const;
+
     void shutdown();
 
 private:
@@ -51,7 +61,14 @@ private:
     v2::service::BackendConnection* ensure_connection(v2::service::ServiceId service);
     BackendSlot& slot_for(v2::service::ServiceId service);
 
+    void record_route_result(v2::service::ServiceId target,
+                             const BackendRoutingResult& result);
+
     BackendSlot login_slot_;
+    BackendSlot room_slot_;
+    BackendSlot battle_slot_;
+    std::shared_ptr<BackendMetrics> metrics_;
+    std::shared_ptr<v2::service::ServiceRegistry> registry_;
 };
 
 }  // namespace v2::gateway

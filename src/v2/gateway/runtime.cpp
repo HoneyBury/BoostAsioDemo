@@ -4,6 +4,8 @@
 #include "v2/gateway/battle_data_store.h"
 #include "v2/gateway/battle_protocol_codec.h"
 #include "v2/gateway/gateway_command_parser.h"
+#include "v2/gateway/gateway_service_bridge.h"
+#include "v2/service/error_codes.h"
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -102,6 +104,10 @@ void Runtime::on_session_closed(SessionId session_id) {
     actor_system_.dispatch_all();
 }
 
+void Runtime::set_service_bridge(std::unique_ptr<GatewayServiceBridge> bridge) {
+    bridge_ = std::move(bridge);
+}
+
 bool Runtime::handle(const GatewayCommand& command) {
     switch (command.type) {
         case GatewayCommandType::kLogin: {
@@ -115,6 +121,90 @@ bool Runtime::handle(const GatewayCommand& command) {
                 return true;
             }
 
+            // Bridge path: delegate auth decision to login_backend
+            if (bridge_) {
+                nlohmann::json auth_payload{
+                    {"user_id", login_body->user_id},
+                    {"token", login_body->token},
+                    {"display_name", login_body->display_name.value_or("")},
+                };
+
+                auto result = bridge_->route(v2::service::ServiceId::kLogin,
+                                             "login_request",
+                                             auth_payload.dump());
+
+                if (result.success) {
+                    auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
+                    if (!resp.is_discarded() && resp.value("status", "") == "ok") {
+                        bool is_duplicate = resp.value("is_duplicate", false);
+
+                        // Kick old session on duplicate login
+                        if (is_duplicate) {
+                            auto old_session = session_id_for_user(login_body->user_id);
+                            if (old_session.has_value()) {
+                                emit(net::protocol::kSessionKickedPush,
+                                     *old_session,
+                                     0,
+                                     static_cast<std::int32_t>(net::protocol::ErrorCode::kDuplicateLogin),
+                                     "duplicate_login");
+                                users_by_session_id_.erase(*old_session);
+
+                                auto player_it = players_by_user_id_.find(login_body->user_id);
+                                if (player_it != players_by_user_id_.end()) {
+                                    v2::actor::Message closed;
+                                    closed.header.kind = v2::actor::MessageKind::kUser;
+                                    closed.payload = v2::player::SessionClosedMsg{.session_id = *old_session};
+                                    player_it->second.tell(std::move(closed));
+                                    actor_system_.dispatch_all();
+                                }
+                            }
+                        }
+
+                        auto player = get_or_create_player(login_body->user_id);
+
+                        v2::actor::Message bind;
+                        bind.header.kind = v2::actor::MessageKind::kUser;
+                        bind.payload = v2::player::BindSessionMsg{
+                            .session_id = command.session_id,
+                            .connection_id = command.session_id,
+                        };
+                        player.tell(std::move(bind));
+                        actor_system_.dispatch_all();
+
+                        users_by_session_id_[command.session_id] = login_body->user_id;
+                        emit(net::protocol::kLoginResponse,
+                             command.session_id,
+                             command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                             "login_ok:" + login_body->user_id);
+                        return true;
+                    }
+
+                    // Backend responded but rejected the auth
+                    std::string reason = resp.is_discarded() ? "auth_failed"
+                        : resp.value("reason", "auth_failed");
+                    emit(net::protocol::kErrorResponse,
+                         command.session_id,
+                         command.request_id,
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidToken),
+                         reason);
+                    return true;
+                }
+
+                // Bridge routing failure (timeout, unavailable, etc.)
+                auto net_error = net::protocol::ErrorCode::kSessionNotFound;
+                if (result.error == v2::service::ServiceErrorCode::kRejected) {
+                    net_error = net::protocol::ErrorCode::kInvalidToken;
+                }
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net_error),
+                     "backend_error");
+                return true;
+            }
+
+            // Local path: no bridge configured, use PlayerActor auth
             pending_login_[command.session_id] = PendingResponse{
                 .session_id = command.session_id,
                 .request_id = command.request_id,
@@ -153,6 +243,47 @@ bool Runtime::handle(const GatewayCommand& command) {
                      net::protocol::to_string(net::protocol::ErrorCode::kInvalidRoomId));
                 return true;
             }
+
+            // Bridge path: delegate room state management to room_backend
+            if (bridge_) {
+                nlohmann::json room_payload{
+                    {"user_id", user_id},
+                    {"room_id", *room_id},
+                };
+
+                auto result = bridge_->route(v2::service::ServiceId::kRoom,
+                                             "room_create",
+                                             room_payload.dump());
+
+                if (result.success) {
+                    auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
+                    if (!resp.is_discarded() && resp.value("status", "") == "ok") {
+                        rooms_by_session_id_[command.session_id] = *room_id;
+                        emit(net::protocol::kRoomCreateResponse,
+                             command.session_id,
+                             command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                             *room_id);
+                        return true;
+                    }
+                    std::string reason = resp.is_discarded() ? "room_create_failed"
+                        : resp.value("reason", "room_create_failed");
+                    emit(net::protocol::kErrorResponse,
+                         command.session_id,
+                         command.request_id,
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidRoomId),
+                         reason);
+                    return true;
+                }
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     "backend_error");
+                return true;
+            }
+
+            // Local path: create RoomActor
             auto room_actor = actor_system_.create_actor(std::make_unique<v2::room::RoomActor>(*this));
             rooms_by_room_id_[*room_id] = room_actor;
             pending_room_create_[*room_id] = PendingResponse{
@@ -198,6 +329,47 @@ bool Runtime::handle(const GatewayCommand& command) {
                      net::protocol::to_string(net::protocol::ErrorCode::kInvalidRoomId));
                 return true;
             }
+
+            // Bridge path: delegate to room_backend
+            if (bridge_) {
+                nlohmann::json room_payload{
+                    {"user_id", user_id},
+                    {"room_id", *room_id},
+                };
+
+                auto result = bridge_->route(v2::service::ServiceId::kRoom,
+                                             "room_join",
+                                             room_payload.dump());
+
+                if (result.success) {
+                    auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
+                    if (!resp.is_discarded() && resp.value("status", "") == "ok") {
+                        rooms_by_session_id_[command.session_id] = *room_id;
+                        emit(net::protocol::kRoomJoinResponse,
+                             command.session_id,
+                             command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                             *room_id);
+                        return true;
+                    }
+                    std::string reason = resp.is_discarded() ? "room_join_failed"
+                        : resp.value("reason", "room_join_failed");
+                    emit(net::protocol::kErrorResponse,
+                         command.session_id,
+                         command.request_id,
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidRoomId),
+                         reason);
+                    return true;
+                }
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     "backend_error");
+                return true;
+            }
+
+            // Local path
             auto room_it = rooms_by_room_id_.find(*room_id);
             if (room_it == rooms_by_room_id_.end()) {
                 return false;
@@ -248,6 +420,47 @@ bool Runtime::handle(const GatewayCommand& command) {
                      "invalid_ready_state");
                 return true;
             }
+
+            // Bridge path: delegate to room_backend
+            if (bridge_) {
+                nlohmann::json room_payload{
+                    {"user_id", user_id},
+                    {"room_id", room_name_it->second},
+                    {"ready", *ready},
+                };
+
+                auto result = bridge_->route(v2::service::ServiceId::kRoom,
+                                             "room_ready",
+                                             room_payload.dump());
+
+                if (result.success) {
+                    auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
+                    if (!resp.is_discarded() && resp.value("status", "") == "ok") {
+                        emit(net::protocol::kRoomReadyResponse,
+                             command.session_id,
+                             command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                             *ready ? "true" : "false");
+                        return true;
+                    }
+                    std::string reason = resp.is_discarded() ? "ready_failed"
+                        : resp.value("reason", "ready_failed");
+                    emit(net::protocol::kErrorResponse,
+                         command.session_id,
+                         command.request_id,
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                         reason);
+                    return true;
+                }
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     "backend_error");
+                return true;
+            }
+
+            // Local path
             auto room_it = rooms_by_room_id_.find(room_name_it->second);
             if (room_it == rooms_by_room_id_.end()) {
                 return false;
@@ -295,6 +508,113 @@ bool Runtime::handle(const GatewayCommand& command) {
                      net::protocol::to_string(net::protocol::ErrorCode::kInvalidRoomId));
                 return true;
             }
+
+            // Bridge path: room_start_battle → cascade to battle_create
+            if (bridge_) {
+                nlohmann::json room_payload{
+                    {"user_id", user_id},
+                    {"room_id", room_name_it->second},
+                };
+
+                auto room_result = bridge_->route(v2::service::ServiceId::kRoom,
+                                                  "room_start_battle",
+                                                  room_payload.dump());
+
+                if (!room_result.success) {
+                    emit(net::protocol::kErrorResponse,
+                         command.session_id,
+                         command.request_id,
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                         "backend_error");
+                    return true;
+                }
+
+                auto room_resp = nlohmann::json::parse(room_result.response_payload, nullptr, false);
+                if (room_resp.is_discarded() || room_resp.value("status", "") != "ok") {
+                    std::string reason = room_resp.is_discarded() ? "start_battle_failed"
+                        : room_resp.value("reason", "start_battle_failed");
+                    emit(net::protocol::kErrorResponse,
+                         command.session_id,
+                         command.request_id,
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted),
+                         reason);
+                    return true;
+                }
+
+                // Check for forward instruction to cascade to battle_backend
+                if (room_resp.contains("forward")) {
+                    const auto& fwd = room_resp["forward"];
+                    std::string fwd_target = fwd.value("target", "");
+                    std::string fwd_msg_type = fwd.value("message_type", "");
+                    std::string fwd_payload = fwd.contains("payload")
+                        ? fwd["payload"].dump() : "";
+
+                    if (fwd_target == "battle" && !fwd_payload.empty()) {
+                        auto battle_result = bridge_->route(
+                            v2::service::ServiceId::kBattle,
+                            fwd_msg_type,
+                            fwd_payload);
+
+                        if (battle_result.success) {
+                            auto battle_resp = nlohmann::json::parse(
+                                battle_result.response_payload, nullptr, false);
+
+                            if (!battle_resp.is_discarded() &&
+                                battle_resp.value("status", "") == "ok") {
+
+                                // Track battle by room_id for push broadcasting
+                                std::string battle_id = battle_resp.value("battle_id", "");
+                                if (!battle_id.empty()) {
+                                    battles_by_room_id_[room_name_it->second] =
+                                        v2::actor::ActorRef{};  // placeholder for bridge mode
+                                }
+
+                                // Emit kBattleStartResponse to requester
+                                emit(net::protocol::kBattleStartResponse,
+                                     command.session_id,
+                                     command.request_id,
+                                     static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                     format_battle_started_body(
+                                         room_name_it->second, battle_id));
+
+                                // Broadcast push_to_sessions events
+                                if (battle_resp.contains("push_to_sessions")) {
+                                    for (const auto& push : battle_resp["push_to_sessions"]) {
+                                        std::string kind = push.value("kind", "");
+                                        if (kind == "battle_started") {
+                                            for (const auto& [sid, rid] : rooms_by_session_id_) {
+                                                if (rid == room_name_it->second) {
+                                                    emit(net::protocol::kBattleStatePush,
+                                                         sid, 0,
+                                                         static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                                         format_battle_state_body(room_name_it->second, battle_id));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                return true;
+                            }
+                        }
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id,
+                             command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted),
+                             "battle_create_failed");
+                        return true;
+                    }
+                }
+
+                // Room start succeeded but no forward (shouldn't normally happen)
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted),
+                     "no_battle_forward");
+                return true;
+            }
+
+            // Local path
             auto room_it = rooms_by_room_id_.find(room_name_it->second);
             if (room_it == rooms_by_room_id_.end()) {
                 return false;
@@ -325,6 +645,134 @@ bool Runtime::handle(const GatewayCommand& command) {
                      "invalid_battle_input");
                 return true;
             }
+
+            // Bridge path: route to battle_backend
+            if (bridge_) {
+                auto battle_it = battles_by_room_id_.find(room_name_it->second);
+                if (battle_it == battles_by_room_id_.end()) {
+                    emit(net::protocol::kErrorResponse,
+                         command.session_id,
+                         command.request_id,
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted),
+                         net::protocol::to_string(net::protocol::ErrorCode::kBattleNotStarted));
+                    return true;
+                }
+
+                if (battle_input->is_finish_request) {
+                    nlohmann::json finish_payload{
+                        {"user_id", user_id},
+                        {"battle_id", ""},  // backend resolves by room
+                        {"reason", v2::battle::to_string(battle_input->finish_reason)},
+                    };
+
+                    auto result = bridge_->route(v2::service::ServiceId::kBattle,
+                                                 "battle_finish",
+                                                 finish_payload.dump());
+
+                    if (result.success) {
+                        auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
+                        if (!resp.is_discarded() && resp.value("status", "") == "ok") {
+                            emit(net::protocol::kBattleInputResponse,
+                                 command.session_id,
+                                 command.request_id,
+                                 static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                 format_battle_end_accepted_body(battle_input->finish_reason));
+
+                            if (resp.contains("push_to_sessions")) {
+                                for (const auto& push : resp["push_to_sessions"]) {
+                                    std::string kind = push.value("kind", "");
+                                    if (kind == "battle_finished") {
+                                        for (const auto& [sid, rid] : rooms_by_session_id_) {
+                                            if (rid == room_name_it->second) {
+                                                emit(net::protocol::kBattleStatePush,
+                                                     sid, 0,
+                                                     static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                                     push.dump());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            battles_by_room_id_.erase(room_name_it->second);
+                            return true;
+                        }
+                    }
+                    emit(net::protocol::kErrorResponse,
+                         command.session_id,
+                         command.request_id,
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted),
+                         "battle_finish_failed");
+                    return true;
+                }
+
+                // Normal input
+                nlohmann::json input_payload{
+                    {"user_id", user_id},
+                    {"battle_id", ""},  // backend resolves by room
+                    {"input_data", battle_input->input_data},
+                    {"score", battle_input->score},
+                    {"submitted_frame", battle_input->score},  // approximate
+                };
+
+                auto result = bridge_->route(v2::service::ServiceId::kBattle,
+                                             "battle_input",
+                                             input_payload.dump());
+
+                if (result.success) {
+                    auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
+                    if (!resp.is_discarded() && resp.value("status", "") == "ok") {
+                        auto input_seq = resp.value("input_seq", std::uint64_t{0});
+                        emit(net::protocol::kBattleInputResponse,
+                             command.session_id,
+                             command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                             format_battle_input_response_body(input_seq));
+
+                        if (resp.contains("push_to_sessions")) {
+                            for (const auto& push : resp["push_to_sessions"]) {
+                                std::string kind = push.value("kind", "");
+                                if (kind == "frame_advanced") {
+                                    for (const auto& [sid, rid] : rooms_by_session_id_) {
+                                        if (rid == room_name_it->second) {
+                                            emit(net::protocol::kBattleStatePush,
+                                                 sid, 0,
+                                                 static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                                 push.dump());
+                                        }
+                                    }
+                                } else if (kind == "battle_finished") {
+                                    for (const auto& [sid, rid] : rooms_by_session_id_) {
+                                        if (rid == room_name_it->second) {
+                                            emit(net::protocol::kBattleStatePush,
+                                                 sid, 0,
+                                                 static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                                 push.dump());
+                                        }
+                                    }
+                                    battles_by_room_id_.erase(room_name_it->second);
+                                }
+                            }
+                        }
+                        return true;
+                    }
+                    std::string reason = resp.is_discarded() ? "input_rejected"
+                        : resp.value("reason", "input_rejected");
+                    emit(net::protocol::kErrorResponse,
+                         command.session_id,
+                         command.request_id,
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                         reason);
+                    return true;
+                }
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     "backend_error");
+                return true;
+            }
+
+            // Local path
             auto battle_it = battles_by_room_id_.find(room_name_it->second);
             if (battle_it == battles_by_room_id_.end()) {
                 emit(net::protocol::kErrorResponse,

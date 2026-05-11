@@ -1,16 +1,20 @@
 #include "app/logging.h"
 #include "net/packet_codec.h"
 #include "net/protocol.h"
+#include "v2/gateway/demo_server.h"
 #include "v2/service/backend_connection.h"
 #include "v2/service/backend_envelope.h"
 #include "v2/service/backend_server.h"
 
 #include <boost/asio.hpp>
+#include <nlohmann/json.hpp>
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #include <gtest/gtest.h>
 
@@ -259,9 +263,87 @@ public:
         return net::packet::decode_payload(payload);
     }
 
+    net::packet::DecodedPacket expect_message(std::uint16_t message_id) {
+        for (;;) {
+            const auto packet = read();
+            if (packet.message_id == message_id) {
+                return packet;
+            }
+        }
+    }
+
 private:
     asio::io_context io_context_;
     tcp::socket socket_;
+};
+
+// ─── JSON login backend (matches v2_login_backend contract) ────────
+
+struct LoginBackendProcess {
+    std::unique_ptr<v2::service::BackendServer> server;
+    std::uint16_t port = 0;
+
+    std::unordered_map<std::string, std::string> active_sessions_;
+    std::mutex mutex_;
+
+    bool start() {
+        v2::service::BackendServer::HandlerMap handlers;
+
+        handlers["login_request"] = [this](const v2::service::BackendEnvelope& request) {
+            v2::service::BackendEnvelope response;
+            response.kind = v2::service::MessageKind::kError;
+            response.error_code = -1004;
+
+            if (request.payload.empty()) {
+                response.payload = R"({"status":"error","reason":"empty_payload"})";
+                return response;
+            }
+
+            auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+            if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("token")) {
+                response.payload = R"({"status":"error","reason":"invalid_json"})";
+                return response;
+            }
+
+            std::string user_id = doc["user_id"].get<std::string>();
+            std::string token = doc["token"].get<std::string>();
+            std::string display_name = doc.value("display_name", user_id);
+
+            if (user_id.empty()) {
+                response.payload = R"({"status":"error","reason":"empty_user_id"})";
+                return response;
+            }
+
+            if (token.empty()) {
+                response.payload = R"({"status":"error","reason":"empty_token"})";
+                return response;
+            }
+
+            std::lock_guard<std::mutex> lock(mutex_);
+
+            bool is_duplicate = active_sessions_.contains(user_id);
+            active_sessions_[user_id] = token;
+
+            response.kind = v2::service::MessageKind::kResponse;
+            nlohmann::json body{
+                {"status", "ok"},
+                {"user_id", user_id},
+                {"display_name", display_name},
+                {"is_duplicate", is_duplicate},
+            };
+            response.payload = body.dump();
+            return response;
+        };
+
+        server = std::make_unique<v2::service::BackendServer>(0, std::move(handlers));
+        server->start();
+        port = server->local_port();
+        return port > 0;
+    }
+
+    void stop() {
+        if (server) server->stop();
+    }
 };
 
 }  // namespace
@@ -335,4 +417,921 @@ TEST(V2BackendRoutingTest, BackendReturnsError) {
     client.close();
     gateway.stop();
     backend.stop();
+}
+
+// ─── S2: DemoServer + GatewayServiceBridge tests ──────────────────
+
+#define SKIP_IF_V2_RUNTIME_UNAVAILABLE(server_ptr, startup_error)          \
+    do {                                                                   \
+        if (!(server_ptr)) {                                               \
+            GTEST_SKIP() << "socket bind unavailable in this environment: " \
+                         << (startup_error);                               \
+        }                                                                  \
+    } while (false)
+
+TEST(V2BackendRoutingTest, LoginViaBridgeSuccess) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    std::unique_ptr<v2::gateway::DemoServer> server;
+    std::string startup_error;
+    try {
+        v2::gateway::DemoServerOptions options{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = backend.port,
+            },
+        };
+        server = std::make_unique<v2::gateway::DemoServer>(0, net::SessionOptions{}, std::move(options));
+        server->start();
+    } catch (const std::exception& ex) {
+        startup_error = ex.what();
+    }
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(server, startup_error);
+
+    TestClient client;
+    client.connect(server->local_port());
+
+    auto response = client.exchange(net::protocol::kLoginRequest, 1,
+                                    "alice|token:alice_secret|Alice");
+    EXPECT_EQ(response.message_id, net::protocol::kLoginResponse);
+    EXPECT_EQ(response.body, "login_ok:alice");
+
+    client.close();
+    server->stop();
+    backend.stop();
+}
+
+TEST(V2BackendRoutingTest, LoginViaBridgeInvalidToken) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    std::unique_ptr<v2::gateway::DemoServer> server;
+    std::string startup_error;
+    try {
+        v2::gateway::DemoServerOptions options{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = backend.port,
+            },
+        };
+        server = std::make_unique<v2::gateway::DemoServer>(0, net::SessionOptions{}, std::move(options));
+        server->start();
+    } catch (const std::exception& ex) {
+        startup_error = ex.what();
+    }
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(server, startup_error);
+
+    TestClient client;
+    client.connect(server->local_port());
+
+    // Empty token (body: "bob||Bob" → token="")
+    auto response = client.exchange(net::protocol::kLoginRequest, 2, "bob||Bob");
+    EXPECT_EQ(response.message_id, net::protocol::kErrorResponse);
+
+    client.close();
+    server->stop();
+    backend.stop();
+}
+
+TEST(V2BackendRoutingTest, LoginViaBridgeBackendUnreachable) {
+    app::logging::init("project_tests");
+
+    // Point to a port where nothing listens
+    std::unique_ptr<v2::gateway::DemoServer> server;
+    std::string startup_error;
+    try {
+        v2::gateway::DemoServerOptions options{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = 19999,
+            },
+        };
+        server = std::make_unique<v2::gateway::DemoServer>(0, net::SessionOptions{}, std::move(options));
+        server->start();
+    } catch (const std::exception& ex) {
+        startup_error = ex.what();
+    }
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(server, startup_error);
+
+    TestClient client;
+    client.connect(server->local_port());
+
+    auto response = client.exchange(net::protocol::kLoginRequest, 3,
+                                    "alice|token:alice_secret|Alice");
+    EXPECT_EQ(response.message_id, net::protocol::kErrorResponse);
+
+    client.close();
+    server->stop();
+}
+
+TEST(V2BackendRoutingTest, LoginViaBridgeDuplicateLogin) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    std::unique_ptr<v2::gateway::DemoServer> server;
+    std::string startup_error;
+    try {
+        v2::gateway::DemoServerOptions options{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = backend.port,
+            },
+        };
+        server = std::make_unique<v2::gateway::DemoServer>(0, net::SessionOptions{}, std::move(options));
+        server->start();
+    } catch (const std::exception& ex) {
+        startup_error = ex.what();
+    }
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(server, startup_error);
+
+    TestClient session1;
+    TestClient session2;
+    session1.connect(server->local_port());
+    session2.connect(server->local_port());
+
+    // First login succeeds
+    auto login1 = session1.exchange(net::protocol::kLoginRequest, 10,
+                                    "alice|token:alice_secret|Alice");
+    EXPECT_EQ(login1.message_id, net::protocol::kLoginResponse);
+    EXPECT_EQ(login1.body, "login_ok:alice");
+
+    // Second login with same user_id triggers duplicate detection
+    auto login2 = session2.exchange(net::protocol::kLoginRequest, 11,
+                                    "alice|token:alice_secret|Alice");
+    EXPECT_EQ(login2.message_id, net::protocol::kLoginResponse);
+    EXPECT_EQ(login2.body, "login_ok:alice");
+
+    // Session 1 should receive a kick push
+    auto kick = session1.expect_message(net::protocol::kSessionKickedPush);
+    EXPECT_EQ(kick.message_id, net::protocol::kSessionKickedPush);
+
+    session1.close();
+    session2.close();
+    server->stop();
+    backend.stop();
+}
+
+// ─── S3: Room/Battle backend processes ────────────────────────────
+
+struct RoomBackendProcess {
+    std::unique_ptr<v2::service::BackendServer> server;
+    std::uint16_t port = 0;
+
+    struct RoomState {
+        std::string room_id;
+        std::string owner_user_id;
+        std::vector<std::string> members;
+        std::unordered_map<std::string, bool> ready_state;
+        std::string active_battle_id;
+    };
+    std::unordered_map<std::string, RoomState> rooms_;
+    std::mutex mutex_;
+
+    RoomState* find(const std::string& room_id) {
+        auto it = rooms_.find(room_id);
+        return it != rooms_.end() ? &it->second : nullptr;
+    }
+
+    bool all_ready(const RoomState& room) {
+        return room.members.size() >= 2 &&
+               std::all_of(room.members.begin(), room.members.end(),
+                           [&](const std::string& uid) {
+                               auto it = room.ready_state.find(uid);
+                               return it != room.ready_state.end() && it->second;
+                           });
+    }
+
+    bool start() {
+        v2::service::BackendServer::HandlerMap handlers;
+
+        handlers["room_create"] = [this](const v2::service::BackendEnvelope& request) {
+            auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+            if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("room_id")) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -1004;
+                resp.payload = R"({"status":"error","reason":"invalid_json"})";
+                return resp;
+            }
+            std::string user_id = doc["user_id"].get<std::string>();
+            std::string room_id = doc["room_id"].get<std::string>();
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (find(room_id)) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -2002;
+                resp.payload = R"({"status":"error","reason":"room_already_exists"})";
+                return resp;
+            }
+            RoomState room;
+            room.room_id = room_id;
+            room.owner_user_id = user_id;
+            room.members.push_back(user_id);
+            room.ready_state[user_id] = false;
+            rooms_[room_id] = std::move(room);
+
+            v2::service::BackendEnvelope resp;
+            resp.kind = v2::service::MessageKind::kResponse;
+            resp.payload = R"({"status":"ok","room_id":")" + room_id + R"(","member_count":1})";
+            return resp;
+        };
+
+        handlers["room_join"] = [this](const v2::service::BackendEnvelope& request) {
+            auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+            if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("room_id")) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -1004;
+                resp.payload = R"({"status":"error","reason":"invalid_json"})";
+                return resp;
+            }
+            std::string user_id = doc["user_id"].get<std::string>();
+            std::string room_id = doc["room_id"].get<std::string>();
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto* room = find(room_id);
+            if (!room) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -2003;
+                resp.payload = R"({"status":"error","reason":"room_not_found"})";
+                return resp;
+            }
+            auto member_it = std::find(room->members.begin(), room->members.end(), user_id);
+            if (member_it == room->members.end()) {
+                room->members.push_back(user_id);
+                room->ready_state[user_id] = false;
+            }
+            v2::service::BackendEnvelope resp;
+            resp.kind = v2::service::MessageKind::kResponse;
+            resp.payload = R"({"status":"ok","room_id":")" + room_id + R"(","member_count":)" +
+                std::to_string(room->members.size()) + "}";
+            return resp;
+        };
+
+        handlers["room_ready"] = [this](const v2::service::BackendEnvelope& request) {
+            auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+            if (doc.is_discarded() || !doc.contains("user_id")) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -1004;
+                resp.payload = R"({"status":"error","reason":"invalid_json"})";
+                return resp;
+            }
+            std::string user_id = doc["user_id"].get<std::string>();
+            std::string room_id = doc.value("room_id", "");
+            bool ready = doc.value("ready", true);
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto* room = find(room_id);
+            if (!room) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -2003;
+                resp.payload = R"({"status":"error","reason":"room_not_found"})";
+                return resp;
+            }
+            room->ready_state[user_id] = ready;
+            bool all_r = all_ready(*room);
+            v2::service::BackendEnvelope resp;
+            resp.kind = v2::service::MessageKind::kResponse;
+            resp.payload = R"({"status":"ok","room_id":")" + room_id +
+                R"(","all_ready":)" + (all_r ? "true" : "false") + "}";
+            return resp;
+        };
+
+        handlers["room_start_battle"] = [this](const v2::service::BackendEnvelope& request) {
+            auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+            std::string user_id = doc.value("user_id", "");
+            std::string room_id = doc.value("room_id", "");
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto* room = find(room_id);
+            if (!room) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -2003;
+                resp.payload = R"({"status":"error","reason":"room_not_found"})";
+                return resp;
+            }
+            if (room->members.size() < 2) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -3001;
+                resp.payload = R"({"status":"error","reason":"not_enough_players"})";
+                return resp;
+            }
+
+            nlohmann::json player_ids = nlohmann::json::array();
+            for (const auto& m : room->members) player_ids.push_back(m);
+
+            nlohmann::json forward_payload{
+                {"battle_id", "battle_" + room_id},
+                {"room_id", room_id},
+                {"player_ids", player_ids},
+                {"max_frames", 5},
+            };
+
+            nlohmann::json body{
+                {"status", "ok"},
+                {"room_id", room_id},
+                {"player_ids", player_ids},
+                {"forward", nlohmann::json{
+                    {"target", "battle"},
+                    {"message_type", "battle_create"},
+                    {"payload", std::move(forward_payload)},
+                }},
+            };
+            v2::service::BackendEnvelope resp;
+            resp.kind = v2::service::MessageKind::kResponse;
+            resp.payload = body.dump();
+            return resp;
+        };
+
+        server = std::make_unique<v2::service::BackendServer>(0, std::move(handlers));
+        server->start();
+        port = server->local_port();
+        return port > 0;
+    }
+
+    void stop() { if (server) server->stop(); }
+};
+
+struct BattleBackendProcess {
+    std::unique_ptr<v2::service::BackendServer> server;
+    std::uint16_t port = 0;
+
+    struct BattleEntry {
+        std::unique_ptr<v2::ecs::World> world;
+        std::string battle_id;
+        std::string room_id;
+    };
+    std::unordered_map<std::string, BattleEntry> battles_;
+    std::mutex mutex_;
+
+    bool start() {
+        v2::service::BackendServer::HandlerMap handlers;
+
+        handlers["battle_create"] = [this](const v2::service::BackendEnvelope& request) {
+            auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+            if (doc.is_discarded()) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -1004;
+                resp.payload = R"({"status":"error","reason":"invalid_json"})";
+                return resp;
+            }
+            std::string battle_id = doc.value("battle_id", "battle_001");
+            std::string room_id = doc.value("room_id", "");
+            std::uint32_t max_frames = doc.value("max_frames", 0);
+            std::vector<std::string> player_ids;
+            if (doc.contains("player_ids") && doc["player_ids"].is_array()) {
+                for (const auto& p : doc["player_ids"]) player_ids.push_back(p.get<std::string>());
+            }
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (battles_.contains(battle_id)) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -2004;
+                resp.payload = R"({"status":"error","reason":"battle_already_exists"})";
+                return resp;
+            }
+
+            auto world = v2::battle::create_battle_world(battle_id, room_id, player_ids, max_frames);
+            battles_[battle_id] = {std::move(world), battle_id, room_id};
+
+            nlohmann::json push{
+                {"kind", "battle_started"},
+                {"battle_id", battle_id},
+                {"room_id", room_id},
+                {"player_ids", doc["player_ids"]},
+            };
+
+            nlohmann::json body{
+                {"status", "ok"},
+                {"battle_id", battle_id},
+                {"room_id", room_id},
+                {"player_ids", doc["player_ids"]},
+                {"push_to_sessions", nlohmann::json::array({push})},
+            };
+            v2::service::BackendEnvelope resp;
+            resp.kind = v2::service::MessageKind::kResponse;
+            resp.payload = body.dump();
+            return resp;
+        };
+
+        handlers["battle_input"] = [this](const v2::service::BackendEnvelope& request) {
+            auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+            if (doc.is_discarded()) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -1004;
+                resp.payload = R"({"status":"error","reason":"invalid_json"})";
+                return resp;
+            }
+            std::string user_id = doc.value("user_id", "");
+            std::string input_data = doc.value("input_data", "");
+            std::int64_t score = doc.value("score", 0);
+            std::uint32_t submitted_frame = doc.value("submitted_frame", 0);
+            // Resolve battle_id — use first battle if not specified
+            std::string battle_id = doc.value("battle_id", "");
+            if (battle_id.empty()) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (!battles_.empty()) battle_id = battles_.begin()->first;
+            }
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto it = battles_.find(battle_id);
+            if (it == battles_.end()) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -2003;
+                resp.payload = R"({"status":"error","reason":"battle_not_found"})";
+                return resp;
+            }
+
+            auto* world = it->second.world.get();
+            auto input_result = v2::battle::battle_world_process_input(
+                *world, user_id, input_data, score, submitted_frame);
+            if (!input_result.accepted) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -3002;
+                resp.payload = R"({"status":"error","reason":")" + input_result.reject_reason + "\"}";
+                return resp;
+            }
+
+            auto current_frame = v2::battle::battle_world_frame_number(*world);
+            auto next_frame = current_frame + 1;
+            auto frame_result = v2::battle::battle_world_advance_frame(
+                *world, next_frame, "input:" + user_id + ":" + std::to_string(input_result.input_seq));
+
+            nlohmann::json pushes = nlohmann::json::array();
+            nlohmann::json frame_push{
+                {"kind", "frame_advanced"},
+                {"battle_id", battle_id},
+                {"frame_number", frame_result.frame_number},
+                {"trigger", frame_result.trigger},
+            };
+
+            auto snapshot = v2::battle::battle_world_snapshot(*world);
+            nlohmann::json participants_json = nlohmann::json::array();
+            for (const auto& p : snapshot.participants) {
+                participants_json.push_back({
+                    {"user_id", p.user_id},
+                    {"online", p.online},
+                    {"score", p.score},
+                    {"pos_x", p.pos_x},
+                    {"pos_y", p.pos_y},
+                    {"hp", p.hp},
+                });
+            }
+            frame_push["participants"] = std::move(participants_json);
+            pushes.push_back(std::move(frame_push));
+
+            if (frame_result.should_finish) {
+                pushes.push_back({
+                    {"kind", "battle_finished"},
+                    {"battle_id", battle_id},
+                    {"reason", v2::battle::to_string(frame_result.finish_reason)},
+                    {"total_frames", snapshot.clock.frame_number},
+                });
+            }
+
+            nlohmann::json body{
+                {"status", "ok"},
+                {"battle_id", battle_id},
+                {"input_seq", input_result.input_seq},
+                {"frame_number", frame_result.frame_number},
+                {"should_finish", frame_result.should_finish},
+                {"push_to_sessions", std::move(pushes)},
+            };
+            v2::service::BackendEnvelope resp;
+            resp.kind = v2::service::MessageKind::kResponse;
+            resp.payload = body.dump();
+            return resp;
+        };
+
+        handlers["battle_finish"] = [this](const v2::service::BackendEnvelope& request) {
+            auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+            std::string user_id = doc.value("user_id", "");
+            std::string battle_id = doc.value("battle_id", "");
+            if (battle_id.empty()) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (!battles_.empty()) battle_id = battles_.begin()->first;
+            }
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto it = battles_.find(battle_id);
+            if (it == battles_.end()) {
+                v2::service::BackendEnvelope resp;
+                resp.kind = v2::service::MessageKind::kError;
+                resp.error_code = -2003;
+                resp.payload = R"({"status":"error","reason":"battle_not_found"})";
+                return resp;
+            }
+
+            auto* world = it->second.world.get();
+            v2::battle::battle_world_set_lifecycle(
+                *world, v2::battle::BattleLifecycleState::kFinished);
+
+            nlohmann::json push{
+                {"kind", "battle_finished"},
+                {"battle_id", battle_id},
+                {"reason", "user_requested"},
+                {"total_frames", v2::battle::battle_world_frame_number(*world)},
+            };
+
+            nlohmann::json body{
+                {"status", "ok"},
+                {"battle_id", battle_id},
+                {"reason", "user_requested"},
+                {"push_to_sessions", nlohmann::json::array({push})},
+            };
+            v2::service::BackendEnvelope resp;
+            resp.kind = v2::service::MessageKind::kResponse;
+            resp.payload = body.dump();
+            return resp;
+        };
+
+        server = std::make_unique<v2::service::BackendServer>(0, std::move(handlers));
+        server->start();
+        port = server->local_port();
+        return port > 0;
+    }
+
+    void stop() { if (server) server->stop(); }
+};
+
+// ─── S3 Integration Tests ────────────────────────────────────────
+
+TEST(V2BackendRoutingTest, RoomCreateViaBridgeSuccess) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess login_backend;
+    RoomBackendProcess room_backend;
+    ASSERT_TRUE(login_backend.start());
+    ASSERT_TRUE(room_backend.start());
+
+    std::unique_ptr<v2::gateway::DemoServer> server;
+    std::string startup_error;
+    try {
+        v2::gateway::DemoServerOptions options{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = login_backend.port,
+            },
+            .room_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = room_backend.port,
+            },
+        };
+        server = std::make_unique<v2::gateway::DemoServer>(0, net::SessionOptions{}, std::move(options));
+        server->start();
+    } catch (const std::exception& ex) {
+        startup_error = ex.what();
+    }
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(server, startup_error);
+
+    TestClient client;
+    client.connect(server->local_port());
+
+    // Login first
+    auto login = client.exchange(net::protocol::kLoginRequest, 100,
+                                 "alice|token:alice_secret|Alice");
+    EXPECT_EQ(login.message_id, net::protocol::kLoginResponse);
+
+    // Create room
+    auto create = client.exchange(net::protocol::kRoomCreateRequest, 101, "test_room");
+    EXPECT_EQ(create.message_id, net::protocol::kRoomCreateResponse);
+    EXPECT_EQ(create.body, "test_room");
+
+    client.close();
+    server->stop();
+    login_backend.stop();
+    room_backend.stop();
+}
+
+TEST(V2BackendRoutingTest, RoomJoinViaBridgeSuccess) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess login_backend;
+    RoomBackendProcess room_backend;
+    ASSERT_TRUE(login_backend.start());
+    ASSERT_TRUE(room_backend.start());
+
+    std::unique_ptr<v2::gateway::DemoServer> server;
+    std::string startup_error;
+    try {
+        v2::gateway::DemoServerOptions options{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = login_backend.port,
+            },
+            .room_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = room_backend.port,
+            },
+        };
+        server = std::make_unique<v2::gateway::DemoServer>(0, net::SessionOptions{}, std::move(options));
+        server->start();
+    } catch (const std::exception& ex) {
+        startup_error = ex.what();
+    }
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(server, startup_error);
+
+    TestClient alice;
+    TestClient bob;
+    alice.connect(server->local_port());
+    bob.connect(server->local_port());
+
+    // Login both
+    alice.exchange(net::protocol::kLoginRequest, 100, "alice|token:a_secret|Alice");
+    bob.exchange(net::protocol::kLoginRequest, 200, "bob|token:b_secret|Bob");
+
+    // Alice creates room
+    auto create = alice.exchange(net::protocol::kRoomCreateRequest, 101, "room_join_test");
+    EXPECT_EQ(create.message_id, net::protocol::kRoomCreateResponse);
+
+    // Bob joins room
+    auto join = bob.exchange(net::protocol::kRoomJoinRequest, 201, "room_join_test");
+    EXPECT_EQ(join.message_id, net::protocol::kRoomJoinResponse);
+    EXPECT_EQ(join.body, "room_join_test");
+
+    alice.close();
+    bob.close();
+    server->stop();
+    login_backend.stop();
+    room_backend.stop();
+}
+
+TEST(V2BackendRoutingTest, RoomReadyViaBridgeSuccess) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess login_backend;
+    RoomBackendProcess room_backend;
+    ASSERT_TRUE(login_backend.start());
+    ASSERT_TRUE(room_backend.start());
+
+    std::unique_ptr<v2::gateway::DemoServer> server;
+    std::string startup_error;
+    try {
+        v2::gateway::DemoServerOptions options{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = login_backend.port,
+            },
+            .room_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = room_backend.port,
+            },
+        };
+        server = std::make_unique<v2::gateway::DemoServer>(0, net::SessionOptions{}, std::move(options));
+        server->start();
+    } catch (const std::exception& ex) {
+        startup_error = ex.what();
+    }
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(server, startup_error);
+
+    TestClient alice;
+    alice.connect(server->local_port());
+    alice.exchange(net::protocol::kLoginRequest, 100, "alice|token:a_secret|Alice");
+
+    // Create and ready up
+    alice.exchange(net::protocol::kRoomCreateRequest, 101, "room_ready_test");
+    auto ready = alice.exchange(net::protocol::kRoomReadyRequest, 102, "true");
+    EXPECT_EQ(ready.message_id, net::protocol::kRoomReadyResponse);
+    EXPECT_EQ(ready.body, "true");
+
+    alice.close();
+    server->stop();
+    login_backend.stop();
+    room_backend.stop();
+}
+
+TEST(V2BackendRoutingTest, BattleStartCascadeViaBridge) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess login_backend;
+    RoomBackendProcess room_backend;
+    BattleBackendProcess battle_backend;
+    ASSERT_TRUE(login_backend.start());
+    ASSERT_TRUE(room_backend.start());
+    ASSERT_TRUE(battle_backend.start());
+
+    std::unique_ptr<v2::gateway::DemoServer> server;
+    std::string startup_error;
+    try {
+        v2::gateway::DemoServerOptions options{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = login_backend.port,
+            },
+            .room_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = room_backend.port,
+            },
+            .battle_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = battle_backend.port,
+            },
+        };
+        server = std::make_unique<v2::gateway::DemoServer>(0, net::SessionOptions{}, std::move(options));
+        server->start();
+    } catch (const std::exception& ex) {
+        startup_error = ex.what();
+    }
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(server, startup_error);
+
+    TestClient alice;
+    TestClient bob;
+    alice.connect(server->local_port());
+    bob.connect(server->local_port());
+
+    // Login both
+    alice.exchange(net::protocol::kLoginRequest, 100, "alice|token:a_secret|Alice");
+    bob.exchange(net::protocol::kLoginRequest, 200, "bob|token:b_secret|Bob");
+
+    // Alice creates room
+    alice.exchange(net::protocol::kRoomCreateRequest, 101, "cascade_room");
+
+    // Bob joins room
+    bob.exchange(net::protocol::kRoomJoinRequest, 201, "cascade_room");
+
+    // Both ready up
+    alice.exchange(net::protocol::kRoomReadyRequest, 102, "true");
+    bob.exchange(net::protocol::kRoomReadyRequest, 202, "true");
+
+    // Alice starts battle → room_start_battle → forward → battle_create cascade
+    auto start = alice.exchange(net::protocol::kBattleStartRequest, 103, "cascade_room");
+    EXPECT_EQ(start.message_id, net::protocol::kBattleStartResponse);
+
+    // Both clients should receive kBattleStatePush (broadcast from push_to_sessions)
+    auto push_a = alice.expect_message(net::protocol::kBattleStatePush);
+    EXPECT_EQ(push_a.message_id, net::protocol::kBattleStatePush);
+
+    auto push_b = bob.expect_message(net::protocol::kBattleStatePush);
+    EXPECT_EQ(push_b.message_id, net::protocol::kBattleStatePush);
+
+    alice.close();
+    bob.close();
+    server->stop();
+    login_backend.stop();
+    room_backend.stop();
+    battle_backend.stop();
+}
+
+TEST(V2BackendRoutingTest, BattleInputFrameAdvanceViaBridge) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess login_backend;
+    RoomBackendProcess room_backend;
+    BattleBackendProcess battle_backend;
+    ASSERT_TRUE(login_backend.start());
+    ASSERT_TRUE(room_backend.start());
+    ASSERT_TRUE(battle_backend.start());
+
+    std::unique_ptr<v2::gateway::DemoServer> server;
+    std::string startup_error;
+    try {
+        v2::gateway::DemoServerOptions options{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = login_backend.port,
+            },
+            .room_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = room_backend.port,
+            },
+            .battle_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = battle_backend.port,
+            },
+        };
+        server = std::make_unique<v2::gateway::DemoServer>(0, net::SessionOptions{}, std::move(options));
+        server->start();
+    } catch (const std::exception& ex) {
+        startup_error = ex.what();
+    }
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(server, startup_error);
+
+    TestClient alice;
+    TestClient bob;
+    alice.connect(server->local_port());
+    bob.connect(server->local_port());
+
+    // Login, create room, join, ready, start battle
+    alice.exchange(net::protocol::kLoginRequest, 100, "alice|token:a_secret|Alice");
+    bob.exchange(net::protocol::kLoginRequest, 200, "bob|token:b_secret|Bob");
+    alice.exchange(net::protocol::kRoomCreateRequest, 101, "input_room");
+    bob.exchange(net::protocol::kRoomJoinRequest, 201, "input_room");
+    alice.exchange(net::protocol::kRoomReadyRequest, 102, "true");
+    bob.exchange(net::protocol::kRoomReadyRequest, 202, "true");
+
+    auto start = alice.exchange(net::protocol::kBattleStartRequest, 103, "input_room");
+    EXPECT_EQ(start.message_id, net::protocol::kBattleStartResponse);
+
+    // Drain initial battle state pushes
+    alice.expect_message(net::protocol::kBattleStatePush);
+    bob.expect_message(net::protocol::kBattleStatePush);
+
+    // Alice sends battle input → backend processes → frame_advanced push broadcast
+    auto input_resp = alice.exchange(net::protocol::kBattleInputRequest, 104, "move:10,20");
+    EXPECT_EQ(input_resp.message_id, net::protocol::kBattleInputResponse);
+
+    // Both should receive frame_advanced push
+    auto frame_a = alice.expect_message(net::protocol::kBattleStatePush);
+    EXPECT_EQ(frame_a.message_id, net::protocol::kBattleStatePush);
+
+    auto frame_b = bob.expect_message(net::protocol::kBattleStatePush);
+    EXPECT_EQ(frame_b.message_id, net::protocol::kBattleStatePush);
+
+    alice.close();
+    bob.close();
+    server->stop();
+    login_backend.stop();
+    room_backend.stop();
+    battle_backend.stop();
+}
+
+TEST(V2BackendRoutingTest, BattleFinishViaBridge) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess login_backend;
+    RoomBackendProcess room_backend;
+    BattleBackendProcess battle_backend;
+    ASSERT_TRUE(login_backend.start());
+    ASSERT_TRUE(room_backend.start());
+    ASSERT_TRUE(battle_backend.start());
+
+    std::unique_ptr<v2::gateway::DemoServer> server;
+    std::string startup_error;
+    try {
+        v2::gateway::DemoServerOptions options{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = login_backend.port,
+            },
+            .room_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = room_backend.port,
+            },
+            .battle_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = battle_backend.port,
+            },
+        };
+        server = std::make_unique<v2::gateway::DemoServer>(0, net::SessionOptions{}, std::move(options));
+        server->start();
+    } catch (const std::exception& ex) {
+        startup_error = ex.what();
+    }
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(server, startup_error);
+
+    TestClient alice;
+    TestClient bob;
+    alice.connect(server->local_port());
+    bob.connect(server->local_port());
+
+    // Login, create room, join, ready, start battle
+    alice.exchange(net::protocol::kLoginRequest, 100, "alice|token:a_secret|Alice");
+    bob.exchange(net::protocol::kLoginRequest, 200, "bob|token:b_secret|Bob");
+    alice.exchange(net::protocol::kRoomCreateRequest, 101, "finish_room");
+    bob.exchange(net::protocol::kRoomJoinRequest, 201, "finish_room");
+    alice.exchange(net::protocol::kRoomReadyRequest, 102, "true");
+    bob.exchange(net::protocol::kRoomReadyRequest, 202, "true");
+
+    auto start = alice.exchange(net::protocol::kBattleStartRequest, 103, "finish_room");
+    EXPECT_EQ(start.message_id, net::protocol::kBattleStartResponse);
+
+    // Drain battle state pushes
+    alice.expect_message(net::protocol::kBattleStatePush);
+    bob.expect_message(net::protocol::kBattleStatePush);
+
+    // Alice sends finish request → backend processes → battle_finished push broadcast
+    auto finish_resp = alice.exchange(net::protocol::kBattleInputRequest, 104, "surrender");
+    EXPECT_EQ(finish_resp.message_id, net::protocol::kBattleInputResponse);
+
+    // Both should receive battle_finished push
+    auto done_a = alice.expect_message(net::protocol::kBattleStatePush);
+    EXPECT_EQ(done_a.message_id, net::protocol::kBattleStatePush);
+
+    auto done_b = bob.expect_message(net::protocol::kBattleStatePush);
+    EXPECT_EQ(done_b.message_id, net::protocol::kBattleStatePush);
+
+    alice.close();
+    bob.close();
+    server->stop();
+    login_backend.stop();
+    room_backend.stop();
+    battle_backend.stop();
 }

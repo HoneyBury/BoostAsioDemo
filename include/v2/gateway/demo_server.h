@@ -2,9 +2,12 @@
 
 #include "net/session.h"
 #include "v2/io/io_engine.h"
+#include "v2/gateway/backend_metrics.h"
 #include "v2/gateway/battle_data_store.h"
+#include "v2/gateway/gateway_service_bridge.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
+#include "v2/service/service_registry.h"
 
 #include <cstdint>
 #include <optional>
@@ -18,6 +21,9 @@ namespace v2::gateway {
 
 struct DemoServerOptions {
     std::optional<std::uint32_t> acceptor_core_id;
+    std::optional<GatewayServiceBridge::BackendConfig> login_backend_config;
+    std::optional<GatewayServiceBridge::BackendConfig> room_backend_config;
+    std::optional<GatewayServiceBridge::BackendConfig> battle_backend_config;
 };
 
 struct DemoServerIoCoreSnapshot {
@@ -35,6 +41,8 @@ struct DemoServerDiagnostics {
     std::uint64_t total_accepted_sessions = 0;
     std::uint64_t total_outbound_dispatches = 0;
     std::vector<DemoServerIoCoreSnapshot> io_cores;
+    std::unordered_map<std::string, BackendMetricsSnapshot> backend_metrics;
+    std::vector<v2::service::ServiceInstance> backend_instances;
 };
 
 class DemoServer final : public DownstreamSessionWriteSink {
@@ -72,6 +80,8 @@ private:
     SessionAdapter adapter_;
     Runtime runtime_;
     std::unique_ptr<JsonFileBattleDataStore> archive_store_;
+    std::shared_ptr<BackendMetrics> backend_metrics_;
+    std::shared_ptr<v2::service::ServiceRegistry> service_registry_;
     v2::actor::ActorRef gateway_actor_;
     std::unordered_map<SessionId, std::shared_ptr<v2::io::IoSession>> sessions_;
     mutable std::mutex sessions_mutex_;

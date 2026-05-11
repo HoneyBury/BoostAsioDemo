@@ -241,10 +241,10 @@
 按本规划口径，当前状态是：
 
 - `S0`：**已完成**（`2026-05-11`）— `ServiceId`、`BackendEnvelope`、`ServiceManifest`、`ServiceErrorCode` 已落地，24 个边界测试通过
-- `S1`：未开始
-- `S2`：未开始
-- `S3`：未开始
-- `S4`：未开始
+- `S1`：**已完成**（`2026-05-11`）— `BackendServer`/`BackendConnection` TCP 传输层、`GatewayServiceBridge` + `BackendSlot` lazy-connect 路由、`IoEngine` 多核 ingress、gateway 作为唯一客户端接入层已落地
+- `S2`：**已完成**（`2026-05-11`）— login 域完整拆出：`login_backend` 进程（`examples/v2_login_backend/`）、`kLogin` bridge 路由（`runtime.cpp`）、`BackendEnvelope` request/response 闭环、4 个 login 集成测试（success/invalid token/duplicate/backend timeout）
+- `S3`：**已完成**（`2026-05-11`）— room/battle ownership 拆分：`room_backend` 进程（5 handlers + `forward` 级联指令）、`battle_backend` 进程（3 handlers + `push_to_sessions` 广播）、`GatewayServiceBridge` 三 slot（login/room/battle）、Runtime 级联路由（`room_start_battle` → forward → `battle_create` → push_to_sessions → 房间广播）、6 个 S3 集成测试全部通过
+- `S4`：**已完成**（`2026-05-12`）— `ServiceRegistry` TTL/心跳/摘除、`BackendMetrics` 路由计数器（per ServiceId）、`DemoServer::diagnostics_json()` 新增 `backend_metrics` + `backend_instances` 字段、7 个单元测试 + 4 个集成测试全部通过
 
 S0 完成内容：
 
@@ -254,15 +254,25 @@ S0 完成内容：
 - `include/v2/service/error_codes.h` — `ServiceErrorCode` + `to_client_error()`/`to_string()`
 - `tests/v2/unit/service_boundary_test.cpp` — 24 个测试覆盖所有上述类型
 
+S1-S3 完成内容：
+
+- `include/v2/gateway/gateway_service_bridge.h` / `src/v2/gateway/gateway_service_bridge.cpp` — `GatewayServiceBridge` + `BackendSlot` lazy-connect TCP 路由，三 slot（login/room/battle）
+- `src/v2/gateway/backend_server.h` / `src/v2/gateway/backend_connection.cpp` — `BackendServer`/`BackendConnection` 传输层
+- `src/v2/gateway/runtime.cpp` — 全部 5 个 room/battle handler bridge 分支 + 级联 forward/push_to_sessions 处理
+- `examples/v2_login_backend/` — login backend 独立进程
+- `examples/v2_room_backend/` — room backend 独立进程（5 handlers + forward 级联指令）
+- `examples/v2_battle_backend/` — battle backend 独立进程（3 handlers + push_to_sessions 广播）
+- `tests/v2/integration/backend_routing_test.cpp` — 18 个集成测试（12 原始 + 6 S3）
+
 前置基础已具备：
 
-- ingress / diagnostics / actor 边界 / battle world 基础
+- ingress / diagnostics / actor 边界 / battle world 基础（6-system ECS pipeline + authoritative simulation）
 - 拆服相关抽象占位（`ServiceRouter`/`InternalBus`/`ServiceRegistry`/`BackendRouter`）
 - 多个 demo 入口和独立可执行样例
 
 因此，当前更准确的判断应是：
 
-> **S0 边界冻结已完成，服务拆分的第一版契约（envelope/ownership/manifest）已有代码和测试护栏。下一阶段为 S1 gateway-only ingress 最小版。**
+> **S0-S4 服务拆分全部完成，v2 第一版服务拆分（`v2-service-split-plan.md` 第 8 节定义）已满足全部 5 条完成定义：gateway 是唯一客户端接入层、login/room/battle 三个域均作为独立 backend 进程跑通、backend 使用独立 BackendEnvelope、有 22 个真实多进程集成测试、管理口可观察 backend 健康/路由/错误语义。**
 
 ## 8. 第一版完成定义
 

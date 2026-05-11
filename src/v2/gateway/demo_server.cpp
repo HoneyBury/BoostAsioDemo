@@ -36,6 +36,22 @@ DemoServer::DemoServer(std::uint16_t port,
     });
     gateway_actor_ = runtime_.create_gateway_actor();
     adapter_.bind_gateway(gateway_actor_);
+
+    backend_metrics_ = std::make_shared<BackendMetrics>();
+    service_registry_ = std::make_shared<v2::service::ServiceRegistry>();
+
+    if (options_.login_backend_config.has_value() ||
+        options_.room_backend_config.has_value() ||
+        options_.battle_backend_config.has_value()) {
+        auto bridge = std::make_unique<GatewayServiceBridge>(
+            options_.login_backend_config,
+            options_.room_backend_config,
+            options_.battle_backend_config,
+            backend_metrics_);
+        bridge->set_service_registry(service_registry_);
+        runtime_.set_service_bridge(std::move(bridge));
+    }
+
     archive_store_ = std::make_unique<JsonFileBattleDataStore>("v2_archive");
     runtime_.set_archive_sink(archive_store_.get());
 }
@@ -179,6 +195,18 @@ DemoServerDiagnostics DemoServer::diagnostics() const {
         result.total_accepted_sessions += snapshot.accepted_sessions;
         result.total_outbound_dispatches += snapshot.outbound_dispatches;
     }
+
+    if (backend_metrics_) {
+        auto all = backend_metrics_->all_snapshots();
+        for (const auto& [service, snap] : all) {
+            result.backend_metrics[service_id_to_key(service)] = snap;
+        }
+    }
+
+    if (service_registry_) {
+        result.backend_instances = service_registry_->all_instances();
+    }
+
     return result;
 }
 
@@ -204,6 +232,30 @@ std::string DemoServer::diagnostics_json() const {
         });
     }
     doc["io_cores"] = std::move(io_cores);
+
+    nlohmann::json backend_metrics = nlohmann::json::object();
+    for (const auto& [service_key, snap] : snapshot.backend_metrics) {
+        backend_metrics[service_key] = {
+            {"total_requests", snap.total_requests},
+            {"total_successes", snap.total_successes},
+            {"total_timeouts", snap.total_timeouts},
+            {"total_unavailable", snap.total_unavailable},
+            {"total_errors", snap.total_errors},
+        };
+    }
+    doc["backend_metrics"] = std::move(backend_metrics);
+
+    nlohmann::json backend_instances = nlohmann::json::array();
+    for (const auto& inst : snapshot.backend_instances) {
+        backend_instances.push_back({
+            {"service_id", service_id_to_key(inst.service_id)},
+            {"host", inst.host},
+            {"port", inst.port},
+            {"healthy", inst.healthy},
+        });
+    }
+    doc["backend_instances"] = std::move(backend_instances);
+
     return doc.dump();
 }
 

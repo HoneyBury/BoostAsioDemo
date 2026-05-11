@@ -1,0 +1,2 @@
+add_executable(v2_room_backend main.cpp)
+target_link_libraries(v2_room_backend PRIVATE project_v2)

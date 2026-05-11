@@ -21,6 +21,11 @@ struct BattleWorldParticipantState {
     std::int64_t score = 0;
     std::uint32_t last_submitted_frame = 0;
     std::uint32_t last_acked_frame = 0;
+    std::int32_t pos_x = 0;
+    std::int32_t pos_y = 0;
+    std::int32_t hp = 100;
+    std::int32_t max_hp = 100;
+    std::int32_t damage = 10;
 };
 
 struct BattleWorldSnapshot {

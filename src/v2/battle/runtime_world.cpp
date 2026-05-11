@@ -1,8 +1,10 @@
 #include "v2/battle/runtime_world.h"
 
+#include "v2/battle/game_systems.h"
 #include "v2/battle/runtime_components.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -35,20 +37,53 @@ void BattleClockSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& 
 
 void BattleInputSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
     (void)ctx;
-    (void)world;
-    // Input processing happens via battle_world_process_input(), not during tick.
+    auto* simple_world = dynamic_cast<v2::ecs::SimpleWorld*>(&world);
+    if (simple_world == nullptr) return;
+
+    // Apply pending input to game components during tick
+    simple_world->for_each<BattleParticipantComponent>(
+        [&](v2::ecs::EntityHandle, BattleParticipantComponent& participant) {
+            if (!participant.online || participant.pending_input_data.empty()) return;
+
+            const auto& input = participant.pending_input_data;
+
+            // Parse "attack:<target>" → store target for CombatSystem
+            if (input.starts_with("attack:")) {
+                participant.pending_target_user_id = std::string(input.substr(7));
+            }
+
+            // Parse "move:<x>,<y>" → store intent for MovementSystem
+            if (input.starts_with("move:")) {
+                auto comma = input.find(',', 5);
+                if (comma != std::string::npos) {
+                    auto x_str = std::string(input.substr(5, comma - 5));
+                    auto y_str = std::string(input.substr(comma + 1));
+                    participant.pending_move_x = static_cast<std::int32_t>(
+                        std::strtol(x_str.c_str(), nullptr, 10));
+                    participant.pending_move_y = static_cast<std::int32_t>(
+                        std::strtol(y_str.c_str(), nullptr, 10));
+                    participant.has_pending_move = true;
+                }
+            }
+
+            participant.pending_input_data.clear();
+        });
 }
 
 void BattleLifecycleSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
     (void)ctx;
     (void)world;
-    // Lifecycle checks happen via battle_world_advance_frame().
+    // Lifecycle transitions are handled by battle_world_advance_frame() and
+    // finish_battle(). This system is reserved for future side-effects
+    // (e.g. cleanup, timeout escalations).
 }
 
 void BattleReplaySystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
     (void)ctx;
     (void)world;
-    // Replay recording happens via battle_world_process_input() / battle_world_advance_frame().
+    // Replay recording is handled by battle_world_append_replay_input()
+    // called from battle_world_process_input(). This system is reserved
+    // for future per-frame state snapshot captures.
 }
 
 std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id,
@@ -58,6 +93,8 @@ std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id
     auto world = std::make_unique<v2::ecs::SimpleWorld>();
     world->add_system(std::make_unique<BattleClockSystem>());
     world->add_system(std::make_unique<BattleInputSystem>());
+    world->add_system(std::make_unique<MovementSystem>());
+    world->add_system(std::make_unique<CombatSystem>());
     world->add_system(std::make_unique<BattleLifecycleSystem>());
     world->add_system(std::make_unique<BattleReplaySystem>());
 
@@ -77,6 +114,9 @@ std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id
         const auto entity = world->create_entity();
         auto& participant = world->add_component<BattleParticipantComponent>(entity);
         participant.user_id = user_id;
+        world->add_component<PositionComponent>(entity);
+        world->add_component<HealthComponent>(entity);
+        world->add_component<AttackStateComponent>(entity);
     }
 
     return world;
@@ -429,13 +469,26 @@ BattleWorldSnapshot battle_world_snapshot(v2::ecs::World& world) {
     std::vector<std::pair<v2::ecs::EntityId, BattleWorldParticipantState>> participants_with_ids;
     simple_world->for_each<BattleParticipantComponent>(
         [&](v2::ecs::EntityHandle handle, BattleParticipantComponent& participant) {
-            participants_with_ids.push_back({handle.id, BattleWorldParticipantState{
+            BattleWorldParticipantState state{
                 .user_id = participant.user_id,
                 .online = participant.online,
                 .score = participant.score,
                 .last_submitted_frame = participant.last_submitted_frame,
                 .last_acked_frame = participant.last_acked_frame,
-            }});
+            };
+            // Enrich with position and health from the same entity
+            if (auto* pos = simple_world->get_component<PositionComponent>(handle)) {
+                state.pos_x = pos->x;
+                state.pos_y = pos->y;
+            }
+            if (auto* health = simple_world->get_component<HealthComponent>(handle)) {
+                state.hp = health->hp;
+                state.max_hp = health->max_hp;
+            }
+            if (auto* attack = simple_world->get_component<AttackStateComponent>(handle)) {
+                state.damage = attack->damage;
+            }
+            participants_with_ids.push_back({handle.id, std::move(state)});
         });
     std::sort(participants_with_ids.begin(),
               participants_with_ids.end(),
@@ -489,6 +542,17 @@ BattleWorldInputResult battle_world_process_input(
     }
 
     battle_world_apply_input_score(world, user_id, score);
+
+    // Store pending input on the participant for system processing during tick
+    auto* simple_world = as_simple_world(world);
+    if (simple_world != nullptr) {
+        simple_world->for_each<BattleParticipantComponent>(
+            [&](v2::ecs::EntityHandle, BattleParticipantComponent& participant) {
+                if (participant.user_id == user_id) {
+                    participant.pending_input_data = input_data;
+                }
+            });
+    }
 
     const auto next_frame_number = battle_world_frame_number(world) + 1;
     result.input_seq = battle_world_append_replay_input(

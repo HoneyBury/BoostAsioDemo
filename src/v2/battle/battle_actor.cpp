@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "v2/battle/battle_snapshot.h"
+
 namespace v2::battle {
 
 BattleRuntimeState BattleActor::runtime_state() const {
@@ -62,6 +64,20 @@ void BattleActor::finish_battle(BattleFinishReason reason, std::string triggerin
         .reason = reason,
         .triggering_user_id = std::move(triggering_user_id),
     });
+}
+
+std::string BattleActor::take_snapshot() const {
+    if (world_ == nullptr) {
+        return {};
+    }
+    return battle_world_snapshot_to_json(*world_);
+}
+
+bool BattleActor::restore_from_snapshot(const std::string& snapshot_data) {
+    if (world_ == nullptr) {
+        return false;
+    }
+    return battle_world_restore_from_json(*world_, snapshot_data);
 }
 
 void BattleActor::on_message(v2::actor::Message&& message) {

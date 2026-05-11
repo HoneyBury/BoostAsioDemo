@@ -20,6 +20,10 @@ public:
     }
 };
 
+struct HealthComponent final : v2::ecs::Component {
+    int hp = 100;
+};
+
 }  // namespace
 
 TEST(V2EcsWorldTest, CreatesEntitiesAndManagesComponents) {
@@ -59,4 +63,72 @@ TEST(V2EcsWorldTest, TicksRegisteredSystems) {
     auto* stored = world.get_component<PositionComponent>(entity);
     ASSERT_NE(stored, nullptr);
     EXPECT_EQ(stored->x, 4);
+}
+
+TEST(V2EcsWorldTest, DestroyEntityRemovesComponents) {
+    v2::ecs::SimpleWorld world;
+    const auto entity = world.create_entity();
+    world.add_component<PositionComponent>(entity);
+    world.destroy_entity(entity);
+    EXPECT_EQ(world.get_component<PositionComponent>(entity), nullptr);
+}
+
+TEST(V2EcsWorldTest, EntityExistsReturnsFalseAfterDestroy) {
+    v2::ecs::SimpleWorld world;
+    const auto entity = world.create_entity();
+    EXPECT_TRUE(world.exists(entity));
+    world.destroy_entity(entity);
+    EXPECT_FALSE(world.exists(entity));
+}
+
+TEST(V2EcsWorldTest, MultipleEntitiesHaveIndependentComponents) {
+    v2::ecs::SimpleWorld world;
+    const auto e1 = world.create_entity();
+    const auto e2 = world.create_entity();
+
+    world.add_component<PositionComponent>(e1).x = 10;
+    world.add_component<PositionComponent>(e2).x = 20;
+    world.add_component<HealthComponent>(e2).hp = 50;
+
+    EXPECT_EQ(world.get_component<PositionComponent>(e1)->x, 10);
+    EXPECT_EQ(world.get_component<PositionComponent>(e2)->x, 20);
+    EXPECT_EQ(world.get_component<HealthComponent>(e2)->hp, 50);
+    EXPECT_EQ(world.get_component<HealthComponent>(e1), nullptr);
+}
+
+TEST(V2EcsWorldTest, RemoveComponentReturnsNullOnGet) {
+    v2::ecs::SimpleWorld world;
+    const auto entity = world.create_entity();
+    world.add_component<PositionComponent>(entity);
+    EXPECT_TRUE(world.remove_component<PositionComponent>(entity));
+    EXPECT_EQ(world.get_component<PositionComponent>(entity), nullptr);
+}
+
+TEST(V2EcsWorldTest, AddComponentOverwritesExisting) {
+    v2::ecs::SimpleWorld world;
+    const auto entity = world.create_entity();
+    world.add_component<PositionComponent>(entity).x = 5;
+    world.add_component<PositionComponent>(entity).x = 15;
+    const auto* comp = world.get_component<PositionComponent>(entity);
+    ASSERT_NE(comp, nullptr);
+    EXPECT_EQ(comp->x, 15);
+}
+
+TEST(V2EcsWorldTest, WorldWithNoSystemsRunsWithoutCrash) {
+    v2::ecs::SimpleWorld world;
+    const auto entity = world.create_entity();
+    world.add_component<PositionComponent>(entity);
+    EXPECT_NO_THROW(world.tick(v2::ecs::FrameContext{
+        .battle_id = "test",
+        .room_id = "test",
+        .frame_number = 1,
+        .trigger = "test",
+    }));
+}
+
+TEST(V2EcsWorldTest, DestroyInvalidEntityIsNoOp) {
+    v2::ecs::SimpleWorld world;
+    const v2::ecs::EntityHandle invalid{};
+    EXPECT_NO_THROW(world.destroy_entity(invalid));
+    EXPECT_FALSE(world.exists(invalid));
 }

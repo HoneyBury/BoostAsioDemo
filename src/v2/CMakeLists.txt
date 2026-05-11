@@ -5,8 +5,14 @@ add_library(project_v2 STATIC
     battle/battle_snapshot.cpp
     battle/runtime_world.cpp
     battle/game_systems.cpp
+    aoi/aoi_system.cpp
+    aoi/spatial_grid.cpp
     common/module_marker.cpp
+    diagnostics/diagnostics_manager.cpp
+    diagnostics/health_check.cpp
     data/replay_format.cpp
+    data/write_behind_store.cpp
+    data/cached_data_store.cpp
     ecs/world.cpp
     gateway/battle_data_store.cpp
     service/backend_envelope.cpp
@@ -27,8 +33,11 @@ add_library(project_v2 STATIC
     gateway/runtime.cpp
     gateway/session_adapter.cpp
     io/io_engine.cpp
+    memory/arena.cpp
     player/player_actor.cpp
     room/room_actor.cpp
+    room/room_backend_service.cpp
+    battle/battle_backend_service.cpp
     runtime/actor_system.cpp
 )
 target_include_directories(project_v2

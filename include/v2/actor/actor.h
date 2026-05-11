@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <string>
 #include <vector>
 #include <utility>
 
@@ -20,7 +21,20 @@ class ScheduleHandle;
 
 namespace v2::actor {
 
-class Actor {
+class Snapshotable {
+public:
+    virtual ~Snapshotable() = default;
+
+    // Returns JSON string representing current state.
+    // Returns empty string if snapshot is not supported or fails.
+    [[nodiscard]] virtual std::string take_snapshot() const = 0;
+
+    // Restore state from a JSON snapshot string.
+    // Returns true on success.
+    virtual bool restore_from_snapshot(const std::string& snapshot_data) = 0;
+};
+
+class Actor : public Snapshotable {
 public:
     virtual ~Actor() = default;
 
@@ -31,6 +45,10 @@ public:
     ActorId id() const noexcept { return self_.actor_id(); }
     ActorRef self() const noexcept { return self_; }
     ActorRef parent() const noexcept { return parent_; }
+
+    // Default snapshot implementations (no-op for actors that don't need it)
+    [[nodiscard]] std::string take_snapshot() const override { return {}; }
+    bool restore_from_snapshot(const std::string&) override { return false; }
 
 protected:
     void tell(const ActorRef& target, Message message) const;

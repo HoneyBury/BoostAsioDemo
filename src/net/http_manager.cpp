@@ -43,6 +43,10 @@ void HttpManager::set_metrics_provider(MetricsProvider provider) {
     metrics_provider_ = std::move(provider);
 }
 
+void HttpManager::set_health_provider(HealthProvider provider) {
+    health_provider_ = std::move(provider);
+}
+
 void HttpManager::start() {
     do_accept();
     LOG_INFO("HTTP management endpoint listening on port {}",
@@ -81,8 +85,11 @@ void HttpManager::do_accept() {
                             res = build_response(http::status::method_not_allowed,
                                                   "text/plain", "Method Not Allowed");
                         } else if (req->target() == "/health") {
+                            auto body = health_provider_
+                                            ? health_provider_()
+                                            : R"({"status":"ok"})";
                             res = build_response(http::status::ok,
-                                                  "application/json", R"({"status":"ok"})");
+                                                  "application/json", std::move(body));
                         } else if (req->target() == "/metrics") {
                             auto body = metrics_provider_ ? metrics_provider_().prometheus_text : "";
                             res = build_response(http::status::ok, "text/plain", std::move(body));

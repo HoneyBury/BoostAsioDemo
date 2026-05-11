@@ -1,6 +1,8 @@
 add_executable(project_v2_unit_tests
     unit/actor_runtime_test.cpp
+    unit/actor_snapshot_test.cpp
     unit/battle_archive_test.cpp
+    unit/lru_cache_test.cpp
     unit/battle_actor_test.cpp
     unit/battle_runtime_world_test.cpp
     unit/battle_protocol_codec_test.cpp
@@ -11,6 +13,7 @@ add_executable(project_v2_unit_tests
     unit/battle_determinism_test.cpp
     unit/battle_authoritative_test.cpp
     unit/ecs_world_test.cpp
+    unit/feature_flags_test.cpp
     unit/gateway_command_parser_test.cpp
     unit/gateway_bridge_test.cpp
     unit/gateway_response_parser_test.cpp
@@ -20,6 +23,15 @@ add_executable(project_v2_unit_tests
     unit/service_boundary_test.cpp
     unit/shadow_bridge_policy_test.cpp
     unit/service_registry_test.cpp
+    unit/write_behind_store_test.cpp
+    unit/cached_data_store_test.cpp
+    unit/aoi_spatial_grid_test.cpp
+    unit/arena_test.cpp
+    unit/cache_line_test.cpp
+    unit/trace_context_test.cpp
+    unit/diagnostics_manager_test.cpp
+    unit/health_check_test.cpp
+    unit/object_pool_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE
@@ -37,6 +49,7 @@ add_executable(project_v2_integration_tests
     integration/backend_routing_test.cpp
     integration/demo_server_smoke_test.cpp
     integration/backend_health_test.cpp
+    integration/data_layer_test.cpp
 )
 target_link_libraries(project_v2_integration_tests
     PRIVATE

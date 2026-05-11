@@ -2,18 +2,15 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
-#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
 #include <thread>
-#include <vector>
 
 #include <fmt/core.h>
 
 #include "app/crash_handler.h"
 #include "app/logging.h"
-#include "net/http_manager.h"
 #include "net/protocol.h"
 #include "v2/gateway/demo_server.h"
 #include "v2/io/io_engine.h"
@@ -69,14 +66,16 @@ std::optional<std::uint32_t> parse_acceptor_core(int argc, char* argv[]) {
     return std::nullopt;
 }
 
-std::uint16_t parse_http_port(int argc, char* argv[]) {
+std::optional<std::uint16_t> parse_http_port(int argc, char* argv[]) {
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::string(argv[i]) == "--http-port") {
             const auto parsed = std::atoi(argv[i + 1]);
-            return parsed >= 0 ? static_cast<std::uint16_t>(parsed) : 0U;
+            if (parsed > 0) {
+                return static_cast<std::uint16_t>(parsed);
+            }
         }
     }
-    return 0;
+    return std::nullopt;
 }
 
 bool has_flag(int argc, char* argv[], const char* flag) {
@@ -88,24 +87,35 @@ bool has_flag(int argc, char* argv[], const char* flag) {
     return false;
 }
 
-std::string render_demo_server_diagnostics_text(const v2::gateway::DemoServerDiagnostics& diagnostics) {
-    std::string text;
-    text += "v2_demo_diagnostics\n";
-    text += fmt::format("local_port={}\n", diagnostics.local_port);
-    text += fmt::format("io_core_count={}\n", diagnostics.io_core_count);
-    text += fmt::format("acceptor_core_id={}\n", diagnostics.acceptor_core_id.value_or(0));
-    text += fmt::format("total_active_sessions={}\n", diagnostics.total_active_sessions);
-    text += fmt::format("total_accepted_sessions={}\n", diagnostics.total_accepted_sessions);
-    text += fmt::format("total_outbound_dispatches={}\n", diagnostics.total_outbound_dispatches);
-    for (const auto& core : diagnostics.io_cores) {
-        text += fmt::format(
-            "io_core id={} active_sessions={} accepted_sessions={} outbound_dispatches={}\n",
-            core.core_id,
-            core.active_sessions,
-            core.accepted_sessions,
-            core.outbound_dispatches);
+std::optional<v2::gateway::GatewayServiceBridge::BackendConfig>
+parse_backend_config(int argc, char* argv[],
+                     const char* host_flag, const char* port_flag) {
+    std::string host = "127.0.0.1";
+    std::uint16_t port = 0;
+    bool has_host = false;
+    bool has_port = false;
+
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::string(argv[i]) == host_flag) {
+            host = argv[i + 1];
+            has_host = true;
+        }
+        if (std::string(argv[i]) == port_flag) {
+            const auto parsed = std::atoi(argv[i + 1]);
+            if (parsed > 0) {
+                port = static_cast<std::uint16_t>(parsed);
+                has_port = true;
+            }
+        }
     }
-    return text;
+
+    if (has_host || has_port) {
+        return v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = host,
+            .port = port,
+        };
+    }
+    return std::nullopt;
 }
 
 }  // namespace
@@ -220,35 +230,24 @@ int main(int argc, char* argv[]) {
         const auto io_cores = parse_io_cores(argc, argv);
         const auto acceptor_core = parse_acceptor_core(argc, argv);
         const auto http_port = parse_http_port(argc, argv);
+        const auto login_backend_config = parse_backend_config(
+            argc, argv, "--login-host", "--login-port");
+        const auto room_backend_config = parse_backend_config(
+            argc, argv, "--room-host", "--room-port");
+        const auto battle_backend_config = parse_backend_config(
+            argc, argv, "--battle-host", "--battle-port");
         auto io_engine = std::make_unique<v2::io::AsioIoEngine>(io_cores);
         v2::gateway::DemoServer server(9201,
                                        {},
                                        v2::gateway::DemoServerOptions{
                                            .acceptor_core_id = acceptor_core,
+                                           .http_management_port = http_port,
+                                           .login_backend_config = login_backend_config,
+                                           .room_backend_config = room_backend_config,
+                                           .battle_backend_config = battle_backend_config,
                                        },
                                        std::move(io_engine));
-        boost::asio::io_context management_io;
-        std::unique_ptr<net::HttpManager> http_manager;
-        std::thread management_thread;
-        if (http_port != 0) {
-            http_manager = std::make_unique<net::HttpManager>(management_io.get_executor(), http_port);
-            http_manager->set_metrics_provider([&server]() {
-                const auto diagnostics = server.diagnostics();
-                const auto diagnostics_text = render_demo_server_diagnostics_text(diagnostics);
-                const auto diagnostics_json = server.diagnostics_json();
-                return net::HttpMetricsSnapshot{
-                    .prometheus_text = diagnostics_text,
-                    .json_text = diagnostics_json,
-                    .diagnostics_text = diagnostics_text,
-                    .diagnostics_json_text = diagnostics_json,
-                };
-            });
-        }
         server.start();
-        if (http_manager) {
-            http_manager->start();
-            management_thread = std::thread([&management_io]() { management_io.run(); });
-        }
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
         const auto print_diagnostics_json = has_flag(argc, argv, "--diagnostics-json");
@@ -263,8 +262,8 @@ int main(int argc, char* argv[]) {
                        snapshot.accepted_sessions,
                        snapshot.outbound_dispatches);
         }
-        if (http_manager) {
-            fmt::print("v2 gateway diagnostics HTTP listening on port {}\n", http_manager->local_port());
+        if (http_port.has_value()) {
+            fmt::print("v2 gateway diagnostics HTTP listening on port {}\n", *http_port);
             fmt::print("  GET /health\n");
             fmt::print("  GET /metrics\n");
             fmt::print("  GET /metrics/json\n");
@@ -277,14 +276,7 @@ int main(int argc, char* argv[]) {
         while (g_keep_running.load(std::memory_order_relaxed)) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-        if (http_manager) {
-            http_manager->stop();
-        }
         server.stop();
-        management_io.stop();
-        if (management_thread.joinable()) {
-            management_thread.join();
-        }
         return 0;
     } catch (const std::exception& ex) {
         fmt::print(stderr, "v2_gateway_demo failed: {}\n", ex.what());

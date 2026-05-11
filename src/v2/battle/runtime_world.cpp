@@ -1,5 +1,6 @@
 #include "v2/battle/runtime_world.h"
 
+#include "v2/aoi/aoi_system.h"
 #include "v2/battle/game_systems.h"
 #include "v2/battle/runtime_components.h"
 
@@ -95,6 +96,7 @@ std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id
     world->add_system(std::make_unique<BattleInputSystem>());
     world->add_system(std::make_unique<MovementSystem>());
     world->add_system(std::make_unique<CombatSystem>());
+    world->add_system(std::make_unique<v2::aoi::AoiSystem>());
     world->add_system(std::make_unique<BattleLifecycleSystem>());
     world->add_system(std::make_unique<BattleReplaySystem>());
 

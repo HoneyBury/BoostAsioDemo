@@ -24,6 +24,9 @@ public:
 
     void on_message(v2::actor::Message&& message) override;
 
+    [[nodiscard]] std::string take_snapshot() const override;
+    bool restore_from_snapshot(const std::string& snapshot_data) override;
+
     [[nodiscard]] BattleRuntimeState state() const;
 
 private:

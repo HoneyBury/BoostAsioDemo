@@ -223,3 +223,132 @@ TEST(V2RoomActorTest, BattleStartedBlocksRestartUntilBattleEnded) {
     ASSERT_NE(rejected, nullptr);
     EXPECT_EQ(rejected->reason, "battle_already_started");
 }
+
+TEST(V2RoomActorTest, DuplicateJoinIsNoOp) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_dup",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::JoinRoomMsg{
+        .user_id = "member",
+        .player_actor_id = 1002,
+    }));
+    actor_ref.tell(make_room_message(v2::room::JoinRoomMsg{
+        .user_id = "member",
+        .player_actor_id = 1002,
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 3U);
+    ASSERT_EQ(actor_ptr->state().members.size(), 2U);
+    EXPECT_EQ(actor_ptr->state().members[0].user_id, "owner");
+    EXPECT_EQ(actor_ptr->state().members[1].user_id, "member");
+}
+
+TEST(V2RoomActorTest, SetReadyForUnknownUserIsIgnored) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_ready",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::SetReadyMsg{
+        .user_id = "ghost",
+        .ready = true,
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 2U);
+    ASSERT_EQ(actor_ptr->state().members.size(), 1U);
+    EXPECT_FALSE(actor_ptr->state().members[0].ready);
+}
+
+TEST(V2RoomActorTest, BattleSettlementWithWrongBattleIdIsIgnored) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_settle",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::JoinRoomMsg{
+        .user_id = "member",
+        .player_actor_id = 1002,
+    }));
+    actor_ref.tell(make_room_message(v2::room::SetReadyMsg{
+        .user_id = "owner",
+        .ready = true,
+    }));
+    actor_ref.tell(make_room_message(v2::room::SetReadyMsg{
+        .user_id = "member",
+        .ready = true,
+    }));
+    actor_ref.tell(make_room_message(v2::room::StartBattleMsg{
+        .requester_user_id = "owner",
+    }));
+    actor_ref.tell(make_room_message(v2::room::BattleStartedMsg{
+        .battle_id = "battle_settle",
+    }));
+    // Settlement with wrong battle_id should be ignored
+    actor_ref.tell(make_room_message(v2::room::BattleSettlementMsg{
+        .battle_id = "wrong_battle",
+        .reason = "surrender",
+    }));
+    // Settlement with correct battle_id should be applied
+    actor_ref.tell(make_room_message(v2::room::BattleSettlementMsg{
+        .battle_id = "battle_settle",
+        .reason = "victory",
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 8U);
+    ASSERT_EQ(sink.events.size(), 2U);
+    const auto* requested = std::get_if<v2::room::BattleStartRequestedMsg>(&sink.events[0]);
+    ASSERT_NE(requested, nullptr);
+    EXPECT_EQ(requested->room_id, "room_settle");
+    const auto* applied = std::get_if<v2::room::BattleSettlementAppliedMsg>(&sink.events[1]);
+    ASSERT_NE(applied, nullptr);
+    EXPECT_EQ(applied->battle_id, "battle_settle");
+    EXPECT_EQ(applied->reason, "victory");
+    ASSERT_TRUE(actor_ptr->state().pending_battle_settlement_reason.has_value());
+    EXPECT_EQ(*actor_ptr->state().pending_battle_settlement_reason, "victory");
+}
+
+TEST(V2RoomActorTest, MemberReadyStateTogglesOnOff) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_toggle",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::SetReadyMsg{
+        .user_id = "owner",
+        .ready = true,
+    }));
+    actor_ref.tell(make_room_message(v2::room::SetReadyMsg{
+        .user_id = "owner",
+        .ready = false,
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 3U);
+    ASSERT_EQ(actor_ptr->state().members.size(), 1U);
+    EXPECT_FALSE(actor_ptr->state().members[0].ready);
+}

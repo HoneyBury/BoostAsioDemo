@@ -2,7 +2,7 @@
 
 #include "net/session.h"
 #include "v2/io/io_engine.h"
-#include "v2/gateway/battle_archive_store.h"
+#include "v2/gateway/battle_data_store.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 
@@ -71,7 +71,7 @@ private:
     v2::runtime::ActorSystem actor_system_;
     SessionAdapter adapter_;
     Runtime runtime_;
-    std::unique_ptr<JsonFileBattleArchiveStore> archive_store_;
+    std::unique_ptr<JsonFileBattleDataStore> archive_store_;
     v2::actor::ActorRef gateway_actor_;
     std::unordered_map<SessionId, std::shared_ptr<v2::io::IoSession>> sessions_;
     mutable std::mutex sessions_mutex_;

@@ -17,7 +17,7 @@ v2::ecs::SimpleWorld* as_simple_world(v2::ecs::World& world) {
 
 }  // namespace
 
-void AdvanceFrameSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
+void BattleClockSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
     auto* simple_world = dynamic_cast<v2::ecs::SimpleWorld*>(&world);
     if (simple_world == nullptr) {
         return;
@@ -27,6 +27,28 @@ void AdvanceFrameSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext&
             clock.frame_number = ctx.frame_number;
             clock.last_trigger = ctx.trigger;
         });
+    simple_world->for_each<BattleMetadataComponent>(
+        [&](v2::ecs::EntityHandle, BattleMetadataComponent& metadata) {
+            metadata.current_frame_number = ctx.frame_number;
+        });
+}
+
+void BattleInputSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
+    (void)ctx;
+    (void)world;
+    // Input processing happens via battle_world_process_input(), not during tick.
+}
+
+void BattleLifecycleSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
+    (void)ctx;
+    (void)world;
+    // Lifecycle checks happen via battle_world_advance_frame().
+}
+
+void BattleReplaySystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
+    (void)ctx;
+    (void)world;
+    // Replay recording happens via battle_world_process_input() / battle_world_advance_frame().
 }
 
 std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id,
@@ -34,7 +56,10 @@ std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id
                                                     const std::vector<std::string>& player_ids,
                                                     std::uint32_t max_frames) {
     auto world = std::make_unique<v2::ecs::SimpleWorld>();
-    world->add_system(std::make_unique<AdvanceFrameSystem>());
+    world->add_system(std::make_unique<BattleClockSystem>());
+    world->add_system(std::make_unique<BattleInputSystem>());
+    world->add_system(std::make_unique<BattleLifecycleSystem>());
+    world->add_system(std::make_unique<BattleReplaySystem>());
 
     const auto clock_entity = world->create_entity();
     world->add_component<BattleClockComponent>(clock_entity);
@@ -249,10 +274,6 @@ std::uint32_t battle_world_tick(v2::ecs::World& world,
     }
     world.tick(ctx);
     std::uint32_t frame_number = 0;
-    simple_world->for_each<BattleMetadataComponent>(
-        [&](v2::ecs::EntityHandle, BattleMetadataComponent& metadata) {
-            metadata.current_frame_number = ctx.frame_number;
-        });
     simple_world->for_each<BattleClockComponent>(
         [&](v2::ecs::EntityHandle, BattleClockComponent& clock) {
             frame_number = clock.frame_number;
@@ -439,6 +460,82 @@ BattleRuntimeState battle_world_runtime_state(v2::ecs::World& world) {
         .frame_number = battle_world_frame_number(world),
         .replay_inputs = battle_world_collect_replay_inputs(world),
     };
+}
+
+// ─── Authoritative Entry Points ───────────────────────────────
+
+BattleWorldInputResult battle_world_process_input(
+    v2::ecs::World& world,
+    const std::string& user_id,
+    const std::string& input_data,
+    std::int64_t score,
+    std::uint32_t submitted_frame) {
+    BattleWorldInputResult result;
+
+    if (battle_world_lifecycle(world) != BattleLifecycleState::kRunning) {
+        result.reject_reason = "battle_not_running";
+        return result;
+    }
+
+    if (!battle_world_should_accept_input(world, user_id, submitted_frame)) {
+        result.reject_reason = "duplicate_frame";
+        return result;
+    }
+
+    result.accepted = true;
+
+    if (submitted_frame > 0) {
+        battle_world_record_submitted_frame(world, user_id, submitted_frame);
+    }
+
+    battle_world_apply_input_score(world, user_id, score);
+
+    const auto next_frame_number = battle_world_frame_number(world) + 1;
+    result.input_seq = battle_world_append_replay_input(
+        world, next_frame_number, user_id, input_data, score);
+
+    return result;
+}
+
+BattleWorldFrameResult battle_world_advance_frame(
+    v2::ecs::World& world,
+    std::uint32_t next_frame,
+    const std::string& trigger) {
+    BattleWorldFrameResult result;
+
+    const auto frame_number = battle_world_tick(world, v2::ecs::FrameContext{
+        .battle_id = battle_world_battle_id(world),
+        .room_id = battle_world_room_id(world),
+        .frame_number = next_frame,
+        .trigger = trigger,
+    });
+
+    result.frame_number = frame_number;
+    result.trigger = trigger;
+
+    battle_world_apply_trigger_to_frame(world, frame_number, trigger);
+
+    if (battle_world_should_finish_for_frame_limit(world, frame_number)) {
+        result.should_finish = true;
+        result.finish_reason = BattleFinishReason::kFrameLimitReached;
+    }
+
+    return result;
+}
+
+BattleWorldDisconnectResult battle_world_handle_disconnect(
+    v2::ecs::World& world,
+    const std::string& user_id) {
+    BattleWorldDisconnectResult result;
+
+    if (battle_world_lifecycle(world) != BattleLifecycleState::kRunning) {
+        return result;
+    }
+
+    result.participant_existed = battle_world_mark_offline(world, user_id);
+    result.battle_should_finish = result.participant_existed;
+
+    return result;
 }
 
 }  // namespace v2::battle

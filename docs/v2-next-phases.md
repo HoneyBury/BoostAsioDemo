@@ -5,8 +5,10 @@
 截至 `2026-05-11`，`v2` 已经不再只是 `M1` bootstrap 原型，而是进入了：
 
 - `M1` 收口完成态
-- `M2` 多核 I/O 基础设施首轮落地
-- `M6` battle runtime 向 ECS world 的最小迁移
+- `M2` 多核 I/O 基础设施 advanced（accept policy + SPSC mailbox + session counting 已落地）
+- `M4` S0 边界冻结已完成（`BackendEnvelope`、`ServiceManifest`、`ServiceErrorCode`）
+- `M5` 数据层 v2 foundation done（版本化落盘格式 + `BattleDataStore` + world snapshot）
+- `M6` battle runtime advanced（4-system 拆分 + world helper 已收口）
 
 当前已稳定具备：
 
@@ -15,30 +17,32 @@
 - session-core aware outbound、core diagnostics、pinned listen、multi-listener ingress
 - `BattleActor` 主要承担编排，runtime state 已可从 world 构造
 - `v1` 管理口与 `v2_gateway_demo` 已能输出结构化 diagnostics
+- 版本化 replay/result/snapshot 落盘格式 + `JsonFileBattleDataStore`
+- `ServiceId`、`BackendEnvelope`、`ServiceManifest`、`ServiceErrorCode` 边界类型体系
 
 但这仍然 **不代表** 项目已经完成：
 
-- `SO_REUSEPORT`
-- 跨核 mailbox / actor 亲核调度
-- battle authoritative simulation
-- 数据层 v2 / 分布式 / 内存架构重构 / 运维控制面正式化
+- `SO_REUSEPORT` / actor 亲核调度
+- `M4` S1 gateway-only ingress / 多进程后端
+- battle authoritative simulation / AOI
+- `M3` 内存架构重构 / `M7` 运维控制面正式化
 
 ## 2. 下一阶段顺序
 
-后续建议顺序如下：
+后续建议顺序如下（基于当前 P0-P3 已完成）：
 
-1. 继续收束 `M2` 的 ingress / accept policy / 观测一致性
-2. 继续压缩 `BattleActor`，把 battle runtime 主事实源下沉到 `world/system`
-3. 进入 `M5` 数据层 v2，先做 replay / result / snapshot 的落盘边界
-4. 再评估 `M4` 分布式原语
-5. 之后再进入 `M3` 内存架构重构
+1. **S1 gateway-only ingress 最小版** — `M4` 服务拆分第一步，让 gateway 成为唯一客户端接入层
+2. 继续收束 `M2` 的 `SO_REUSEPORT`、actor 亲核调度
+3. 继续压缩 `BattleActor`，把 battle runtime 主事实源下沉到 `world/system`
+4. 继续推进 `M5` 数据层 v2，进入缓存层 / WriteBehind
+5. 再进入 `M3` 内存架构重构
 6. `M7` 运维成熟度放在入口和 battle 主链都稳定之后
 
 说明：
 
-- `M2` 还没做完，但“可运行最小版”已经落地，后续应聚焦真正的 listener / accept policy 和更深多核能力，而不是重复做接缝
-- `M6` 已进入 world 化阶段，但 battle 仍未形成完整 authoritative simulation，因此仍高于 `M4/M5/M7`
-- `M5` 的优先级已高于 `M3`，因为 replay/result 已经有 runtime 事实源，开始具备落盘边界
+- `M4 S0` 已完成（边界冻结），`S1`（gateway-only ingress）是服务拆分的自然下一阶段
+- `M2` advanced 但仍缺少 `SO_REUSEPORT` 和亲核调度，应继续收束
+- `M5` foundation done，但缓存层 / WriteBehind 仍未开始
 - `M3` 很重要，但不应在 battle 主链和 ingress 形态尚未最终定型前提前大改分配模型
 
 ## 3. 各模块进入门槛
@@ -59,18 +63,20 @@
 - `GatewayServer` / `DemoServer` 的 `IoEngine` 接入
 - session-core aware outbound
 - core diagnostics 与 management snapshot
+- accept policy (RoundRobin/LeastLoaded/Fixed)
+- SPSC lock-free ring buffer 跨核 mailbox
+- session counting
 
 当前仍未做：
 
 - `SO_REUSEPORT`
 - actor 亲核调度
-- 跨核 mailbox
 
 下一步应聚焦：
 
-- 多 acceptor / accept policy 真正组装
+- `SO_REUSEPORT` 试验
+- actor 亲核调度
 - `shadow bridge` / `v2 demo` 的 core 观测继续统一
-- 是否值得进入 `SO_REUSEPORT` 试验
 
 ### 3.2 `M6` ECS world / battle runtime
 
@@ -100,11 +106,18 @@
 - room / battle lifecycle 已固定到可落盘边界
 - replay / result / snapshot 的事实源已经能从 runtime state 明确导出
 
-当前建议先做：
+当前已完成（P2）：
 
-- replay 持久化 schema
-- battle result archive
-- world snapshot 的最小存储模型
+- replay 版本化落盘格式（magic+version+length）
+- `BattleArchiveSink` / `JsonFileBattleDataStore` 存储抽象
+- battle result / world snapshot 的最小存储模型
+- backward compat fallback（load 返回 raw JSON）
+
+当前仍未做：
+
+- 缓存层（LRU / distributed cache）
+- WriteBehind 异步写入链
+- Actor 状态快照 / 事件溯源
 
 ### 3.4 `M4` 分布式原语
 
@@ -113,11 +126,19 @@
 - 单进程 battle/runtime 已经跑顺
 - ingress / player / room / battle actor 的本地边界稳定
 
-当前不做：
+当前已完成（P3 / S0）：
 
-- cluster router
-- service discovery
-- remote actor transport
+- `ServiceId`、`BackendEnvelope`（request/response/push/error + correlation_id）
+- `ServiceManifest` 四服务职责声明（gateway/login/room/battle）
+- `ServiceErrorCode` 错误码体系 + client mapping
+- `owner_of()` / `handler_of()` 所有权与路由查找
+- 24 个边界测试
+
+当前仍未做：
+
+- S1 gateway-only ingress 最小版
+- cluster router / remote actor transport
+- service discovery / TTL / 心跳
 
 ### 3.5 `M3` 内存架构重构
 
@@ -160,7 +181,8 @@
 
 如果继续沿当前代码推进，最值得继续做的是：
 
-1. 多 listener / pinned listener 的配置化和运维可见性
-2. battle runtime 剩余镜像状态继续 world 化
-3. replay / result / snapshot 的数据层入口
+1. **S1 gateway-only ingress** — 让 gateway 成为唯一客户端接入层，backend 收独立 envelope
+2. 多 listener / pinned listener 的配置化和运维可见性
+3. battle runtime 剩余镜像状态继续 world 化
 4. `GatewayServer` / `shadow bridge` / `v2 demo` 的诊断口径统一
+5. `M5` 数据层下一阶段：缓存层 / WriteBehind

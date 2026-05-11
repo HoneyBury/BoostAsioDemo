@@ -1,8 +1,5 @@
 #include "v2/battle/battle_actor.h"
 
-#include <algorithm>
-#include <cstdint>
-#include <limits>
 #include <utility>
 
 namespace v2::battle {
@@ -68,6 +65,7 @@ void BattleActor::finish_battle(BattleFinishReason reason, std::string triggerin
 }
 
 void BattleActor::on_message(v2::actor::Message&& message) {
+    // ── Create ────────────────────────────────────────────────
     if (const auto* create = std::get_if<CreateBattleMsg>(&message.payload)) {
         world_ = create_battle_world(create->battle_id, create->room_id, create->player_ids, create->max_frames);
 
@@ -79,65 +77,56 @@ void BattleActor::on_message(v2::actor::Message&& message) {
         return;
     }
 
+    // ── Input ─────────────────────────────────────────────────
     const auto* input = std::get_if<SubmitBattleInputMsg>(&message.payload);
-    if (input != nullptr && runtime_state().lifecycle == BattleLifecycleState::kRunning) {
-        if (world_ != nullptr && !battle_world_should_accept_input(*world_, input->user_id, input->submitted_frame)) {
+    if (input != nullptr) {
+        if (world_ == nullptr) {
             return;
         }
-        if (world_ != nullptr && input->submitted_frame > 0) {
-            battle_world_record_submitted_frame(*world_, input->user_id, input->submitted_frame);
-        }
-        std::uint64_t input_seq = 0;
-        if (world_ != nullptr) {
-            const auto next_frame_number = battle_world_frame_number(*world_) + 1;
-            battle_world_apply_input_score(*world_, input->user_id, input->score);
-            input_seq = battle_world_append_replay_input(
-                *world_, next_frame_number, input->user_id, input->input_data, input->score);
+        const auto result = battle_world_process_input(
+            *world_, input->user_id, input->input_data, input->score, input->submitted_frame);
+        if (!result.accepted) {
+            return;
         }
         sink_.push(BattleInputAcceptedMsg{
             .battle_id = runtime_state().battle_id,
             .room_id = runtime_state().room_id,
             .user_id = input->user_id,
-            .input_seq = input_seq,
+            .input_seq = result.input_seq,
             .request_id = input->request_id,
             .input_data = input->input_data,
         });
         return;
     }
 
+    // ── Tick ──────────────────────────────────────────────────
     const auto* tick = std::get_if<TickBattleMsg>(&message.payload);
-    if (tick != nullptr && runtime_state().lifecycle == BattleLifecycleState::kRunning) {
-        const auto current_state = runtime_state();
-        auto frame_number = 0U;
-        if (world_ != nullptr) {
-            frame_number = battle_world_tick(*world_, v2::ecs::FrameContext{
-                .battle_id = current_state.battle_id,
-                .room_id = current_state.room_id,
-                .frame_number = current_state.frame_number + 1,
-                .trigger = tick->trigger,
-            });
+    if (tick != nullptr) {
+        if (world_ == nullptr) {
+            return;
         }
-        if (world_ != nullptr) {
-            battle_world_apply_trigger_to_frame(*world_, frame_number, tick->trigger);
-        }
+        const auto frame_result = battle_world_advance_frame(
+            *world_, runtime_state().frame_number + 1, tick->trigger);
         sink_.push(BattleFrameAdvancedMsg{
-            .battle_id = current_state.battle_id,
-            .room_id = current_state.room_id,
-            .frame_number = frame_number,
+            .battle_id = runtime_state().battle_id,
+            .room_id = runtime_state().room_id,
+            .frame_number = frame_result.frame_number,
             .trigger = tick->trigger,
         });
-        if (world_ != nullptr && battle_world_should_finish_for_frame_limit(*world_, frame_number)) {
-            finish_battle(BattleFinishReason::kFrameLimitReached, tick->trigger);
+        if (frame_result.should_finish) {
+            finish_battle(frame_result.finish_reason, tick->trigger);
         }
         return;
     }
 
+    // ── End ───────────────────────────────────────────────────
     const auto* end = std::get_if<EndBattleMsg>(&message.payload);
     if (end != nullptr && runtime_state().lifecycle == BattleLifecycleState::kRunning) {
         finish_battle(end->reason, end->triggering_user_id);
         return;
     }
 
+    // ── Ack ───────────────────────────────────────────────────
     const auto* ack = std::get_if<FrameAckMsg>(&message.payload);
     if (ack != nullptr) {
         if (world_ != nullptr) {
@@ -147,18 +136,18 @@ void BattleActor::on_message(v2::actor::Message&& message) {
         return;
     }
 
+    // ── Disconnect ────────────────────────────────────────────
     const auto* disconnected = std::get_if<PlayerDisconnectedMsg>(&message.payload);
-    if (disconnected == nullptr || runtime_state().lifecycle != BattleLifecycleState::kRunning) {
+    if (disconnected != nullptr) {
+        if (world_ == nullptr) {
+            return;
+        }
+        const auto result = battle_world_handle_disconnect(*world_, disconnected->user_id);
+        if (result.battle_should_finish) {
+            finish_battle(BattleFinishReason::kPlayerDisconnected, disconnected->user_id);
+        }
         return;
     }
-
-    if (world_ == nullptr) {
-        return;
-    }
-    if (!battle_world_mark_offline(*world_, disconnected->user_id)) {
-        return;
-    }
-    finish_battle(BattleFinishReason::kPlayerDisconnected, disconnected->user_id);
 }
 
 }  // namespace v2::battle

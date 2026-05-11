@@ -36,7 +36,7 @@ DemoServer::DemoServer(std::uint16_t port,
     });
     gateway_actor_ = runtime_.create_gateway_actor();
     adapter_.bind_gateway(gateway_actor_);
-    archive_store_ = std::make_unique<JsonFileBattleArchiveStore>("v2_archive");
+    archive_store_ = std::make_unique<JsonFileBattleDataStore>("v2_archive");
     runtime_.set_archive_sink(archive_store_.get());
 }
 

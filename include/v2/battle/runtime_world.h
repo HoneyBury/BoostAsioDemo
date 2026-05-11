@@ -28,6 +28,26 @@ struct BattleWorldSnapshot {
     std::vector<BattleWorldParticipantState> participants;
 };
 
+// ─── Authoritative Entry Points ───────────────────────────────
+
+struct BattleWorldInputResult {
+    bool accepted = false;
+    std::string reject_reason;
+    std::uint64_t input_seq = 0;
+};
+
+struct BattleWorldFrameResult {
+    std::uint32_t frame_number = 0;
+    std::string trigger;
+    bool should_finish = false;
+    BattleFinishReason finish_reason = BattleFinishReason::kFinished;
+};
+
+struct BattleWorldDisconnectResult {
+    bool participant_existed = false;
+    bool battle_should_finish = false;
+};
+
 [[nodiscard]] std::unique_ptr<v2::ecs::World> create_battle_world(
     const std::string& battle_id,
     const std::string& room_id,
@@ -97,5 +117,26 @@ void battle_world_apply_trigger_to_frame(v2::ecs::World& world,
 
 [[nodiscard]] BattleWorldSnapshot battle_world_snapshot(v2::ecs::World& world);
 [[nodiscard]] BattleRuntimeState battle_world_runtime_state(v2::ecs::World& world);
+
+// ─── Authoritative Entry Points ───────────────────────────────
+
+// Process an input authoritatively: validate, record, score, replay.
+[[nodiscard]] BattleWorldInputResult battle_world_process_input(
+    v2::ecs::World& world,
+    const std::string& user_id,
+    const std::string& input_data,
+    std::int64_t score,
+    std::uint32_t submitted_frame);
+
+// Advance one frame authoritatively: tick systems, check finish.
+[[nodiscard]] BattleWorldFrameResult battle_world_advance_frame(
+    v2::ecs::World& world,
+    std::uint32_t next_frame,
+    const std::string& trigger);
+
+// Handle a player disconnect authoritatively.
+[[nodiscard]] BattleWorldDisconnectResult battle_world_handle_disconnect(
+    v2::ecs::World& world,
+    const std::string& user_id);
 
 }  // namespace v2::battle

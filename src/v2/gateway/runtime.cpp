@@ -1,7 +1,7 @@
 #include "v2/gateway/runtime.h"
 
 #include "net/protocol.h"
-#include "v2/gateway/battle_archive_store.h"
+#include "v2/gateway/battle_data_store.h"
 #include "v2/gateway/battle_protocol_codec.h"
 #include "v2/gateway/gateway_command_parser.h"
 
@@ -753,6 +753,47 @@ void Runtime::archive_battle(const v2::battle::BattleSettlementPreparedMsg& sett
     if (archive_sink_ != nullptr) {
         if (!archive_sink_->persist(archive)) {
             SPDLOG_ERROR("Failed to persist battle archive {}", settlement.battle_id);
+        }
+
+        nlohmann::json participants = nlohmann::json::array();
+        for (const auto& score : settlement.result.scores) {
+            participants.push_back({
+                {"user_id", score.user_id},
+                {"online", false},
+                {"score", score.score},
+                {"last_submitted_frame", 0},
+                {"last_acked_frame", 0},
+            });
+        }
+
+        nlohmann::json replay_inputs = nlohmann::json::array();
+        for (const auto& r : settlement.replay_inputs) {
+            replay_inputs.push_back({
+                {"input_seq", r.input_seq},
+                {"frame_number", r.frame_number},
+                {"user_id", r.user_id},
+                {"input_data", r.input_data},
+                {"score", r.score},
+                {"trigger", r.trigger},
+            });
+        }
+
+        nlohmann::json snapshot{
+            {"clock", {{"frame_number", settlement.total_frames}, {"last_trigger", settlement.triggering_user_id}}},
+            {"metadata", {
+                {"battle_id", settlement.battle_id},
+                {"room_id", settlement.room_id},
+                {"lifecycle", static_cast<int>(v2::battle::BattleLifecycleState::kFinished)},
+                {"frame_number", settlement.total_frames},
+                {"max_frames", 0},
+                {"next_input_seq", static_cast<std::uint64_t>(0)},
+            }},
+            {"participants", std::move(participants)},
+            {"replay_inputs", std::move(replay_inputs)},
+        };
+
+        if (!archive_sink_->save_snapshot(settlement.battle_id, snapshot.dump())) {
+            SPDLOG_ERROR("Failed to persist battle snapshot {}", settlement.battle_id);
         }
     }
 }

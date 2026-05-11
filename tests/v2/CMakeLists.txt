@@ -7,6 +7,7 @@ add_executable(project_v2_unit_tests
     unit/battle_wire_parser_test.cpp
     unit/bootstrap_smoke_test.cpp
     unit/connected_flow_test.cpp
+    unit/data_layer_test.cpp
     unit/ecs_world_test.cpp
     unit/gateway_command_parser_test.cpp
     unit/gateway_bridge_test.cpp
@@ -14,6 +15,7 @@ add_executable(project_v2_unit_tests
     unit/io_engine_test.cpp
     unit/player_actor_test.cpp
     unit/room_actor_test.cpp
+    unit/service_boundary_test.cpp
     unit/shadow_bridge_policy_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
@@ -29,6 +31,7 @@ gtest_discover_tests(project_v2_unit_tests
 )
 
 add_executable(project_v2_integration_tests
+    integration/backend_routing_test.cpp
     integration/demo_server_smoke_test.cpp
 )
 target_link_libraries(project_v2_integration_tests

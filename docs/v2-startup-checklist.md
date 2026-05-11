@@ -307,6 +307,8 @@ examples/v2_gateway_demo/
 - `B6.1`：actor 已支持 owned schedule handle，并在 stop/shutdown 时自动清理
 - `B7.1`：gateway response parser 已补 login / room / session push 基础字段模型
 - `B8.1`：真实 bridge 灰度测试已覆盖 started-only 与 finish-only 两组 battle response 配置
+- `P2`：`M5` 数据层 v2 — 版本化落盘格式（magic+version+length）、`BattleArchiveSink`/`JsonFileBattleDataStore`、world snapshot、16 个 data layer 单元测试
+- `P3`：`M4 S0` 边界冻结 — `ServiceId`、`BackendEnvelope`（request/response/push/error）、`ServiceManifest`（gateway/login/room/battle）、`ServiceErrorCode`、24 个边界测试
 
 当前明确仍只有原型或基础版的部分：
 
@@ -320,9 +322,9 @@ examples/v2_gateway_demo/
 当前不应误判为已完成的内容：
 
 - `M3` 内存架构重构
-- `M4` 分布式原语
-- `M5` 数据层 v2
-- `M2` 深水区能力（`SO_REUSEPORT` / mailbox / actor affinity）
+- `M4` S1-S4 分布式拆分深水区
+- `M5` 数据层缓存层 / WriteBehind
+- `M2` 深水区能力（`SO_REUSEPORT` / actor affinity）
 - `M6` AOI / ECS 战斗完整主链
 - `M7` 运维成熟度
 - `v2` 替换现有 `v1` 默认入口
@@ -395,9 +397,10 @@ examples/v2_gateway_demo/
 
 如果继续沿当前实现推进，建议下一阶段按以下顺序收口：
 
-1. 把 replay / result / snapshot 正式引入 `M5` 数据层入口
-2. 继续把 battle runtime 事实源下沉到 world/system，缩薄 `BattleActor`
-3. 继续完成 `M2` 的 accept policy、多 acceptor 组装和更深多核能力评估
-4. 保持 `GatewayServer` / `shadow bridge` / `v2 demo` 诊断口径一致
+1. **S1 gateway-only ingress** — `M4` 服务拆分第一步，让 gateway 成为唯一客户端接入层
+2. 继续完成 `M2` 的 `SO_REUSEPORT` 和 actor 亲核调度
+3. 继续把 battle runtime 事实源下沉到 world/system，缩薄 `BattleActor`
+4. 继续推进 `M5` 数据层 v2，进入缓存层 / WriteBehind
+5. 保持 `GatewayServer` / `shadow bridge` / `v2 demo` 诊断口径一致
 
-不要在当前阶段同时推进分布式、内存架构重构和完整 AOI。
+不要在当前阶段同时推进完整分布式集群、内存架构重构和 AOI。

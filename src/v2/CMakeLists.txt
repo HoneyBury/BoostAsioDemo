@@ -2,11 +2,20 @@ add_library(project_v2 STATIC
     actor/actor.cpp
     actor/actor_ref.cpp
     battle/battle_actor.cpp
+    battle/battle_snapshot.cpp
     battle/runtime_world.cpp
     common/module_marker.cpp
+    data/replay_format.cpp
     ecs/world.cpp
+    gateway/battle_data_store.cpp
+    service/backend_envelope.cpp
+    service/backend_connection.cpp
+    service/backend_frame_codec.cpp
+    service/backend_server.cpp
+    service/error_codes.cpp
+    service/service_manifest.cpp
+    gateway/gateway_service_bridge.cpp
     gateway/battle_protocol_codec.cpp
-    gateway/battle_archive_store.cpp
     gateway/battle_wire_parser.cpp
     gateway/gateway_command_parser.cpp
     gateway/demo_server.cpp

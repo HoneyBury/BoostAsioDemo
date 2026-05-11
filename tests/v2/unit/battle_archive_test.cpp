@@ -2,10 +2,12 @@
 
 #include <filesystem>
 
+#include <nlohmann/json.hpp>
+
 #include "game/battle/replay_player.h"
 #include "game/persistence/player_store.h"
 #include "net/protocol.h"
-#include "v2/gateway/battle_archive_store.h"
+#include "v2/gateway/battle_data_store.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 
@@ -122,7 +124,7 @@ TEST(V2BattleArchiveTest, RuntimeBuildsResultSummaryAndReplayPayloadOnBattleSett
 
 TEST(V2BattleArchiveTest, ArchiveSinkPersistsReportAndReplayArtifacts) {
     const auto archive_dir = std::filesystem::temp_directory_path() / "v2_runtime_archive_store";
-    v2::gateway::JsonFileBattleArchiveStore store(archive_dir);
+    v2::gateway::JsonFileBattleDataStore store(archive_dir);
 
     v2::gateway::Runtime::BattleArchive archive{
         .battle_id = "battle_9001",
@@ -148,17 +150,22 @@ TEST(V2BattleArchiveTest, ArchiveSinkPersistsReportAndReplayArtifacts) {
     };
 
     ASSERT_TRUE(store.persist(archive));
-    const auto report = store.load_report("battle_9001");
+
+    const auto report = store.load_result("battle_9001");
     ASSERT_TRUE(report.has_value());
     EXPECT_NE(report->find("\"battle_id\": \"battle_9001\""), std::string::npos);
     EXPECT_NE(report->find("\"reason\": \"timeout\""), std::string::npos);
     EXPECT_NE(report->find("\"winner_user_id\": \"owner\""), std::string::npos);
     EXPECT_NE(report->find("\"score\": 42"), std::string::npos);
 
-    game::persistence::JsonFileBattleReplayStore replay_store(archive_dir / "replays");
-    game::battle::ReplayPlayer player(replay_store);
-    ASSERT_TRUE(player.load("battle_9001"));
-    EXPECT_EQ(player.battle_id(), "battle_9001");
+    const auto replay = store.load_replay("battle_9001");
+    ASSERT_TRUE(replay.has_value());
+    EXPECT_NE(replay->find("\"battle_id\""), std::string::npos);
+
+    // Backward compat: loading via v1 ReplayPlayer with decoded replay
+    auto replay_doc = nlohmann::json::parse(*replay);
+    EXPECT_EQ(replay_doc.value("battle_id", ""), "battle_9001");
+    EXPECT_EQ(replay_doc.value("total_frames", 0), 1);
 
     std::filesystem::remove_all(archive_dir);
 }

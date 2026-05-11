@@ -41,18 +41,20 @@ v1.0.0 完成了一个**单进程、功能完整**的游戏服务器框架。核
 | 模块 | 当前状态 | 说明 |
 |---|---|---|
 | `M1 Actor` | `in-place done` | `ActorSystem`、`PlayerActor`、`RoomActor`、`BattleActor` 最小主链已跑通并有回归测试 |
-| `M2 多核 I/O` | `foundation done` | `AsioIoEngine`、pinned listen、multi-listener ingress、session-core outbound、core diagnostics 已落地 |
+| `M2 多核 I/O` | `advanced` | accept policy、SPSC mailbox、session counting、multi-listener ingress、core diagnostics 已落地 |
 | `M3 内存架构` | `not started` | 仍未进入 arena / pool hierarchy / false sharing 专项 |
-| `M4 分布式` | `not started` | 仅保留方向性规划，没有 remote actor / cluster router 实现 |
-| `M5 数据层 v2` | `not started` | replay/result 事实源已具备，但持久化 schema 和写入链未开始 |
-| `M6 battle world` | `foundation done` | ECS world、battle runtime metadata、replay inputs、result summary 已初步 world 化 |
+| `M4 分布式` | `S0 done` | 边界冻结已完成：`BackendEnvelope`、`ServiceManifest`、`ServiceErrorCode`；S1 gateway-only ingress 待启动 |
+| `M5 数据层 v2` | `foundation done` | 版本化落盘格式（magic+version+length）、`BattleDataStore`、world snapshot 已落地并有回归测试 |
+| `M6 battle world` | `advanced` | 4-system 拆分、ECS world、battle metadata/replay/result/snapshot 已收口到 world helper |
 | `M7 运维成熟度` | `bootstrap only` | 已有 `/metrics*`、diagnostics、shadow bridge 扩展观测，但还不是正式控制面 |
 
 当前最重要的边界：
 
-- `M2` 已进入实现期，但尚未完成 `SO_REUSEPORT`、跨核 mailbox、actor 亲核调度
-- `M6` 已进入实现期，但尚未进入 authoritative simulation / AOI / deterministic replay
-- `M5/M4/M3/M7` 仍以规划为主，不应被文档误判为已落地
+- `M2` 已进入 advanced 阶段，accept policy + SPSC mailbox + session counting 已落地；`SO_REUSEPORT` 和 actor 亲核调度仍未完成
+- `M6` 已进入 advanced 阶段，4-system 拆分 + world helper 已收口；authoritative simulation / AOI / deterministic replay 仍未进入
+- `M4` S0 边界冻结已完成（`BackendEnvelope`、`ServiceManifest`、`ServiceErrorCode`），S1 gateway-only ingress 为下一阶段入口
+- `M5` foundation done，版本化落盘格式 + `BattleDataStore` + world snapshot 已落地；缓存层 / WriteBehind 仍未开始
+- `M3/M7` 仍以规划为主，不应被文档误判为已落地
 
 ---
 
@@ -284,6 +286,33 @@ struct alignas(64) SessionColdData {
 ---
 
 ## 六、M4: 分布式原语
+
+> `M4` 当前除了“一致性哈希 / 领导者选举 / 服务发现”这些抽象目标，还需要一条可执行的“服务拆分”落地路线。该专项规划见 [v2-service-split-plan.md](./v2-service-split-plan.md)。
+
+### 6.0 当前实现边界（`2026-05-11`）
+
+当前仓库已经完成 S0 边界冻结：
+
+- `ServiceId`、`BackendEnvelope`（request/response/push/error + correlation_id + timeout + error_code）
+- `ServiceManifest`（gateway/login/room/battle 四服务职责声明 + ownership）
+- `ServiceErrorCode`（backend 错误码 + client mapping）
+- 24 个边界测试
+
+此外有前置抽象占位：
+
+- `ServiceRouter / InternalBus / ServiceRegistry / BackendRouter`
+
+但这**不等于**已经完成：
+
+- gateway-only ingress（S1）
+- backend 独立 envelope 落地到真实多进程链路
+- 多进程请求/回包/超时闭环
+- 服务发现与健康摘除（S4）
+
+因此，`M4` 在当前阶段应拆成两部分理解：
+
+1. 服务拆分最小闭环（S0 done, S1-S4 pending）
+2. 分布式能力深化
 
 ### 6.1 集群拓扑
 

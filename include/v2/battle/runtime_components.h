@@ -36,7 +36,22 @@ struct BattleReplayLogComponent final : v2::ecs::Component {
     std::vector<BattleReplayInputRecord> replay_inputs;
 };
 
-class AdvanceFrameSystem final : public v2::ecs::System {
+class BattleClockSystem final : public v2::ecs::System {
+public:
+    void run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) override;
+};
+
+class BattleInputSystem final : public v2::ecs::System {
+public:
+    void run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) override;
+};
+
+class BattleLifecycleSystem final : public v2::ecs::System {
+public:
+    void run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) override;
+};
+
+class BattleReplaySystem final : public v2::ecs::System {
 public:
     void run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) override;
 };

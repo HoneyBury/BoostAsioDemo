@@ -1,4 +1,5 @@
 #include "v2/runtime/actor_system.h"
+#include "v2/io/io_engine.h"
 
 #include <algorithm>
 #include <utility>
@@ -49,6 +50,13 @@ ActorSystem::~ActorSystem() {
 v2::actor::ActorRef ActorSystem::create_actor(
     std::unique_ptr<v2::actor::Actor> actor,
     v2::actor::ActorRef parent) {
+    return create_actor(std::move(actor), std::move(parent), std::nullopt);
+}
+
+v2::actor::ActorRef ActorSystem::create_actor(
+    std::unique_ptr<v2::actor::Actor> actor,
+    v2::actor::ActorRef parent,
+    std::optional<std::uint32_t> affinity_core) {
     if (!actor || shutting_down_) {
         return {};
     }
@@ -59,8 +67,9 @@ v2::actor::ActorRef ActorSystem::create_actor(
         return {};
     }
 
-    auto self_ref = v2::actor::ActorRef(this, actor_id);
+    auto self_ref = v2::actor::ActorRef(this, actor_id, affinity_core);
     it->second.actor = std::move(actor);
+    it->second.core_id = affinity_core;
     it->second.actor->bind(self_ref, parent);
     it->second.actor->on_start();
     it->second.started = true;
@@ -75,6 +84,14 @@ void ActorSystem::send(v2::actor::Message message) {
     auto* cell = find_cell(message.header.target_actor);
     if (cell == nullptr) {
         return;
+    }
+
+    if (io_engine_ && cell->core_id.has_value()) {
+        auto current = io_engine_->current_core_id();
+        if (current.has_value() && *current != *cell->core_id) {
+            io_engine_->post_mailbox(*cell->core_id, std::move(message));
+            return;
+        }
     }
 
     cell->mailbox.push_back(std::move(message));
@@ -234,6 +251,27 @@ std::size_t ActorSystem::dispatch_all() {
     }
     ++dispatch_round_;
     return dispatched;
+}
+
+void ActorSystem::set_io_engine(v2::io::IoEngine* io_engine) {
+    io_engine_ = io_engine;
+    if (io_engine_) {
+        io_engine_->set_actor_system(this);
+    }
+}
+
+std::size_t ActorSystem::drain_mailbox_and_dispatch(std::uint32_t core_id) {
+    if (!io_engine_) return 0;
+
+    auto messages = io_engine_->drain_mailbox(core_id);
+    for (auto& msg : messages) {
+        auto* cell = find_cell(msg.header.target_actor);
+        if (cell == nullptr) continue;
+        cell->mailbox.push_back(std::move(msg));
+        enqueue_ready_actor(msg.header.target_actor, *cell);
+    }
+
+    return dispatch_all();
 }
 
 void ActorSystem::shutdown() {

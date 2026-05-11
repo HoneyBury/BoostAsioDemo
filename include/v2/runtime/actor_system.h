@@ -5,10 +5,15 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
 #include "v2/actor/actor.h"
+
+namespace v2::io {
+class IoEngine;
+}  // namespace v2::io
 
 namespace v2::runtime {
 
@@ -29,6 +34,11 @@ public:
         std::unique_ptr<v2::actor::Actor> actor,
         v2::actor::ActorRef parent = {});
 
+    v2::actor::ActorRef create_actor(
+        std::unique_ptr<v2::actor::Actor> actor,
+        v2::actor::ActorRef parent,
+        std::optional<std::uint32_t> affinity_core);
+
     void send(v2::actor::Message message);
     void send_after(v2::actor::Message message, std::size_t dispatch_delay);
     void send_after(v2::actor::Message message, Duration delay);
@@ -44,12 +54,16 @@ public:
     std::size_t dispatch_all();
     void shutdown();
 
+    void set_io_engine(v2::io::IoEngine* io_engine);
+    std::size_t drain_mailbox_and_dispatch(std::uint32_t core_id);
+
 private:
     struct ActorCell {
         std::unique_ptr<v2::actor::Actor> actor;
         std::deque<v2::actor::Message> mailbox;
         bool started = false;
         bool queued = false;
+        std::optional<std::uint32_t> core_id;
     };
 
     ActorCell* find_cell(v2::actor::ActorId actor_id) noexcept;
@@ -74,6 +88,7 @@ private:
     ScheduleId next_schedule_id_ = 1;
     v2::actor::ActorId next_actor_id_ = 1;
     bool shutting_down_ = false;
+    v2::io::IoEngine* io_engine_ = nullptr;
 };
 
 class ScheduleHandle {

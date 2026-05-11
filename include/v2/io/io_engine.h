@@ -16,6 +16,10 @@
 #include <thread>
 #include <vector>
 
+namespace v2::runtime {
+class ActorSystem;
+}
+
 namespace v2::io {
 
 enum class AcceptPolicy : std::uint8_t {
@@ -27,6 +31,7 @@ enum class AcceptPolicy : std::uint8_t {
 struct IoListenOptions {
     std::optional<std::uint32_t> fixed_core_id;
     AcceptPolicy accept_policy = AcceptPolicy::kRoundRobin;
+    bool reuse_port = false;
 };
 
 class IoSession {
@@ -60,6 +65,7 @@ public:
     [[nodiscard]] virtual std::uint16_t local_port() const = 0;
     [[nodiscard]] virtual std::uint32_t owning_core_id() const noexcept = 0;
     [[nodiscard]] virtual AcceptPolicy accept_policy() const noexcept = 0;
+    [[nodiscard]] virtual bool is_multi_core() const noexcept { return false; }
 };
 
 class IoEngine {
@@ -94,6 +100,9 @@ public:
     // Cross-core actor message mailbox.
     virtual bool post_mailbox(std::uint32_t core_id, v2::actor::Message message) = 0;
     [[nodiscard]] virtual std::vector<v2::actor::Message> drain_mailbox(std::uint32_t core_id) = 0;
+
+    // ActorSystem integration for core-affinity message routing.
+    virtual void set_actor_system(v2::runtime::ActorSystem* actor_system) = 0;
 };
 
 class AsioIoEngine final : public IoEngine {
@@ -123,6 +132,9 @@ public:
     bool post_mailbox(std::uint32_t core_id, v2::actor::Message message) override;
     [[nodiscard]] std::vector<v2::actor::Message> drain_mailbox(std::uint32_t core_id) override;
 
+    // ActorSystem integration.
+    void set_actor_system(v2::runtime::ActorSystem* actor_system) override;
+
 private:
     struct Core {
         boost::asio::io_context io_context;
@@ -139,6 +151,8 @@ private:
     std::mutex run_mutex_;
     bool running_ = false;
     std::unique_ptr<std::atomic<std::uint32_t>[]> session_counts_;
+
+    v2::runtime::ActorSystem* actor_system_ = nullptr;
 };
 
 }  // namespace v2::io

@@ -2,9 +2,11 @@
 
 #include "app/logging.h"
 #include "net/packet_codec.h"
+#include "v2/actor/actor.h"
 #include "v2/actor/message.h"
 #include "v2/io/io_engine.h"
 #include "v2/io/mailbox.h"
+#include "v2/runtime/actor_system.h"
 
 #include <boost/asio.hpp>
 
@@ -701,4 +703,110 @@ TEST(V2IoEngineTest, PostMailboxFromDifferentThread) {
 
     producer.join();
     engine.stop();
+}
+
+// ─── SO_REUSEPORT Tests ─────────────────────────────────────────
+
+TEST(V2IoEngineTest, MultiAcceptorCreatedWhenReusePortSet) {
+    app::logging::init("project_tests");
+
+    v2::io::AsioIoEngine engine(3);
+    try {
+        const auto opts = v2::io::IoListenOptions{
+            .reuse_port = true,
+        };
+        auto acceptor = engine.listen("127.0.0.1", 0, {}, opts);
+
+        ASSERT_NE(acceptor, nullptr);
+        EXPECT_TRUE(acceptor->is_multi_core());
+
+        engine.stop();
+    } catch (const std::exception& ex) {
+        engine.stop();
+        GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
+    }
+}
+
+TEST(V2IoEngineTest, MultiAcceptorHasPortOnAllCores) {
+    app::logging::init("project_tests");
+
+    v2::io::AsioIoEngine engine(2);
+    try {
+        const auto opts = v2::io::IoListenOptions{
+            .reuse_port = true,
+        };
+        auto acceptor = engine.listen("127.0.0.1", 0, {}, opts);
+
+        ASSERT_NE(acceptor, nullptr);
+        EXPECT_TRUE(acceptor->is_multi_core());
+        EXPECT_NE(acceptor->local_port(), 0U);
+
+        engine.stop();
+    } catch (const std::exception& ex) {
+        engine.stop();
+        GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
+    }
+}
+
+TEST(V2IoEngineTest, SingleAcceptorWhenReusePortFalse) {
+    app::logging::init("project_tests");
+
+    v2::io::AsioIoEngine engine(3);
+    try {
+        auto acceptor = engine.listen("127.0.0.1", 0);
+        ASSERT_NE(acceptor, nullptr);
+        EXPECT_FALSE(acceptor->is_multi_core());
+
+        engine.stop();
+    } catch (const std::exception& ex) {
+        engine.stop();
+        GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
+    }
+}
+
+TEST(V2IoEngineTest, SetActorSystemIsAccessibleForMailboxDrain) {
+    app::logging::init("project_tests");
+
+    v2::io::AsioIoEngine engine(1);
+    v2::runtime::ActorSystem actor_system;
+
+    actor_system.set_io_engine(&engine);
+
+    v2::actor::Message msg;
+    msg.header.kind = v2::actor::MessageKind::kUser;
+    msg.header.trace_id = 77;
+    msg.payload = std::string("affinity-test");
+
+    engine.run();
+    engine.post_mailbox(0, std::move(msg));
+
+    std::size_t drained = actor_system.drain_mailbox_and_dispatch(0);
+    EXPECT_EQ(drained, 0U);  // No actors registered yet.
+
+    engine.stop();
+}
+
+TEST(V2IoEngineTest, ActorAffinityStoredOnCreation) {
+    app::logging::init("project_tests");
+
+    v2::runtime::ActorSystem actor_system;
+    v2::io::AsioIoEngine engine(2);
+    actor_system.set_io_engine(&engine);
+
+    // Create a minimal actor with core affinity.
+    class TestActor final : public v2::actor::Actor {
+    public:
+        void on_start() override {}
+        void on_message(v2::actor::Message&&) override {}
+        void on_stop() override {}
+    };
+
+    auto ref = actor_system.create_actor(
+        std::make_unique<TestActor>(), {}, std::optional<std::uint32_t>(1));
+
+    ASSERT_TRUE(ref.is_valid());
+    EXPECT_TRUE(ref.core_id().has_value());
+    EXPECT_EQ(*ref.core_id(), 1U);
+
+    actor_system.shutdown();
 }

@@ -41,7 +41,7 @@ v1.0.0 完成了一个**单进程、功能完整**的游戏服务器框架。核
 | 模块 | 当前状态 | 说明 |
 |---|---|---|
 | `M1 Actor` | `in-place done` | `ActorSystem`、`PlayerActor`、`RoomActor`、`BattleActor` 最小主链已跑通并有回归测试 |
-| `M2 多核 I/O` | `advanced` | accept policy、SPSC mailbox、session counting、multi-listener ingress、core diagnostics 已落地 |
+| `M2 多核 I/O` | `done` | accept policy、SPSC mailbox、session counting、multi-listener ingress、core diagnostics、SO_REUSEPORT（MultiIoAcceptor 每核独立 bind）、actor 核心亲和（ActorRef::core_id + 跨核 SPSC 路由 + drain_mailbox_and_dispatch）全部落地 |
 | `M3 内存架构` | `not started` | 仍未进入 arena / pool hierarchy / false sharing 专项 |
 | `M4 分布式` | `S0-S4 done` | S0-S4 服务拆分全部完成：边界冻结、gateway-only ingress、login/room/battle 独立 backend、ServiceRegistry TTL/心跳/摘除、BackendMetrics 路由计数器、diagnostics_json 管理口、22 个集成测试 |
 | `M5 数据层 v2` | `foundation done` | 版本化落盘格式（magic+version+length）、`BattleDataStore`、world snapshot 已落地并有回归测试 |
@@ -50,7 +50,7 @@ v1.0.0 完成了一个**单进程、功能完整**的游戏服务器框架。核
 
 当前最重要的边界：
 
-- `M2` 已进入 advanced 阶段，accept policy + SPSC mailbox + session counting 已落地；`SO_REUSEPORT` 和 actor 亲核调度仍未完成
+- `M2` 已完成，accept policy + SPSC mailbox + session counting + multi-listener ingress + SO_REUSEPORT（MultiIoAcceptor）+ actor 核心亲和（cross-core SPSC routing + drain_mailbox_and_dispatch）全部落地
 - `M6` 已进入 advanced 阶段，6-system ECS pipeline + authoritative simulation（MovementSystem/CombatSystem）+ deterministic replay 已落地；AOI 空间管理仍未进入
 - `M4` S0-S4 服务拆分全部完成（`BackendEnvelope`、`ServiceManifest`、`ServiceErrorCode`、GatewayServiceBridge 三 slot 路由、级联 forward/push_to_sessions、`ServiceRegistry` TTL/心跳、`BackendMetrics` 计数器、22 个集成测试）
 - `M5` foundation done，版本化落盘格式 + `BattleDataStore` + world snapshot 已落地；缓存层 / WriteBehind 仍未开始

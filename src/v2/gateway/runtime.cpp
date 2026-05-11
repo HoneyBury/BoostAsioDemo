@@ -1130,9 +1130,9 @@ void Runtime::process_battle_finished(const v2::battle::BattleFinishedMsg& finis
     battles_by_room_id_.erase(finished.room_id);
 
     if (!finished.triggering_user_id.empty()) {
-        const auto session_id = session_id_for_user(finished.triggering_user_id);
-        if (session_id.has_value()) {
-            auto pending = pending_battle_end_.find(*session_id);
+        const auto sid = session_id_for_user(finished.triggering_user_id);
+        if (sid.has_value()) {
+            auto pending = pending_battle_end_.find(*sid);
             if (pending != pending_battle_end_.end()) {
                 emit(net::protocol::kBattleInputResponse,
                      pending->second.session_id,

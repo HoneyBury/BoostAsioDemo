@@ -42,6 +42,7 @@ add_executable(project_v2_unit_tests
     unit/anti_cheat_test.cpp
     unit/schema_validator_test.cpp
     unit/matchmaking_test.cpp
+    unit/leaderboard_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE

@@ -57,6 +57,22 @@ v1.0.0 完成了一个**单进程、功能完整**的游戏服务器框架。核
 - `M3` 已完成，BumpArena（指针碰撞 + O(1) reset）+ ObjectPool\<T, BlockSize\>（header-only template + intrusive free list + placement new + std::mutex）+ CacheLine（kCacheLineSize + CacheLinePad + HotCold\<Hot,Cold\>）全部落地，24 个单元测试通过
 - `M7` 已完成，DiagnosticsManager（统一快照+JSON序列化）+ HealthCheck（真实健康检查 pass/fail/warn + RFC 格式 JSON）+ FeatureFlags（hash(user_id)%100 百分比灰度）+ TraceContext+Span（轻量自研追踪）全部落地，27 个单元测试通过
 
+### v2.0.1 生产加固 (已完成 2026-05-12)
+
+- `H1` 配置热加载 — `v2::ConfigWatcher` (自有 io_context + 线程, 轮询 last_write_time), 5 个单元测试
+- `H2` 断路器 — `v2::service::CircuitBreaker` (CLOSED→OPEN→HALF_OPEN 三态, 可配置阈值), 8 个单元测试
+- `H3` 优雅降级 — 按后端错误码 (`kLoginBackendUnavailable`/`kRoomBackendUnavailable`/`kBattleBackendUnavailable`), `BackendMetrics::record_degraded`
+- `H4` 背压保护 — `SessionOptions::backpressure_high_watermark/low_watermark` 可配置, `backpressure_activate_count_` 暴露
+- `H5` 连接限制 — `DemoServerOptions::max_connections`, `total_session_count()`, 超限返回 `kRateLimited`
+- `H6` 内存保护 — `ObjectPool::max_blocks`, `exhausted_count_` 计数器, `BumpArena::exhausted_count_`
+
+### v2.0.2 性能基线 (已完成 2026-05-12)
+
+- `B1` 测量基础设施 — `LatencyHistogram` (指数分桶 14 桶), `ThroughputTracker` (滑动窗口 5s/10 子桶), `v2_gateway_pressure` benchmark harness
+- `B2` 吞吐量基线 — `DiagnosticsSnapshot::messages_per_second` 字段, `BackendMetrics::latency_sample_count`
+- `B3` 延迟基线 — `GatewayServiceBridge::route()` 记录 backend 往返延迟到 `BackendMetrics::record_latency()`
+- `B4-B6` 文档产出 — `docs/performance-baseline.md` (测量方法 + SLO/SLI 定义 + 容量规划公式 + 基准命令), 356 单元测试
+
 ---
 
 ## 三、M1: Actor 模型核心

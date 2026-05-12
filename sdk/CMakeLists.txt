@@ -21,12 +21,23 @@ add_library(boost_gateway_sdk STATIC
 )
 
 # ── C API shared library (for Python/C# via ctypes/DllImport) ────────
-add_library(boost_gateway_sdk_shared SHARED
+# Compile client.cpp directly here (not linked from static lib) so
+# -fPIC is applied correctly on Linux for shared library compatibility.
+add_library(boost_gateway_sdk_dll SHARED
+    src/client.cpp
     src/c_api.cpp
 )
-target_link_libraries(boost_gateway_sdk_shared PRIVATE boost_gateway_sdk)
-target_compile_definitions(boost_gateway_sdk_shared PRIVATE BOOST_GATEWAY_SDK_EXPORTS)
-set_target_properties(boost_gateway_sdk_shared PROPERTIES OUTPUT_NAME boost_gateway_sdk)
+target_compile_definitions(boost_gateway_sdk_dll PRIVATE BOOST_GATEWAY_SDK_EXPORTS)
+target_link_libraries(boost_gateway_sdk_dll
+    PRIVATE
+        nlohmann_json::nlohmann_json
+)
+target_include_directories(boost_gateway_sdk_dll
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+        ${boost_SOURCE_DIR}
+)
 
 target_include_directories(boost_gateway_sdk
     PUBLIC

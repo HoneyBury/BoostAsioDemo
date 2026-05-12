@@ -34,7 +34,8 @@ public:
         std::uint32_t virtual_nodes = 150;  // virtual nodes per physical node
     };
 
-    explicit ConsistentHashRing(Config config = {}) : config_(config) {}
+    ConsistentHashRing() : config_{} {}
+    explicit ConsistentHashRing(Config config) : config_(std::move(config)) {}
 
     /// Add a physical node to the ring.
     void add_node(const std::string& node_name) {

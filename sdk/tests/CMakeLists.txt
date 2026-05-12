@@ -1,5 +1,10 @@
-add_executable(sdk_tests sdk_test.cpp)
+add_executable(sdk_tests
+    unit/codec_test.cpp
+    unit/client_test.cpp
+)
 target_link_libraries(sdk_tests PRIVATE boost_gateway_sdk GTest::gtest_main)
-apply_project_warnings(sdk_tests)
+if(COMMAND apply_project_warnings)
+    apply_project_warnings(sdk_tests)
+endif()
 include(GoogleTest)
 gtest_discover_tests(sdk_tests DISCOVERY_TIMEOUT 10)

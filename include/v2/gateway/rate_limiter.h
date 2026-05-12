@@ -90,8 +90,9 @@ public:
         double login_limit = 5.0;         // tokens/s for login globally
     };
 
-    explicit RateLimiter(Config config = {})
-        : config_(config),
+    RateLimiter() : config_{} {}
+    explicit RateLimiter(Config config)
+        : config_(std::move(config)),
           login_bucket_(config_.login_limit, config_.login_limit) {}
 
     // Check whether the request described by `envelope` is allowed.

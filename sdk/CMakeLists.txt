@@ -15,12 +15,18 @@ configure_file(
     ${CMAKE_CURRENT_BINARY_DIR}/include/boost_gateway/sdk/version.h
 )
 
-# ── Library (standalone — no server deps) ────────────────────────────
-add_library(boost_gateway_sdk SHARED
+# ── Core library (static, linked by C++ clients) ─────────────────────
+add_library(boost_gateway_sdk STATIC
     src/client.cpp
+)
+
+# ── C API shared library (for Python/C# via ctypes/DllImport) ────────
+add_library(boost_gateway_sdk_shared SHARED
     src/c_api.cpp
 )
-target_compile_definitions(boost_gateway_sdk PRIVATE BOOST_GATEWAY_SDK_EXPORTS)
+target_link_libraries(boost_gateway_sdk_shared PRIVATE boost_gateway_sdk)
+target_compile_definitions(boost_gateway_sdk_shared PRIVATE BOOST_GATEWAY_SDK_EXPORTS)
+set_target_properties(boost_gateway_sdk_shared PROPERTIES OUTPUT_NAME boost_gateway_sdk)
 
 target_include_directories(boost_gateway_sdk
     PUBLIC

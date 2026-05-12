@@ -1,0 +1,79 @@
+// v3.0.0: Common message types shared across all services.
+syntax = "proto3";
+package boost.gateway.v3;
+
+// Envelope for inter-service routing
+message ServiceEnvelope {
+  uint64 correlation_id = 1;
+  string source_service = 2;   // "gateway", "login", "room", "battle", "match", "leaderboard"
+  string target_service = 3;
+  uint32 timeout_ms = 4;
+  int32 error_code = 5;
+  uint64 trace_id = 6;         // W3C trace context
+  uint64 span_id = 7;
+  // Payload type determines which field to use
+  oneof payload {
+    LoginPayload login = 20;
+    RoomPayload room = 21;
+    BattlePayload battle = 22;
+    MatchPayload match = 23;
+    LeaderboardPayload leaderboard = 24;
+  }
+}
+
+message LoginPayload {
+  oneof kind {
+    LoginRequest login_request = 1;
+    LoginResponse login_response = 2;
+    TokenValidateRequest token_validate = 3;
+    SessionBindRequest session_bind = 4;
+    SessionCloseRequest session_close = 5;
+  }
+}
+
+message RoomPayload {
+  oneof kind {
+    RoomCreateRequest room_create = 1;
+    RoomCreateResponse room_create_response = 2;
+    RoomJoinRequest room_join = 3;
+    RoomJoinResponse room_join_response = 4;
+    RoomLeaveRequest room_leave = 5;
+    RoomLeaveResponse room_leave_response = 6;
+    RoomReadyRequest room_ready = 7;
+    RoomReadyResponse room_ready_response = 8;
+    RoomStartBattleRequest room_start_battle = 9;
+    RoomStatePush room_state_push = 10;
+  }
+}
+
+message BattlePayload {
+  oneof kind {
+    BattleCreateRequest battle_create = 1;
+    BattleInputRequest battle_input = 2;
+    BattleInputResponse battle_input_response = 3;
+    BattleStatePush battle_state_push = 4;
+    BattleFinishRequest battle_finish = 5;
+  }
+}
+
+message MatchPayload {
+  oneof kind {
+    MatchJoinRequest match_join = 1;
+    MatchJoinResponse match_join_response = 2;
+    MatchLeaveRequest match_leave = 3;
+    MatchStatusRequest match_status = 4;
+    MatchStatusResponse match_status_response = 5;
+    MatchFoundPush match_found = 6;
+  }
+}
+
+message LeaderboardPayload {
+  oneof kind {
+    LeaderboardSubmitRequest submit = 1;
+    LeaderboardSubmitResponse submit_response = 2;
+    LeaderboardTopRequest top = 3;
+    LeaderboardTopResponse top_response = 4;
+    LeaderboardRankRequest rank = 5;
+    LeaderboardRankResponse rank_response = 6;
+  }
+}

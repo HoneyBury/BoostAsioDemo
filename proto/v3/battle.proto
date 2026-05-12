@@ -1,0 +1,51 @@
+// v3.0.0: Battle service protocol definition.
+syntax = "proto3";
+package boost.gateway.v3;
+
+message BattleCreateRequest {
+  string battle_id = 1;
+  string room_id = 2;
+  repeated string player_ids = 3;
+  uint32 max_frames = 4;
+}
+
+message BattleInputRequest {
+  string user_id = 1;
+  uint32 request_id = 2;
+  string input_data = 3;       // "move:x,y", "attack:target", "finish:reason"
+  int64 score = 4;
+  uint32 submitted_frame = 5;
+}
+
+message BattleInputResponse {
+  string battle_id = 1;
+  string room_id = 2;
+  string user_id = 3;
+  uint64 input_seq = 4;
+  uint32 request_id = 5;
+}
+
+message BattleStatePush {
+  string battle_id = 1;
+  string room_id = 2;
+  string kind = 3;             // "started", "frame", "settlement", "finished"
+  uint32 frame_number = 4;
+  string reason = 5;
+  string triggering_user_id = 6;
+}
+
+message BattleFinishRequest {
+  string user_id = 1;
+  string battle_id = 2;
+  string reason = 3;           // "surrender", "timeout", "finished"
+}
+
+message BattleParticipantState {
+  string user_id = 1;
+  bool online = 2;
+  int32 pos_x = 3;
+  int32 pos_y = 4;
+  int32 hp = 5;
+  int32 max_hp = 6;
+  int64 score = 7;
+}

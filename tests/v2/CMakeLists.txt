@@ -47,11 +47,16 @@ add_executable(project_v2_unit_tests
     unit/broadcast_test.cpp
     unit/battle_replay_test.cpp
     unit/reconnect_test.cpp
+    unit/proto_schema_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE
         project_v2
         GTest::gtest_main
+)
+target_compile_definitions(project_v2_unit_tests
+    PRIVATE
+        PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 apply_project_warnings(project_v2_unit_tests)
 

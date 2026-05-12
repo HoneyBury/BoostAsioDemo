@@ -1,0 +1,30 @@
+// v3.0.0: Login service protocol definition.
+syntax = "proto3";
+package boost.gateway.v3;
+
+message LoginRequest {
+  string user_id = 1;
+  string token = 2;
+  string display_name = 3;
+}
+
+message LoginResponse {
+  string user_id = 1;
+  string display_name = 2;
+  string role = 3;             // "player", "admin", "observer"
+  bool is_duplicate = 4;
+  string room_id = 5;          // for session resume
+}
+
+message TokenValidateRequest {
+  string token = 1;
+}
+
+message SessionBindRequest {
+  uint64 session_id = 1;
+  uint64 connection_id = 2;
+}
+
+message SessionCloseRequest {
+  uint64 session_id = 1;
+}

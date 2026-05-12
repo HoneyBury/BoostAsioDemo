@@ -1,0 +1,59 @@
+// v3.0.0: Room service protocol definition.
+syntax = "proto3";
+package boost.gateway.v3;
+
+message RoomCreateRequest {
+  string user_id = 1;
+  string room_id = 2;
+}
+
+message RoomCreateResponse {
+  string room_id = 1;
+  int32 member_count = 2;
+}
+
+message RoomJoinRequest {
+  string user_id = 1;
+  string room_id = 2;
+}
+
+message RoomJoinResponse {
+  string room_id = 1;
+  int32 member_count = 2;
+}
+
+message RoomLeaveRequest {
+  string user_id = 1;
+  string room_id = 2;
+}
+
+message RoomLeaveResponse {
+  string room_id = 1;
+  bool was_owner = 2;
+  string new_owner_id = 3;
+}
+
+message RoomReadyRequest {
+  string user_id = 1;
+  string room_id = 2;
+  bool ready = 3;
+}
+
+message RoomReadyResponse {
+  string room_id = 1;
+  bool all_ready = 2;
+}
+
+message RoomStartBattleRequest {
+  string user_id = 1;
+  string room_id = 2;
+}
+
+message RoomStatePush {
+  string room_id = 1;
+  string owner_id = 2;
+  repeated string members = 3;
+  repeated string ready_members = 4;
+  bool in_battle = 5;
+  string battle_id = 6;
+}

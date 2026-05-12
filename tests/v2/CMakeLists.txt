@@ -57,6 +57,7 @@ add_executable(project_v2_integration_tests
     integration/demo_server_smoke_test.cpp
     integration/backend_health_test.cpp
     integration/data_layer_test.cpp
+    integration/service_bus_integrity_test.cpp
 )
 target_link_libraries(project_v2_integration_tests
     PRIVATE

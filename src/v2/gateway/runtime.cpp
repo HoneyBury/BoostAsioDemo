@@ -7,6 +7,7 @@
 #include "v2/gateway/gateway_service_bridge.h"
 #include "v2/gateway/rate_limiter.h"
 #include "v2/service/error_codes.h"
+#include "v2/tracing/trace_context.h"
 #include "app/audit_log.h"
 
 #include <fmt/format.h>
@@ -130,6 +131,12 @@ void Runtime::set_service_bridge(std::unique_ptr<GatewayServiceBridge> bridge) {
 }
 
 bool Runtime::handle(const GatewayCommand& command) {
+    // v2.2.0: Setup cross-service trace context for distributed tracing
+    if (bridge_) {
+        auto trace_ctx = v2::tracing::TraceContext::create_root();
+        bridge_->set_trace_context(trace_ctx.trace_id, trace_ctx.current_span_id);
+    }
+
     switch (command.type) {
         case GatewayCommandType::kLogin: {
             const auto login_body = parse_login_command_body(command.body);

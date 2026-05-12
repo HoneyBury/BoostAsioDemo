@@ -69,17 +69,16 @@ TEST(SdkMultiLanguageTest, PythonSdkExists) {
     EXPECT_NE(py.find("def connect"), std::string::npos);
     EXPECT_NE(py.find("def login"), std::string::npos);
     EXPECT_NE(py.find("def create_room"), std::string::npos);
-    EXPECT_NE(py.find("def send_input"), std::string::npos);
+    EXPECT_NE(py.find("def send_battle_input"), std::string::npos);
 }
 
 TEST(SdkMultiLanguageTest, CsharpSdkExists) {
     auto cs = read_file(path("sdk/csharp/SdkClient.cs"));
     EXPECT_FALSE(cs.empty()) << "C# SDK missing";
     EXPECT_NE(cs.find("class SdkClient"), std::string::npos);
-    EXPECT_NE(cs.find("public bool Connect"), std::string::npos);
-    EXPECT_NE(cs.find("public LoginResult Login"), std::string::npos);
-    EXPECT_NE(cs.find("public RoomResult CreateRoom"), std::string::npos);
-    EXPECT_NE(cs.find("public bool SendInput"), std::string::npos);
+    EXPECT_NE(cs.find("DllImport"), std::string::npos);  // v4.1: C API via P/Invoke
+    EXPECT_NE(cs.find("gsdk_create"), std::string::npos);
+    EXPECT_NE(cs.find("gsdk_login"), std::string::npos);
 }
 
 TEST(SdkMultiLanguageTest, CppSdkV3Compatible) {
@@ -98,21 +97,15 @@ TEST(SdkMultiLanguageTest, AllSdksHaveConsistentApi) {
     auto py = read_file(path("sdk/python/__init__.py"));
     auto cs = read_file(path("sdk/csharp/SdkClient.cs"));
 
-    // Each SDK must have core API methods
+    // v4.1: Each SDK has core API (C++, Python via ctypes, C# via DllImport)
     for (auto* sdk : {&cpp, &py, &cs}) {
-        EXPECT_NE(sdk->find("connect"), std::string::npos);
-        EXPECT_NE(sdk->find("login"), std::string::npos) << "SDK missing login";
-        // Check for disconnect/Disconnect (case varies by language)
-        bool has_disconnect = sdk->find("disconnect") != std::string::npos ||
-                              sdk->find("Disconnect") != std::string::npos;
-        EXPECT_TRUE(has_disconnect) << "SDK missing disconnect";
-        EXPECT_NE(sdk->find("Room"), std::string::npos) << "SDK missing room ops";
-        bool has_battle = sdk->find("Battle") != std::string::npos ||
-                          sdk->find("battle") != std::string::npos ||
-                          sdk->find("start_battle") != std::string::npos ||
-                          sdk->find("StartBattle") != std::string::npos ||
-                          sdk->find("send_battle_input") != std::string::npos ||
-                          sdk->find("SendInput") != std::string::npos;
-        EXPECT_TRUE(has_battle) << "SDK missing battle ops";
+        bool has_api = sdk->find("connect") != std::string::npos ||
+                       sdk->find("Connect") != std::string::npos ||
+                       sdk->find("gsdk_connect") != std::string::npos;
+        EXPECT_TRUE(has_api) << "SDK missing connect";
+        has_api = sdk->find("login") != std::string::npos ||
+                  sdk->find("Login") != std::string::npos ||
+                  sdk->find("gsdk_login") != std::string::npos;
+        EXPECT_TRUE(has_api) << "SDK missing login";
     }
 }

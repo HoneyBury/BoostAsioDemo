@@ -18,6 +18,7 @@ configure_file(
 # ── Library (standalone — no server deps) ────────────────────────────
 add_library(boost_gateway_sdk STATIC
     src/client.cpp
+    src/c_api.cpp
 )
 
 target_include_directories(boost_gateway_sdk

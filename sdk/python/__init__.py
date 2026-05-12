@@ -1,157 +1,68 @@
-# BoostGateway Python SDK v3.0.0
-# Lightweight client for BoostGateway game servers.
-# Supports: connect, login, room operations, battle input, matchmaking, leaderboard.
+# SDK v4.1.0: Thin Python wrapper via C API (ctypes, zero deps).
+import ctypes, os
+from ctypes import c_int32, c_uint16, c_uint64, c_char, c_int, c_void_p, CFUNCTYPE
 
-import socket
-import struct
-import time
-from dataclasses import dataclass, field
-from typing import Optional, Callable, List
+_dll = None
+for p in ["boost_gateway_sdk.dll","libboost_gateway_sdk.so","libboost_gateway_sdk.dylib"]:
+    try: _dll = ctypes.CDLL(p); break
+    except OSError: continue
 
-# ── Protocol Constants ─────────────────────────────────────────────────
+class GsdkLoginResult(ctypes.Structure):
+    _fields_ = [("ok", c_int), ("error_code", c_int32), ("user_id", c_char*64), ("display_name", c_char*64), ("error_message", c_char*256)]
 
-MSG_HEARTBEAT_REQUEST  = 1
-MSG_ECHO_REQUEST       = 1001
-MSG_LOGIN_REQUEST      = 2001
-MSG_ROOM_CREATE_REQUEST = 3001
-MSG_ROOM_JOIN_REQUEST  = 3003
-MSG_ROOM_LEAVE_REQUEST = 3005
-MSG_ROOM_READY_REQUEST = 3007
-MSG_BATTLE_START_REQUEST = 4001
-MSG_BATTLE_INPUT_REQUEST = 4003
+class GsdkRoomResult(ctypes.Structure):
+    _fields_ = [("ok", c_int), ("error_code", c_int32), ("room_id", c_char*64), ("member_count", c_int), ("error_message", c_char*256)]
 
-MSG_ECHO_RESPONSE       = 1002
-MSG_LOGIN_RESPONSE      = 2002
-MSG_ROOM_CREATE_RESPONSE = 3002
-MSG_ROOM_JOIN_RESPONSE  = 3004
-MSG_ROOM_LEAVE_RESPONSE = 3006
-MSG_ROOM_READY_RESPONSE = 3008
-MSG_BATTLE_START_RESPONSE = 4002
-MSG_BATTLE_INPUT_RESPONSE = 4004
-MSG_ERROR_RESPONSE      = 9001
-MSG_SESSION_KICKED_PUSH = 1003
-MSG_BATTLE_STATE_PUSH   = 4006
+class GsdkBattleStartResult(ctypes.Structure):
+    _fields_ = [("ok", c_int), ("error_code", c_int32), ("battle_id", c_char*64), ("error_message", c_char*256)]
 
-# ── Data Classes ───────────────────────────────────────────────────────
+class GsdkBattleInputResult(ctypes.Structure):
+    _fields_ = [("ok", c_int), ("error_code", c_int32), ("input_seq", c_uint64), ("error_message", c_char*256)]
 
-@dataclass
-class LoginResult:
-    ok: bool = False
-    user_id: str = ""
-    error_code: int = 0
+class GsdkEchoResult(ctypes.Structure):
+    _fields_ = [("ok", c_int), ("body", c_char*4096)]
 
-@dataclass
-class RoomResult:
-    ok: bool = False
-    room_id: str = ""
-    error_code: int = 0
+PUSH_CB = CFUNCTYPE(None, c_uint16, c_char_p, c_void_p)
+DC_CB = CFUNCTYPE(None, c_void_p)
 
-@dataclass
-class PushMessage:
-    message_id: int = 0
-    body: str = ""
+def _b(name, restype, *argtypes):
+    f = getattr(_dll, name); f.restype = restype; f.argtypes = argtypes; return f
 
-# ── SdkClient ──────────────────────────────────────────────────────────
+_cr = _b("gsdk_create", c_void_p)
+_de = _b("gsdk_destroy", None, c_void_p)
+_co = _b("gsdk_connect", c_int, c_void_p, c_char_p, c_uint16, c_int32)
+_dc = _b("gsdk_disconnect", None, c_void_p)
+_lo = _b("gsdk_login", GsdkLoginResult, c_void_p, c_char_p, c_char_p, c_int32)
+_crm = _b("gsdk_create_room", GsdkRoomResult, c_void_p, c_char_p, c_int32)
+_jrm = _b("gsdk_join_room", GsdkRoomResult, c_void_p, c_char_p, c_int32)
+_lrm = _b("gsdk_leave_room", GsdkRoomResult, c_void_p, c_char_p, c_int32)
+_sr = _b("gsdk_set_ready", GsdkRoomResult, c_void_p, c_int, c_int32)
+_sb = _b("gsdk_start_battle", GsdkBattleStartResult, c_void_p, c_char_p, c_int32)
+_si = _b("gsdk_send_battle_input", GsdkBattleInputResult, c_void_p, c_char_p, c_int32)
+_ec = _b("gsdk_echo", GsdkEchoResult, c_void_p, c_char_p, c_int32)
+_op = _b("gsdk_on_push", None, c_void_p, PUSH_CB, c_void_p)
+_od = _b("gsdk_on_disconnect", None, c_void_p, DC_CB, c_void_p)
 
 class SdkClient:
-    """BoostGateway game server client."""
-
-    def __init__(self):
-        self._sock: Optional[socket.socket] = None
-        self._req_id = 0
-        self._push_cb: Optional[Callable[[PushMessage], None]] = None
-
-    def connect(self, host: str = "127.0.0.1", port: int = 9201,
-                timeout: float = 5.0) -> bool:
-        """Connect to a gateway server."""
-        try:
-            self._sock = socket.create_connection((host, port), timeout=timeout)
-            self._sock.settimeout(timeout)
-            return True
-        except OSError:
-            return False
-
-    def disconnect(self):
-        """Disconnect from the server."""
-        if self._sock:
-            self._sock.close()
-            self._sock = None
-
-    def login(self, user_id: str, token: str) -> LoginResult:
-        """Login with user credentials."""
-        body = f"{user_id}|token:{token}|{user_id}"
-        resp = self._request(MSG_LOGIN_REQUEST, body)
-        if resp and resp[0] == MSG_LOGIN_RESPONSE:
-            return LoginResult(ok=True, user_id=user_id)
-        return LoginResult(ok=False, error_code=-1)
-
-    def create_room(self, room_id: str) -> RoomResult:
-        resp = self._request(MSG_ROOM_CREATE_REQUEST, room_id)
-        ok = resp is not None and resp[0] == MSG_ROOM_CREATE_RESPONSE
-        return RoomResult(ok=ok, room_id=room_id)
-
-    def join_room(self, room_id: str) -> RoomResult:
-        resp = self._request(MSG_ROOM_JOIN_REQUEST, room_id)
-        ok = resp is not None and resp[0] == MSG_ROOM_JOIN_RESPONSE
-        return RoomResult(ok=ok, room_id=room_id)
-
-    def leave_room(self, room_id: str) -> RoomResult:
-        resp = self._request(MSG_ROOM_LEAVE_REQUEST, room_id)
-        ok = resp is not None and resp[0] == MSG_ROOM_LEAVE_RESPONSE
-        return RoomResult(ok=ok, room_id=room_id)
-
-    def set_ready(self, ready: bool = True) -> RoomResult:
-        body = "true" if ready else "false"
-        resp = self._request(MSG_ROOM_READY_REQUEST, body)
-        ok = resp is not None and resp[0] == MSG_ROOM_READY_RESPONSE
-        return RoomResult(ok=ok)
-
-    def start_battle(self, room_id: str):
-        resp = self._request(MSG_BATTLE_START_REQUEST, room_id)
-        return resp is not None
-
-    def send_input(self, input_data: str):
-        resp = self._request(MSG_BATTLE_INPUT_REQUEST, input_data)
-        return resp is not None
-
-    def on_push(self, callback: Callable[[PushMessage], None]):
-        self._push_cb = callback
-
-    def _request(self, msg_id: int, body: str):
-        if not self._sock:
-            return None
-        self._req_id += 1
-        req_id = self._req_id
-        encoded = self._encode(msg_id, req_id, 0, body)
-        try:
-            self._sock.sendall(encoded)
-            return self._read()
-        except OSError:
-            return None
-
-    @staticmethod
-    def _encode(msg_id: int, req_id: int, err_code: int, body: str) -> bytes:
-        body_bytes = body.encode("utf-8")
-        total = 11 + len(body_bytes)  # 2+4+4+1 + body
-        header = struct.pack("!IHIIB", total, msg_id, req_id, err_code, 0)
-        return header + body_bytes
-
-    def _read(self):
-        if not self._sock:
-            return None
-        length_data = self._sock.recv(4)
-        if len(length_data) < 4:
-            return None
-        total = struct.unpack("!I", length_data)[0]
-        remaining = total - 4
-        data = b""
-        while len(data) < remaining:
-            chunk = self._sock.recv(remaining - len(data))
-            if not chunk:
-                break
-            data += chunk
-        fmt = "!HIIB"
-        hdr_size = struct.calcsize(fmt)
-        msg_id, req_id, err_code, flags = struct.unpack(fmt, data[:hdr_size])
-        body = data[hdr_size:].decode("utf-8", errors="replace")
-        return (msg_id, req_id, err_code, flags, body)
+    def __init__(self): self._h = _cr()
+    def connect(self, h="127.0.0.1", p=9201, ms=5000): return bool(_co(self._h, h.encode(), p, ms))
+    def disconnect(self): _dc(self._h)
+    def login(self, u, t, ms=5000):
+        r = _lo(self._h, u.encode(), t.encode(), ms)
+        return {"ok":bool(r.ok),"user_id":r.user_id.decode(),"error_code":r.error_code}
+    def create_room(self, r, ms=5000):
+        v = _crm(self._h, r.encode(), ms); return {"ok":bool(v.ok),"room_id":v.room_id.decode()}
+    def join_room(self, r, ms=5000):
+        v = _jrm(self._h, r.encode(), ms); return {"ok":bool(v.ok)}
+    def leave_room(self, r, ms=5000):
+        v = _lrm(self._h, r.encode(), ms); return {"ok":bool(v.ok)}
+    def set_ready(self, r=True, ms=5000):
+        v = _sr(self._h, 1 if r else 0, ms); return {"ok":bool(v.ok)}
+    def start_battle(self, r, ms=5000):
+        v = _sb(self._h, r.encode(), ms); return {"ok":bool(v.ok),"battle_id":v.battle_id.decode()}
+    def send_battle_input(self, d, ms=5000):
+        v = _si(self._h, d.encode(), ms); return {"ok":bool(v.ok)}
+    def echo(self, b, ms=5000):
+        v = _ec(self._h, b.encode(), ms); return {"ok":bool(v.ok),"body":v.body.decode()}
+    def __del__(self):
+        if hasattr(self,'_h') and self._h: _de(self._h)

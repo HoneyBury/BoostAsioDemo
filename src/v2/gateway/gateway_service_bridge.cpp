@@ -1,5 +1,6 @@
 #include "v2/gateway/gateway_service_bridge.h"
 
+#include <chrono>
 #include <mutex>
 
 namespace v2::gateway {
@@ -160,7 +161,13 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
         .message_type = message_type,
     };
 
+    const auto send_start = std::chrono::steady_clock::now();
     auto response = conn->send_request(request);
+    const auto latency_us = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - send_start)
+            .count());
+
     if (!response) {
         slot.breaker.on_failure();
         result.error = v2::service::ServiceErrorCode::kTimeout;
@@ -181,6 +188,9 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
     result.success = true;
     result.response_payload = std::move(response->payload);
     record_route_result(target, result);
+    if (metrics_) {
+        metrics_->record_latency(target, latency_us);
+    }
     return result;
 }
 

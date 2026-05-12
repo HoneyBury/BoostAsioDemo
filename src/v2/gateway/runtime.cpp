@@ -192,7 +192,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 }
 
                 // Bridge routing failure (timeout, unavailable, etc.)
-                auto net_error = net::protocol::ErrorCode::kSessionNotFound;
+                auto net_error = net::protocol::ErrorCode::kLoginBackendUnavailable;
                 if (result.error == v2::service::ServiceErrorCode::kRejected) {
                     net_error = net::protocol::ErrorCode::kInvalidToken;
                 }
@@ -278,7 +278,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
                      command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
                      "backend_error");
                 return true;
             }
@@ -364,7 +364,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
                      command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
                      "backend_error");
                 return true;
             }
@@ -455,7 +455,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
                      command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
                      "backend_error");
                 return true;
             }
@@ -524,7 +524,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                     emit(net::protocol::kErrorResponse,
                          command.session_id,
                          command.request_id,
-                         static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
                          "backend_error");
                     return true;
                 }
@@ -767,7 +767,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
                      command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleBackendUnavailable),
                      "backend_error");
                 return true;
             }

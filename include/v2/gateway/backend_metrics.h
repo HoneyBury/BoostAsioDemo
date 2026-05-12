@@ -14,6 +14,7 @@ struct BackendMetricsSnapshot {
     std::uint64_t total_timeouts = 0;
     std::uint64_t total_unavailable = 0;
     std::uint64_t total_errors = 0;
+    std::uint64_t total_degraded = 0;
 };
 
 class BackendMetrics {
@@ -41,6 +42,11 @@ public:
     void record_error(v2::service::ServiceId service) {
         std::scoped_lock lock(mutex_);
         counters_[service].total_errors++;
+    }
+
+    void record_degraded(v2::service::ServiceId service) {
+        std::scoped_lock lock(mutex_);
+        counters_[service].total_degraded++;
     }
 
     [[nodiscard]] BackendMetricsSnapshot snapshot(

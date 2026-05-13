@@ -224,6 +224,14 @@ public:
         return read();
     }
 
+    std::optional<net::packet::DecodedPacket> exchange_for(std::uint16_t message_id,
+                                                           std::uint32_t request_id,
+                                                           const std::string& body,
+                                                           std::chrono::milliseconds timeout) {
+        send(message_id, request_id, body);
+        return try_read_for(timeout);
+    }
+
     void send(std::uint16_t message_id, std::uint32_t request_id, const std::string& body) {
         const auto outbound = net::packet::encode(message_id, request_id, 0, body);
         asio::write(socket_, asio::buffer(outbound));
@@ -246,6 +254,18 @@ public:
                 return packet;
             }
         }
+    }
+
+    std::optional<net::packet::DecodedPacket> expect_message_for(std::uint16_t message_id,
+                                                                  std::chrono::milliseconds timeout) {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (std::chrono::steady_clock::now() < deadline) {
+            auto packet = try_read_for(std::chrono::milliseconds(100));
+            if (packet.has_value() && packet->message_id == message_id) {
+                return packet;
+            }
+        }
+        return std::nullopt;
     }
 
     std::optional<net::packet::DecodedPacket> try_read_for(std::chrono::milliseconds timeout) {
@@ -530,6 +550,8 @@ public:
     void stop() {
         child_.stop();
     }
+
+    bool running() const { return child_.running(); }
 
     [[nodiscard]] const std::string& startup_error() const noexcept { return startup_error_; }
 
@@ -1045,9 +1067,10 @@ TEST(GatewayIntegrationTest, EchoServerConfigEnablesEchoShadowBridgeResponses) {
 
     TestClient client;
     client.connect(*port);
-    const auto first = client.exchange(net::protocol::kEchoRequest, 310, "shadow_echo");
-    EXPECT_EQ(first.message_id, net::protocol::kEchoResponse);
-    EXPECT_EQ(first.body, "shadow_echo");
+    auto first = client.exchange_for(net::protocol::kEchoRequest, 310, "shadow_echo", std::chrono::seconds(5));
+    ASSERT_TRUE(first.has_value()) << "echo_server did not respond to echo request";
+    EXPECT_EQ(first->message_id, net::protocol::kEchoResponse);
+    EXPECT_EQ(first->body, "shadow_echo");
 
     const auto second = client.try_read_for(std::chrono::milliseconds(300));
     ASSERT_TRUE(second.has_value());
@@ -1100,9 +1123,10 @@ TEST(GatewayIntegrationTest, EchoServerConfigCanDisableEchoShadowBridgeResponses
 
     TestClient client;
     client.connect(*port);
-    const auto first = client.exchange(net::protocol::kEchoRequest, 320, "plain_echo");
-    EXPECT_EQ(first.message_id, net::protocol::kEchoResponse);
-    EXPECT_EQ(first.body, "plain_echo");
+    auto first = client.exchange_for(net::protocol::kEchoRequest, 320, "plain_echo", std::chrono::seconds(5));
+    ASSERT_TRUE(first.has_value()) << "echo_server did not respond to echo request";
+    EXPECT_EQ(first->message_id, net::protocol::kEchoResponse);
+    EXPECT_EQ(first->body, "plain_echo");
 
     const auto second = client.try_read_for(std::chrono::milliseconds(300));
     EXPECT_FALSE(second.has_value());
@@ -1161,34 +1185,47 @@ TEST(GatewayIntegrationTest, EchoServerConfigCanRestrictBattleShadowResponsesByK
     owner.connect(*port);
     member.connect(*port);
 
-    EXPECT_EQ(owner.exchange(net::protocol::kLoginRequest, 330, "bridge_owner|token:bridge_owner").message_id,
-              net::protocol::kLoginResponse);
+    auto r1 = owner.exchange_for(net::protocol::kLoginRequest, 330, "bridge_owner|token:bridge_owner", std::chrono::seconds(5));
+    ASSERT_TRUE(r1.has_value()) << "Login request timed out";
+    EXPECT_EQ(r1->message_id, net::protocol::kLoginResponse);
     ASSERT_TRUE(owner.try_read_for(std::chrono::milliseconds(300)).has_value());
-    EXPECT_EQ(member.exchange(net::protocol::kLoginRequest, 331, "bridge_member|token:bridge_member").message_id,
-              net::protocol::kLoginResponse);
+    auto r2 = member.exchange_for(net::protocol::kLoginRequest, 331, "bridge_member|token:bridge_member", std::chrono::seconds(5));
+    ASSERT_TRUE(r2.has_value()) << "Login request timed out";
+    EXPECT_EQ(r2->message_id, net::protocol::kLoginResponse);
     ASSERT_TRUE(member.try_read_for(std::chrono::milliseconds(300)).has_value());
 
-    EXPECT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 332, "bridge_room").message_id,
-              net::protocol::kRoomCreateResponse);
-    EXPECT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 333, "bridge_room").message_id,
-              net::protocol::kRoomJoinResponse);
-    (void)owner.expect_message(net::protocol::kRoomStatePush);
+    auto r3 = owner.exchange_for(net::protocol::kRoomCreateRequest, 332, "bridge_room", std::chrono::seconds(5));
+    ASSERT_TRUE(r3.has_value()) << "Room create request timed out";
+    EXPECT_EQ(r3->message_id, net::protocol::kRoomCreateResponse);
+    auto r4 = member.exchange_for(net::protocol::kRoomJoinRequest, 333, "bridge_room", std::chrono::seconds(5));
+    ASSERT_TRUE(r4.has_value()) << "Room join request timed out";
+    EXPECT_EQ(r4->message_id, net::protocol::kRoomJoinResponse);
+    auto p0 = owner.expect_message_for(net::protocol::kRoomStatePush, std::chrono::seconds(5));
+    ASSERT_TRUE(p0.has_value()) << "RoomStatePush timed out";
 
     owner.send(net::protocol::kRoomReadyRequest, 334, "true");
-    EXPECT_EQ(owner.expect_message(net::protocol::kRoomReadyResponse).request_id, 334U);
+    auto p1 = owner.expect_message_for(net::protocol::kRoomReadyResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p1.has_value()) << "RoomReadyResponse timed out";
+    EXPECT_EQ(p1->request_id, 334U);
     member.send(net::protocol::kRoomReadyRequest, 335, "true");
-    EXPECT_EQ(member.expect_message(net::protocol::kRoomReadyResponse).request_id, 335U);
+    auto p2 = member.expect_message_for(net::protocol::kRoomReadyResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p2.has_value()) << "RoomReadyResponse timed out";
+    EXPECT_EQ(p2->request_id, 335U);
 
     owner.send(net::protocol::kBattleStartRequest, 336, "");
     std::vector<net::packet::DecodedPacket> start_responses;
-    start_responses.push_back(owner.expect_message(net::protocol::kBattleStartResponse));
+    auto p3 = owner.expect_message_for(net::protocol::kBattleStartResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p3.has_value()) << "BattleStartResponse timed out";
+    start_responses.push_back(std::move(*p3));
     for (auto& packet : collect_matching_messages(owner, net::protocol::kBattleStartResponse, std::chrono::milliseconds(300))) {
         start_responses.push_back(std::move(packet));
     }
     EXPECT_TRUE(contains_body(start_responses, "battle_started:room_id=bridge_room:battle_id=battle_0001"));
 
     std::vector<net::packet::DecodedPacket> member_started;
-    member_started.push_back(member.expect_message(net::protocol::kBattleStatePush));
+    auto p4 = member.expect_message_for(net::protocol::kBattleStatePush, std::chrono::seconds(5));
+    ASSERT_TRUE(p4.has_value()) << "BattleStatePush timed out";
+    member_started.push_back(std::move(*p4));
     for (auto& packet : collect_matching_messages(member, net::protocol::kBattleStatePush, std::chrono::milliseconds(300))) {
         member_started.push_back(std::move(packet));
     }
@@ -1197,14 +1234,17 @@ TEST(GatewayIntegrationTest, EchoServerConfigCanRestrictBattleShadowResponsesByK
 
     owner.send(net::protocol::kBattleInputRequest, 337, "move:right");
     std::vector<net::packet::DecodedPacket> input_responses;
-    input_responses.push_back(owner.expect_message(net::protocol::kBattleInputResponse));
+    auto p5 = owner.expect_message_for(net::protocol::kBattleInputResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p5.has_value()) << "BattleInputResponse timed out";
+    input_responses.push_back(std::move(*p5));
     for (auto& packet : collect_matching_messages(owner, net::protocol::kBattleInputResponse, std::chrono::milliseconds(300))) {
         input_responses.push_back(std::move(packet));
     }
     EXPECT_TRUE(contains_body(input_responses, "input_seq:seq=1"));
 
-    const auto member_input = member.expect_message(net::protocol::kBattleInputPush);
-    EXPECT_EQ(member_input.body, "battle_input:bridge_room:bridge_owner:1:move:right");
+    auto p6 = member.expect_message_for(net::protocol::kBattleInputPush, std::chrono::seconds(5));
+    ASSERT_TRUE(p6.has_value()) << "BattleInputPush timed out";
+    EXPECT_EQ(p6->body, "battle_input:bridge_room:bridge_owner:1:move:right");
     EXPECT_FALSE(member.try_read_for(std::chrono::milliseconds(300)).has_value());
 
     server.stop();
@@ -1261,42 +1301,60 @@ TEST(GatewayIntegrationTest, EchoServerConfigCanMirrorOnlyBattleFinishKinds) {
     owner.connect(*port);
     member.connect(*port);
 
-    EXPECT_EQ(owner.exchange(net::protocol::kLoginRequest, 340, "bridge_owner|token:bridge_owner").message_id,
-              net::protocol::kLoginResponse);
+    auto r1 = owner.exchange_for(net::protocol::kLoginRequest, 340, "bridge_owner|token:bridge_owner", std::chrono::seconds(5));
+    ASSERT_TRUE(r1.has_value()) << "Login request timed out";
+    EXPECT_EQ(r1->message_id, net::protocol::kLoginResponse);
     ASSERT_TRUE(owner.try_read_for(std::chrono::milliseconds(300)).has_value());
-    EXPECT_EQ(member.exchange(net::protocol::kLoginRequest, 341, "bridge_member|token:bridge_member").message_id,
-              net::protocol::kLoginResponse);
+    auto r2 = member.exchange_for(net::protocol::kLoginRequest, 341, "bridge_member|token:bridge_member", std::chrono::seconds(5));
+    ASSERT_TRUE(r2.has_value()) << "Login request timed out";
+    EXPECT_EQ(r2->message_id, net::protocol::kLoginResponse);
     ASSERT_TRUE(member.try_read_for(std::chrono::milliseconds(300)).has_value());
 
-    EXPECT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 342, "bridge_room_finish").message_id,
-              net::protocol::kRoomCreateResponse);
-    EXPECT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 343, "bridge_room_finish").message_id,
-              net::protocol::kRoomJoinResponse);
-    (void)owner.expect_message(net::protocol::kRoomStatePush);
+    auto r3 = owner.exchange_for(net::protocol::kRoomCreateRequest, 342, "bridge_room_finish", std::chrono::seconds(5));
+    ASSERT_TRUE(r3.has_value()) << "Room create request timed out";
+    EXPECT_EQ(r3->message_id, net::protocol::kRoomCreateResponse);
+    auto r4 = member.exchange_for(net::protocol::kRoomJoinRequest, 343, "bridge_room_finish", std::chrono::seconds(5));
+    ASSERT_TRUE(r4.has_value()) << "Room join request timed out";
+    EXPECT_EQ(r4->message_id, net::protocol::kRoomJoinResponse);
+    auto p0 = owner.expect_message_for(net::protocol::kRoomStatePush, std::chrono::seconds(5));
+    ASSERT_TRUE(p0.has_value()) << "RoomStatePush timed out";
 
     owner.send(net::protocol::kRoomReadyRequest, 344, "true");
-    EXPECT_EQ(owner.expect_message(net::protocol::kRoomReadyResponse).request_id, 344U);
+    auto p1 = owner.expect_message_for(net::protocol::kRoomReadyResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p1.has_value()) << "RoomReadyResponse timed out";
+    EXPECT_EQ(p1->request_id, 344U);
     member.send(net::protocol::kRoomReadyRequest, 345, "true");
-    EXPECT_EQ(member.expect_message(net::protocol::kRoomReadyResponse).request_id, 345U);
+    auto p2 = member.expect_message_for(net::protocol::kRoomReadyResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p2.has_value()) << "RoomReadyResponse timed out";
+    EXPECT_EQ(p2->request_id, 345U);
 
     owner.send(net::protocol::kBattleStartRequest, 346, "");
-    (void)owner.expect_message(net::protocol::kBattleStartResponse);
-    EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body, "battle_state:started:bridge_room_finish:2");
+    auto p3 = owner.expect_message_for(net::protocol::kBattleStartResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p3.has_value()) << "BattleStartResponse timed out";
+    auto p4 = member.expect_message_for(net::protocol::kBattleStatePush, std::chrono::seconds(5));
+    ASSERT_TRUE(p4.has_value()) << "BattleStatePush timed out";
+    EXPECT_EQ(p4->body, "battle_state:started:bridge_room_finish:2");
     EXPECT_FALSE(member.try_read_for(std::chrono::milliseconds(300)).has_value());
 
     owner.send(net::protocol::kBattleInputRequest, 347, "finish:surrender");
-    const auto owner_settlement = owner.expect_message(net::protocol::kBattleStatePush);
-    const auto member_settlement = member.expect_message(net::protocol::kBattleStatePush);
-    EXPECT_EQ(owner_settlement.body,
+    auto owner_settlement = owner.expect_message_for(net::protocol::kBattleStatePush, std::chrono::seconds(5));
+    ASSERT_TRUE(owner_settlement.has_value()) << "BattleStatePush (settlement) timed out";
+    auto member_settlement = member.expect_message_for(net::protocol::kBattleStatePush, std::chrono::seconds(5));
+    ASSERT_TRUE(member_settlement.has_value()) << "BattleStatePush (settlement) timed out";
+    EXPECT_EQ(owner_settlement->body,
               "battle_state:kind=settlement:room_id=bridge_room_finish:battle_id=battle_0001:reason=surrender:user_id=bridge_owner");
-    EXPECT_EQ(member_settlement.body,
+    EXPECT_EQ(member_settlement->body,
               "battle_state:kind=settlement:room_id=bridge_room_finish:battle_id=battle_0001:reason=surrender:user_id=bridge_owner");
-    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).body, "battle_end_accepted:surrender");
-    const auto owner_finished = owner.expect_message(net::protocol::kBattleStatePush);
-    const auto member_finished = member.expect_message(net::protocol::kBattleStatePush);
-    EXPECT_EQ(owner_finished.body,
+    auto p5 = owner.expect_message_for(net::protocol::kBattleInputResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p5.has_value()) << "BattleInputResponse timed out";
+    EXPECT_EQ(p5->body, "battle_end_accepted:surrender");
+    auto owner_finished = owner.expect_message_for(net::protocol::kBattleStatePush, std::chrono::seconds(5));
+    ASSERT_TRUE(owner_finished.has_value()) << "BattleStatePush (finished) timed out";
+    auto member_finished = member.expect_message_for(net::protocol::kBattleStatePush, std::chrono::seconds(5));
+    ASSERT_TRUE(member_finished.has_value()) << "BattleStatePush (finished) timed out";
+    EXPECT_EQ(owner_finished->body,
               "battle_state:kind=finished:room_id=bridge_room_finish:battle_id=battle_0001:reason=surrender:user_id=bridge_owner");
-    EXPECT_EQ(member_finished.body,
+    EXPECT_EQ(member_finished->body,
               "battle_state:kind=finished:room_id=bridge_room_finish:battle_id=battle_0001:reason=surrender:user_id=bridge_owner");
 
     server.stop();
@@ -1790,43 +1848,56 @@ TEST(GatewayIntegrationTest, FullChainShadowBridgeBattleLifecycle) {
     // the flow completes without errors.
 
     // Step 1: Login owner
-    ASSERT_EQ(owner.exchange(net::protocol::kLoginRequest, 400, "owner_fc|token:owner_fc|OwnerFC").message_id,
-              net::protocol::kLoginResponse);
+    auto r1 = owner.exchange_for(net::protocol::kLoginRequest, 400, "owner_fc|token:owner_fc|OwnerFC", std::chrono::seconds(5));
+    ASSERT_TRUE(r1.has_value()) << "Login owner request timed out";
+    ASSERT_EQ(r1->message_id, net::protocol::kLoginResponse);
 
     // Step 2: Login member
-    ASSERT_EQ(member.exchange(net::protocol::kLoginRequest, 401, "member_fc|token:member_fc|MemberFC").message_id,
-              net::protocol::kLoginResponse);
+    auto r2 = member.exchange_for(net::protocol::kLoginRequest, 401, "member_fc|token:member_fc|MemberFC", std::chrono::seconds(5));
+    ASSERT_TRUE(r2.has_value()) << "Login member request timed out";
+    ASSERT_EQ(r2->message_id, net::protocol::kLoginResponse);
 
     // Step 3: Create room
-    ASSERT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 402, "room_fc").message_id,
-              net::protocol::kRoomCreateResponse);
+    auto r3 = owner.exchange_for(net::protocol::kRoomCreateRequest, 402, "room_fc", std::chrono::seconds(5));
+    ASSERT_TRUE(r3.has_value()) << "Room create request timed out";
+    ASSERT_EQ(r3->message_id, net::protocol::kRoomCreateResponse);
 
     // Step 4: Join room
-    ASSERT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 403, "room_fc").message_id,
-              net::protocol::kRoomJoinResponse);
+    auto r4 = member.exchange_for(net::protocol::kRoomJoinRequest, 403, "room_fc", std::chrono::seconds(5));
+    ASSERT_TRUE(r4.has_value()) << "Room join request timed out";
+    ASSERT_EQ(r4->message_id, net::protocol::kRoomJoinResponse);
 
     // Step 5: Drain room state push
-    (void)owner.expect_message(net::protocol::kRoomStatePush);
+    auto p0 = owner.expect_message_for(net::protocol::kRoomStatePush, std::chrono::seconds(5));
+    ASSERT_TRUE(p0.has_value()) << "RoomStatePush timed out";
 
     // Step 6: Ready both — use send+expect_message to handle interleaved pushes
     owner.send(net::protocol::kRoomReadyRequest, 404, "true");
-    EXPECT_EQ(owner.expect_message(net::protocol::kRoomReadyResponse).request_id, 404U);
+    auto p1 = owner.expect_message_for(net::protocol::kRoomReadyResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p1.has_value()) << "RoomReadyResponse timed out";
+    EXPECT_EQ(p1->request_id, 404U);
     member.send(net::protocol::kRoomReadyRequest, 405, "true");
-    EXPECT_EQ(member.expect_message(net::protocol::kRoomReadyResponse).request_id, 405U);
+    auto p2 = member.expect_message_for(net::protocol::kRoomReadyResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p2.has_value()) << "RoomReadyResponse timed out";
+    EXPECT_EQ(p2->request_id, 405U);
 
     // Step 7: Start battle (v2 mirrors battle)
     owner.send(net::protocol::kBattleStartRequest, 406, "");
-    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStartResponse).message_id,
-              net::protocol::kBattleStartResponse);
+    auto p3 = owner.expect_message_for(net::protocol::kBattleStartResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p3.has_value()) << "BattleStartResponse timed out";
+    EXPECT_EQ(p3->message_id, net::protocol::kBattleStartResponse);
 
     // Step 8: Submit scored input
     owner.send(net::protocol::kBattleInputRequest, 407, "score=30:move:up");
-    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).request_id, 407U);
+    auto p4 = owner.expect_message_for(net::protocol::kBattleInputResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p4.has_value()) << "BattleInputResponse timed out";
+    EXPECT_EQ(p4->request_id, 407U);
 
     // Step 9: Finish battle (surrender)
     owner.send(net::protocol::kBattleInputRequest, 408, "finish:surrender");
-    const auto finish = owner.expect_message(net::protocol::kBattleInputResponse);
-    EXPECT_EQ(finish.request_id, 408U);
+    auto finish = owner.expect_message_for(net::protocol::kBattleInputResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(finish.has_value()) << "BattleInputResponse (finish) timed out";
+    EXPECT_EQ(finish->request_id, 408U);
 
     server.stop();
     std::filesystem::remove(path);
@@ -1875,13 +1946,16 @@ TEST(GatewayIntegrationTest, EchoServerConfigEchoOnlyMirror) {
     TestClient client;
     client.connect(*port);
 
-    EXPECT_EQ(client.exchange(net::protocol::kLoginRequest, 500, "echo_user|token:echo_user").message_id,
-              net::protocol::kLoginResponse);
-    EXPECT_EQ(client.exchange(net::protocol::kEchoRequest, 501, "hello_v2_echo").message_id,
-              net::protocol::kEchoResponse);
+    auto r1 = client.exchange_for(net::protocol::kLoginRequest, 500, "echo_user|token:echo_user", std::chrono::seconds(5));
+    ASSERT_TRUE(r1.has_value()) << "Login request timed out";
+    EXPECT_EQ(r1->message_id, net::protocol::kLoginResponse);
+    auto r2 = client.exchange_for(net::protocol::kEchoRequest, 501, "hello_v2_echo", std::chrono::seconds(5));
+    ASSERT_TRUE(r2.has_value()) << "Echo request timed out";
+    EXPECT_EQ(r2->message_id, net::protocol::kEchoResponse);
 
-    const auto echo_second = client.expect_message(net::protocol::kEchoResponse);
-    EXPECT_EQ(echo_second.body, "hello_v2_echo");
+    auto echo_second = client.expect_message_for(net::protocol::kEchoResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(echo_second.has_value()) << "Echo response timed out";
+    EXPECT_EQ(echo_second->body, "hello_v2_echo");
 
     server.stop();
     std::filesystem::remove(path);
@@ -1937,31 +2011,45 @@ TEST(GatewayIntegrationTest, EchoServerConfigAllEmitPolicyBitsOn) {
     owner.connect(*port);
     member.connect(*port);
 
-    EXPECT_EQ(owner.exchange(net::protocol::kLoginRequest, 510, "bridge_owner|token:bridge_owner").message_id,
-              net::protocol::kLoginResponse);
-    EXPECT_EQ(member.exchange(net::protocol::kLoginRequest, 511, "bridge_member|token:bridge_member").message_id,
-              net::protocol::kLoginResponse);
+    auto r1 = owner.exchange_for(net::protocol::kLoginRequest, 510, "bridge_owner|token:bridge_owner", std::chrono::seconds(5));
+    ASSERT_TRUE(r1.has_value()) << "Login owner request timed out";
+    EXPECT_EQ(r1->message_id, net::protocol::kLoginResponse);
+    auto r2 = member.exchange_for(net::protocol::kLoginRequest, 511, "bridge_member|token:bridge_member", std::chrono::seconds(5));
+    ASSERT_TRUE(r2.has_value()) << "Login member request timed out";
+    EXPECT_EQ(r2->message_id, net::protocol::kLoginResponse);
 
-    EXPECT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 512, "bridge_room_all").message_id,
-              net::protocol::kRoomCreateResponse);
-    EXPECT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 513, "bridge_room_all").message_id,
-              net::protocol::kRoomJoinResponse);
-    (void)owner.expect_message(net::protocol::kRoomStatePush);
+    auto r3 = owner.exchange_for(net::protocol::kRoomCreateRequest, 512, "bridge_room_all", std::chrono::seconds(5));
+    ASSERT_TRUE(r3.has_value()) << "Room create request timed out";
+    EXPECT_EQ(r3->message_id, net::protocol::kRoomCreateResponse);
+    auto r4 = member.exchange_for(net::protocol::kRoomJoinRequest, 513, "bridge_room_all", std::chrono::seconds(5));
+    ASSERT_TRUE(r4.has_value()) << "Room join request timed out";
+    EXPECT_EQ(r4->message_id, net::protocol::kRoomJoinResponse);
+    auto p0 = owner.expect_message_for(net::protocol::kRoomStatePush, std::chrono::seconds(5));
+    ASSERT_TRUE(p0.has_value()) << "RoomStatePush timed out";
 
     owner.send(net::protocol::kRoomReadyRequest, 514, "true");
-    EXPECT_EQ(owner.expect_message(net::protocol::kRoomReadyResponse).request_id, 514U);
+    auto p1 = owner.expect_message_for(net::protocol::kRoomReadyResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p1.has_value()) << "RoomReadyResponse timed out";
+    EXPECT_EQ(p1->request_id, 514U);
     member.send(net::protocol::kRoomReadyRequest, 515, "true");
-    EXPECT_EQ(member.expect_message(net::protocol::kRoomReadyResponse).request_id, 515U);
+    auto p2 = member.expect_message_for(net::protocol::kRoomReadyResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p2.has_value()) << "RoomReadyResponse timed out";
+    EXPECT_EQ(p2->request_id, 515U);
 
     owner.send(net::protocol::kBattleStartRequest, 516, "");
-    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStartResponse).message_id,
-              net::protocol::kBattleStartResponse);
+    auto p3 = owner.expect_message_for(net::protocol::kBattleStartResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p3.has_value()) << "BattleStartResponse timed out";
+    EXPECT_EQ(p3->message_id, net::protocol::kBattleStartResponse);
 
     owner.send(net::protocol::kBattleInputRequest, 517, "score=10:move:right");
-    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).request_id, 517U);
+    auto p4 = owner.expect_message_for(net::protocol::kBattleInputResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p4.has_value()) << "BattleInputResponse timed out";
+    EXPECT_EQ(p4->request_id, 517U);
 
     owner.send(net::protocol::kBattleInputRequest, 518, "finish:surrender");
-    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).request_id, 518U);
+    auto p5 = owner.expect_message_for(net::protocol::kBattleInputResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p5.has_value()) << "BattleInputResponse (finish) timed out";
+    EXPECT_EQ(p5->request_id, 518U);
 
     server.stop();
     std::filesystem::remove(path);
@@ -2017,30 +2105,44 @@ TEST(GatewayIntegrationTest, EchoServerConfigV2BattleWithoutRoomIsGraceful) {
     owner.connect(*port);
     member.connect(*port);
 
-    EXPECT_EQ(owner.exchange(net::protocol::kLoginRequest, 520, "bridge_owner|token:bridge_owner").message_id,
-              net::protocol::kLoginResponse);
-    (void)owner.expect_message(net::protocol::kLoginResponse);
-    EXPECT_EQ(member.exchange(net::protocol::kLoginRequest, 521, "bridge_member|token:bridge_member").message_id,
-              net::protocol::kLoginResponse);
-    (void)member.expect_message(net::protocol::kLoginResponse);
+    auto r1 = owner.exchange_for(net::protocol::kLoginRequest, 520, "bridge_owner|token:bridge_owner", std::chrono::seconds(5));
+    ASSERT_TRUE(r1.has_value()) << "Login owner request timed out";
+    EXPECT_EQ(r1->message_id, net::protocol::kLoginResponse);
+    auto pv1 = owner.expect_message_for(net::protocol::kLoginResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(pv1.has_value()) << "LoginResponse (v2) timed out";
+    auto r2 = member.exchange_for(net::protocol::kLoginRequest, 521, "bridge_member|token:bridge_member", std::chrono::seconds(5));
+    ASSERT_TRUE(r2.has_value()) << "Login member request timed out";
+    EXPECT_EQ(r2->message_id, net::protocol::kLoginResponse);
+    auto pv2 = member.expect_message_for(net::protocol::kLoginResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(pv2.has_value()) << "LoginResponse (v2) timed out";
 
-    EXPECT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 522, "bridge_room_v2").message_id,
-              net::protocol::kRoomCreateResponse);
-    EXPECT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 523, "bridge_room_v2").message_id,
-              net::protocol::kRoomJoinResponse);
-    (void)owner.expect_message(net::protocol::kRoomStatePush);
+    auto r3 = owner.exchange_for(net::protocol::kRoomCreateRequest, 522, "bridge_room_v2", std::chrono::seconds(5));
+    ASSERT_TRUE(r3.has_value()) << "Room create request timed out";
+    EXPECT_EQ(r3->message_id, net::protocol::kRoomCreateResponse);
+    auto r4 = member.exchange_for(net::protocol::kRoomJoinRequest, 523, "bridge_room_v2", std::chrono::seconds(5));
+    ASSERT_TRUE(r4.has_value()) << "Room join request timed out";
+    EXPECT_EQ(r4->message_id, net::protocol::kRoomJoinResponse);
+    auto p0 = owner.expect_message_for(net::protocol::kRoomStatePush, std::chrono::seconds(5));
+    ASSERT_TRUE(p0.has_value()) << "RoomStatePush timed out";
 
     owner.send(net::protocol::kRoomReadyRequest, 524, "true");
-    EXPECT_EQ(owner.expect_message(net::protocol::kRoomReadyResponse).request_id, 524U);
+    auto p1 = owner.expect_message_for(net::protocol::kRoomReadyResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p1.has_value()) << "RoomReadyResponse timed out";
+    EXPECT_EQ(p1->request_id, 524U);
     member.send(net::protocol::kRoomReadyRequest, 525, "true");
-    EXPECT_EQ(member.expect_message(net::protocol::kRoomReadyResponse).request_id, 525U);
+    auto p2 = member.expect_message_for(net::protocol::kRoomReadyResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p2.has_value()) << "RoomReadyResponse timed out";
+    EXPECT_EQ(p2->request_id, 525U);
 
     owner.send(net::protocol::kBattleStartRequest, 526, "");
-    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStartResponse).message_id,
-              net::protocol::kBattleStartResponse);
+    auto p3 = owner.expect_message_for(net::protocol::kBattleStartResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p3.has_value()) << "BattleStartResponse timed out";
+    EXPECT_EQ(p3->message_id, net::protocol::kBattleStartResponse);
 
     owner.send(net::protocol::kBattleInputRequest, 527, "move:right");
-    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).request_id, 527U);
+    auto p4 = owner.expect_message_for(net::protocol::kBattleInputResponse, std::chrono::seconds(5));
+    ASSERT_TRUE(p4.has_value()) << "BattleInputResponse timed out";
+    EXPECT_EQ(p4->request_id, 527U);
 
     server.stop();
     std::filesystem::remove(path);

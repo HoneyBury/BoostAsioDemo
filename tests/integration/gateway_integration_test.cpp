@@ -49,6 +49,8 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <unistd.h>
+
+extern "C" char **environ;
 #endif
 
 #include <gtest/gtest.h>

@@ -433,7 +433,23 @@ public:
             return false;
         }
         if (pid == 0) {
-            execlp(exe_path.c_str(), exe_path.c_str(), arg.c_str(), nullptr);
+            // Isolate child in its own process group so that signals sent to the
+            // parent test process (e.g. Ctrl-C / SIGTERM from ctest) do not
+            // propagate to the child and prematurely kill it before the test
+            // can verify its behaviour.
+            ::setpgid(0, 0);
+
+            // Close inherited file descriptors (everything except 0/1/2) to
+            // prevent the child from accidentally holding sockets that would
+            // block port reuse by the echo_server.
+            long max_fd = sysconf(_SC_OPEN_MAX);
+            if (max_fd <= 0) max_fd = 1024;
+            for (int fd = 3; fd < max_fd; ++fd) {
+                ::close(fd);
+            }
+
+            const char* argv[] = {exe_path.c_str(), arg.c_str(), nullptr};
+            ::execv(exe_path.c_str(), const_cast<char* const*>(argv));
             _exit(127);
         }
         pid_ = pid;

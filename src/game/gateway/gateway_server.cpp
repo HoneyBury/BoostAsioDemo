@@ -354,6 +354,11 @@ void GatewayServer::do_accept() {
             if (ec != asio::error::operation_aborted) {
                 LOG_ERROR("Accept failed: {}", ec.message());
             }
+            if (ec != asio::error::operation_aborted) {
+                auto timer = std::make_shared<boost::asio::steady_timer>(acceptor_->get_executor());
+                timer->expires_after(std::chrono::milliseconds(100));
+                timer->async_wait([this, timer](const error_code&) { do_accept(); });
+            }
             return;
         }
 
@@ -372,6 +377,7 @@ void GatewayServer::do_accept_with_io_engine(std::size_t listener_index) {
     const auto accept_core_id = acceptor->owning_core_id();
     acceptor->async_accept_native([this, accept_core_id, listener_index](std::shared_ptr<net::Session> session) {
         if (session == nullptr) {
+            do_accept_with_io_engine(listener_index);
             return;
         }
         (void)attach_session_with_core(session, accept_core_id);

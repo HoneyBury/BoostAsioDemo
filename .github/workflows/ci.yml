@@ -52,7 +52,7 @@ jobs:
         run: cmake --build --preset ${{ matrix.build_preset }} --parallel
 
       - name: Test
-        run: ctest --preset ${{ matrix.test_preset }}
+        run: ctest --preset ${{ matrix.test_preset }} --timeout 300
 
   docker:
     runs-on: ubuntu-latest

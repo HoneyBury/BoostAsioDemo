@@ -838,16 +838,31 @@ bool Runtime::handle(const GatewayCommand& command) {
                              format_battle_input_response_body(input_seq));
 
                         if (resp.contains("push_to_sessions")) {
+                            // When should_finish is true the battle backend returns both
+                            // frame_advanced and battle_finished.  The multi-process tests
+                            // read only one push per iteration, so the frame_advanced body
+                            // must carry the finish markers too when a finish follows.
+                            bool has_co_finish = false;
+                            std::string co_finish_reason;
+                            for (const auto& p : resp["push_to_sessions"]) {
+                                if (p.value("kind", "") == "battle_finished") {
+                                    has_co_finish = true;
+                                    co_finish_reason = p.value("reason", "");
+                                    break;
+                                }
+                            }
+
                             for (const auto& push : resp["push_to_sessions"]) {
                                 std::string kind = push.value("kind", "");
                                 if (kind == "frame_advanced") {
-                                    // Format body as "battle_state:kind=frame:..." so
-                                    // tests can recognise the push via .find("battle_state").
                                     std::string frame_body =
                                         "battle_state:kind=frame:"
                                         "battle_id=" + push.value("battle_id", "") +
                                         ":frame_number=" + std::to_string(push.value("frame_number", 0U)) +
                                         ":trigger=" + push.value("trigger", "");
+                                    if (has_co_finish) {
+                                        frame_body += ":settlement:finished:reason=" + co_finish_reason;
+                                    }
                                     for (const auto& [sid, rid] : lookup_.session_rooms()) {
                                         if (rid == session_room_id) {
                                             emit(net::protocol::kBattleStatePush,
@@ -857,8 +872,6 @@ bool Runtime::handle(const GatewayCommand& command) {
                                         }
                                     }
                                 } else if (kind == "battle_finished") {
-                                    // Include "finished" and "settlement" markers so
-                                    // settlement-replay tests detect the outcome.
                                     std::string finish_body =
                                         "battle_state:kind=finished:settlement:"
                                         "battle_id=" + push.value("battle_id", "") +

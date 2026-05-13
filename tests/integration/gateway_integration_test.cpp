@@ -18,7 +18,6 @@
 #include "v2/io/io_engine.h"
 
 #include <boost/asio.hpp>
-#include <boost/process/v1.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/beast/core/flat_buffer.hpp>
 #include <boost/beast/http/message.hpp>
@@ -39,12 +38,23 @@
 #include <thread>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <unistd.h>
+#endif
+
 #include <gtest/gtest.h>
 
 namespace {
 
 namespace asio = boost::asio;
-namespace bp = boost::process::v1;
 namespace beast = boost::beast;
 namespace http = beast::http;
 using tcp = asio::ip::tcp;
@@ -371,6 +381,120 @@ http::response<http::string_body> http_get(std::uint16_t port, std::string_view 
     return response;
 }
 
+// Minimal cross-platform child-process wrapper — avoids boost::process (and its
+// boost::filesystem dependency) so the test links without compiled Boost libraries.
+class NativeChildProcess {
+public:
+    NativeChildProcess() = default;
+
+    ~NativeChildProcess() {
+        stop();
+    }
+
+    NativeChildProcess(const NativeChildProcess&) = delete;
+    NativeChildProcess& operator=(const NativeChildProcess&) = delete;
+
+    bool start(const std::string& exe_path, const std::string& arg) {
+#ifdef _WIN32
+        std::string cmd_line = exe_path + " \"" + arg + "\"";
+
+        STARTUPINFOA si;
+        ZeroMemory(&si, sizeof(si));
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+
+        PROCESS_INFORMATION pi;
+        ZeroMemory(&pi, sizeof(pi));
+
+        BOOL ok = CreateProcessA(
+            nullptr, const_cast<char*>(cmd_line.c_str()),
+            nullptr, nullptr, FALSE,
+            CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+
+        if (!ok) {
+            DWORD err = GetLastError();
+            LPSTR msg_buf = nullptr;
+            FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+                           nullptr, err, 0, reinterpret_cast<LPSTR>(&msg_buf), 0, nullptr);
+            startup_error_ = msg_buf ? msg_buf : "CreateProcess failed";
+            if (msg_buf) LocalFree(msg_buf);
+            return false;
+        }
+
+        process_handle_ = pi.hProcess;
+        CloseHandle(pi.hThread);
+        started_ = true;
+        return true;
+#else
+        pid_t pid = fork();
+        if (pid < 0) {
+            startup_error_ = "fork failed";
+            return false;
+        }
+        if (pid == 0) {
+            execlp(exe_path.c_str(), exe_path.c_str(), arg.c_str(), nullptr);
+            _exit(127);
+        }
+        pid_ = pid;
+        started_ = true;
+        return true;
+#endif
+    }
+
+    bool running() const {
+        if (!started_) return false;
+#ifdef _WIN32
+        if (process_handle_ == nullptr) return false;
+        DWORD exit_code = 0;
+        if (!GetExitCodeProcess(process_handle_, &exit_code)) return false;
+        return exit_code == STILL_ACTIVE;
+#else
+        if (pid_ <= 0) return false;
+        int status = 0;
+        return waitpid(pid_, &status, WNOHANG) == 0;
+#endif
+    }
+
+    void stop() {
+        if (!started_) return;
+        started_ = false;
+#ifdef _WIN32
+        if (process_handle_ == nullptr) return;
+        if (running()) {
+            TerminateProcess(process_handle_, 1);
+            WaitForSingleObject(process_handle_, 5000);
+        }
+        CloseHandle(process_handle_);
+        process_handle_ = nullptr;
+#else
+        if (pid_ <= 0) return;
+        if (running()) {
+            kill(pid_, SIGTERM);
+            for (int i = 0; i < 50 && running(); ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            if (running()) {
+                kill(pid_, SIGKILL);
+                waitpid(pid_, nullptr, 0);
+            }
+        }
+        pid_ = -1;
+#endif
+    }
+
+    [[nodiscard]] const std::string& startup_error() const noexcept { return startup_error_; }
+
+private:
+#ifdef _WIN32
+    HANDLE process_handle_ = nullptr;
+#else
+    pid_t pid_ = -1;
+#endif
+    bool started_ = false;
+    std::string startup_error_;
+};
+
 class EchoServerProcess {
 public:
     explicit EchoServerProcess(const std::filesystem::path& config_path)
@@ -379,35 +503,22 @@ public:
     ~EchoServerProcess() { stop(); }
 
     bool start() {
-        try {
-            child_ = std::make_unique<bp::child>(
-                PROJECT_ECHO_SERVER_PATH,
-                config_path_.string(),
-                bp::std_out > bp::null,
-                bp::std_err > bp::null);
+        if (child_.start(PROJECT_ECHO_SERVER_PATH, config_path_.string())) {
             return true;
-        } catch (const std::exception& ex) {
-            startup_error_ = ex.what();
-            return false;
         }
+        startup_error_ = child_.startup_error();
+        return false;
     }
 
     void stop() {
-        if (!child_) {
-            return;
-        }
-        if (child_->running()) {
-            child_->terminate();
-            child_->wait();
-        }
-        child_.reset();
+        child_.stop();
     }
 
     [[nodiscard]] const std::string& startup_error() const noexcept { return startup_error_; }
 
 private:
     std::filesystem::path config_path_;
-    std::unique_ptr<bp::child> child_;
+    NativeChildProcess child_;
     std::string startup_error_;
 };
 

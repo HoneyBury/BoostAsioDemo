@@ -140,4 +140,9 @@ if(WIN32)
         INTERFACE
             _WIN32_WINNT=0x0A00
     )
+    target_link_libraries(project_boost_asio
+        INTERFACE
+            ws2_32
+            mswsock
+    )
 endif()

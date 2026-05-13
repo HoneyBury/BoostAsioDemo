@@ -28,6 +28,7 @@ struct RoomState {
 struct RoomStateManager {
     std::unordered_map<std::string, RoomState> rooms_;
     std::mutex mutex_;
+    int next_battle_id_ = 1;
 
     RoomState* find(const std::string& room_id) {
         auto it = rooms_.find(room_id);
@@ -222,6 +223,10 @@ private:
             return make_error(-2007, "not_all_ready");
         }
 
+        // Generate battle_id and record it on the room
+        std::string battle_id = "battle_" + std::to_string(room_manager_.next_battle_id_++);
+        room->active_battle_id = battle_id;
+
         AUDIT_LOG("battle_created", "room_id=" + room_id + " battle_id=" + room->active_battle_id);
 
         // Collect player_ids for battle creation
@@ -232,6 +237,7 @@ private:
 
         // Build forward instruction for gateway to cascade to battle_backend
         nlohmann::json forward_payload{
+            {"battle_id", battle_id},
             {"room_id", room_id},
             {"player_ids", player_ids},
             {"max_frames", 3},

@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <stdexcept>
 #include <thread>
 
@@ -260,34 +262,72 @@ net::packet::DecodedPacket TestClient::read() {
     return read(std::chrono::milliseconds(5000));
 }
 
+namespace {
+
+void signal_and_join(std::thread& timeout_thread,
+                     std::condition_variable& cv,
+                     std::mutex& mtx,
+                     bool& read_completed) {
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        read_completed = true;
+    }
+    cv.notify_one();
+    if (timeout_thread.joinable()) {
+        timeout_thread.join();
+    }
+}
+
+}  // namespace
+
 net::packet::DecodedPacket TestClient::read(std::chrono::milliseconds timeout) {
+    // Enforce a total deadline across both header and body reads.
+    // We use a helper thread with a condition_variable because
+    // asio::steady_timer::async_wait posts its handler to io_context_,
+    // which is never polled — timer callbacks never fire.
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool read_completed = false;
+
+    std::thread timeout_thread([&]() {
+        std::unique_lock<std::mutex> lock(mtx);
+        if (cv.wait_for(lock, timeout, [&] { return read_completed; })) {
+            return;  // read completed before deadline
+        }
+        boost::system::error_code ignored;
+        socket_.cancel(ignored);
+    });
+
+    boost::system::error_code ec;
+
     // Read the 4-byte length prefix
     net::packet::LengthHeader length_header{};
-    {
-        boost::system::error_code ec;
-        asio::steady_timer timer(io_context_);
-        timer.expires_after(timeout);
+    asio::read(socket_, asio::buffer(length_header.data(), length_header.size()), ec);
 
-        bool timed_out = false;
-        timer.async_wait([&](boost::system::error_code ec) {
-            if (!ec) timed_out = true;
-            socket_.cancel(ec);
-        });
-
-        asio::read(socket_, asio::buffer(length_header.data(), length_header.size()), ec);
-        timer.cancel();
-        if (timed_out || ec == asio::error::operation_aborted) {
-            throw std::runtime_error("TestClient::read timeout");
-        }
-        if (ec) throw std::runtime_error("TestClient::read error: " + ec.message());
+    if (ec == asio::error::operation_aborted) {
+        signal_and_join(timeout_thread, cv, mtx, read_completed);
+        throw std::runtime_error("TestClient::read timeout");
+    }
+    if (ec) {
+        signal_and_join(timeout_thread, cv, mtx, read_completed);
+        throw std::runtime_error("TestClient::read error: " + ec.message());
     }
 
     std::uint32_t total_length = net::packet::decode_length(length_header);
+    if (total_length > 64 * 1024 * 1024) {
+        signal_and_join(timeout_thread, cv, mtx, read_completed);
+        throw std::runtime_error("TestClient::read excessive payload length");
+    }
 
-    // Read the rest of the packet body (total_length covers metadata + body)
+    // Read the rest of the packet body (covered by the same deadline).
     std::vector<char> payload(total_length);
-    boost::system::error_code ec;
     asio::read(socket_, asio::buffer(payload.data(), payload.size()), ec);
+
+    signal_and_join(timeout_thread, cv, mtx, read_completed);
+
+    if (ec == asio::error::operation_aborted) {
+        throw std::runtime_error("TestClient::read timeout");
+    }
     if (ec) throw std::runtime_error("TestClient::read body error: " + ec.message());
 
     return net::packet::decode_payload(payload);

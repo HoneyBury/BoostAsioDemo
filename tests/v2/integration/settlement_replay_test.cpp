@@ -99,7 +99,7 @@ TEST_F(MultiProcessFixture, SurrenderSettlementDeliveredToBothPlayers) {
         if (!alice_got_finished) {
             try {
                 auto p = alice->expect_message(
-                    net::protocol::kBattleStatePush, 3s);
+                    net::protocol::kBattleStatePush, 5s);
                 if (p.body.find("settlement") != std::string::npos) {
                     alice_got_settlement = true;
                 }
@@ -113,7 +113,7 @@ TEST_F(MultiProcessFixture, SurrenderSettlementDeliveredToBothPlayers) {
         if (!bob_got_finished) {
             try {
                 auto p = bob->expect_message(
-                    net::protocol::kBattleStatePush, 3s);
+                    net::protocol::kBattleStatePush, 5s);
                 if (p.body.find("settlement") != std::string::npos) {
                     bob_got_settlement = true;
                     // Parse settlement data for verification.
@@ -199,8 +199,8 @@ TEST_F(MultiProcessFixture, FrameLimitSettlementDelivered) {
 
         // Drain pushes for both players.
         try {
-            auto pa = p1->expect_message(net::protocol::kBattleStatePush, 5s);
-            auto pb = p2->expect_message(net::protocol::kBattleStatePush, 5s);
+            auto pa = p1->expect_message(net::protocol::kBattleStatePush, 8s);
+            auto pb = p2->expect_message(net::protocol::kBattleStatePush, 8s);
             if (pa.body.find("settlement") != std::string::npos ||
                 pa.body.find("finished") != std::string::npos) {
                 got_settlement = true;

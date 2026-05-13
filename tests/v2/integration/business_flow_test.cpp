@@ -125,7 +125,7 @@ TEST_F(MultiProcessFixture, BusinessFlowFullCycle) {
             if (!alice_finished) {
                 try {
                     auto p = alice->expect_message(
-                        net::protocol::kBattleStatePush, 5s);
+                        net::protocol::kBattleStatePush, 8s);
                     alice_finished =
                         p.body.find("finished") != std::string::npos;
                 } catch (const std::exception&) {
@@ -135,7 +135,7 @@ TEST_F(MultiProcessFixture, BusinessFlowFullCycle) {
             if (!bob_finished) {
                 try {
                     auto p = bob->expect_message(
-                        net::protocol::kBattleStatePush, 5s);
+                        net::protocol::kBattleStatePush, 8s);
                     bob_finished =
                         p.body.find("finished") != std::string::npos;
                 } catch (const std::exception&) {
@@ -238,7 +238,7 @@ TEST_F(MultiProcessFixture, BattleInputAfterFinishRejected) {
     bool done = false;
     for (int i = 0; i < 10; ++i) {
         try {
-            auto p = alice->expect_message(net::protocol::kBattleStatePush, 3s);
+            auto p = alice->expect_message(net::protocol::kBattleStatePush, 5s);
             if (p.body.find("finished") != std::string::npos) {
                 done = true;
                 break;

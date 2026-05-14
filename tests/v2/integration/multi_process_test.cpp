@@ -18,11 +18,11 @@
 #include <windows.h>
 #include <process.h>
 #else
-#include <spawn.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
 #include <unistd.h>
+#include <spawn.h>
 
 extern "C" char **environ;
 #endif
@@ -99,23 +99,31 @@ ProcessGuard::ProcessGuard(const std::string& binary,
     child_->pi.hThread = nullptr;
     started_ = true;
 #else
-    // Build argv array for posix_spawn
-    std::vector<char*> spawn_argv;
-    spawn_argv.push_back(const_cast<char*>(binary.c_str()));
+    // Use fork+exec instead of posix_spawnp because on macOS 14+,
+    // posix_spawnp returns EBADF when closing kernel-managed fds.
+    std::vector<const char*> argv;
+    argv.push_back(binary.c_str());
     for (const auto& arg : args) {
-        spawn_argv.push_back(const_cast<char*>(arg.c_str()));
+        argv.push_back(arg.c_str());
     }
-    spawn_argv.push_back(nullptr);
+    argv.push_back(nullptr);
 
-    pid_t spawn_pid;
-    int spawn_ret = posix_spawn(&spawn_pid, binary.c_str(),
-                                nullptr, nullptr,
-                                spawn_argv.data(), environ);
-    if (spawn_ret != 0) {
-        startup_error_ = "posix_spawn failed: errno=" + std::to_string(spawn_ret);
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child: set own process group, close all non-stdio fds, then exec
+        setpgid(0, 0);
+        for (int fd = 3; fd < 1024; ++fd) {
+            ::close(fd);
+        }
+        execvp(binary.c_str(), const_cast<char* const*>(argv.data()));
+        _exit(127);
+    }
+    if (pid < 0) {
+        startup_error_ = std::string("fork failed: ") + strerror(errno);
         return;
     }
-    child_->pid = spawn_pid;
+
+    child_->pid = pid;
     started_ = true;
 #endif
 }

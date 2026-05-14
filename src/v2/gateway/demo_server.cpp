@@ -2,11 +2,14 @@
 
 #include "app/logging.h"
 #include "net/protocol.h"
+#include "v3/cluster/cluster_router.h"
+#include "v3/tracing/otel_exporter.h"
 
 #include <boost/asio.hpp>
 
 #include <nlohmann/json.hpp>
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <utility>
@@ -50,18 +53,42 @@ DemoServer::DemoServer(std::uint16_t port,
 
     if (options_.login_backend_config.has_value() ||
         options_.room_backend_config.has_value() ||
-        options_.battle_backend_config.has_value()) {
+        options_.battle_backend_config.has_value() ||
+        options_.matchmaking_backend_config.has_value() ||
+        options_.leaderboard_backend_config.has_value()) {
         auto bridge = std::make_unique<GatewayServiceBridge>(
             options_.login_backend_config,
             options_.room_backend_config,
             options_.battle_backend_config,
+            options_.matchmaking_backend_config,
+            options_.leaderboard_backend_config,
             backend_metrics_);
         bridge->set_service_registry(service_registry_);
         runtime_.set_service_bridge(std::move(bridge));
+
+        // P1a: Wire ClusterRouter for dynamic service discovery.
+        // Instances are registered in load_gateway_config() as backends
+        // are loaded, so the router is seeded with real host:port pairs.
+        runtime_.service_bridge()->set_cluster_router(
+            std::make_shared<v3::cluster::ClusterRouter>());
+
+        // P1b: Wire OtlpExporter for distributed tracing (env-opt-in)
+        const char* otel_endpoint = std::getenv("OTEL_EXPORT_ENDPOINT");
+        if (otel_endpoint && otel_endpoint[0] != '\0') {
+            v3::tracing::OtlpExporter::Config otel_cfg;
+            otel_cfg.service_name = "boost-gateway";
+            otel_cfg.export_endpoint = otel_endpoint;
+            runtime_.service_bridge()->set_otel_exporter(
+                std::make_shared<v3::tracing::OtlpExporter>(std::move(otel_cfg)));
+            LOG_INFO("DemoServer: OTLP export enabled → {}", otel_endpoint);
+        }
+
         load_gateway_config();
     }
 
-    archive_store_ = std::make_unique<JsonFileBattleDataStore>("v2_archive");
+    auto archive_delegate = std::make_shared<JsonFileBattleDataStore>("v2_archive");
+    archive_store_ = std::make_unique<v2::data::CachedBattleDataStore>(
+        std::move(archive_delegate), 1000);
     runtime_.set_archive_sink(archive_store_.get());
 }
 
@@ -462,6 +489,10 @@ void DemoServer::load_gateway_config() {
             service_id = v2::service::ServiceId::kRoom;
         } else if (key == "battle") {
             service_id = v2::service::ServiceId::kBattle;
+        } else if (key == "match") {
+            service_id = v2::service::ServiceId::kMatchmaking;
+        } else if (key == "leaderboard") {
+            service_id = v2::service::ServiceId::kLeaderboard;
         } else {
             continue;
         }
@@ -469,8 +500,76 @@ void DemoServer::load_gateway_config() {
         GatewayServiceBridge::BackendConfig cfg;
         cfg.host = entry.value("host", "127.0.0.1");
         cfg.port = static_cast<std::uint16_t>(entry.value("port", 0));
+        auto cfg_host = cfg.host;
+        auto cfg_port = cfg.port;
         bridge->update_backend_config(service_id, std::move(cfg));
-        LOG_INFO("DemoServer: reloaded {} backend -> {}:{}", key, cfg.host, cfg.port);
+
+        // P1a: Register instance in cluster router for service discovery
+        if (auto* cr = bridge->get_cluster_router().get()) {
+            v3::cluster::ServiceInstance inst;
+            inst.node.host = cfg_host;
+            inst.node.port = cfg_port;
+            inst.service_name = key;
+            inst.state = v3::cluster::ServiceState::kHealthy;
+            inst.registered_at = std::chrono::steady_clock::now();
+            inst.last_heartbeat = inst.registered_at;
+            cr->register_service(std::move(inst));
+        }
+
+        LOG_INFO("DemoServer: reloaded {} backend -> {}:{}", key, cfg_host, cfg_port);
+    }
+
+    // v3.1.0: Feature flags
+    if (doc.contains("feature_flags")) {
+        feature_flags_ = std::make_shared<v2::config::FeatureFlags>();
+        feature_flags_->load_from_json(doc["feature_flags"]);
+        feature_flags_->apply_env_overrides();
+        bridge->set_feature_flags(feature_flags_);
+    }
+
+    // v3.1.0: TLS config + security policy
+    if (doc.contains("tls") || doc.contains("security_policy")) {
+        v3::cluster::SecurityPolicy policy;
+
+        if (doc.contains("tls")) {
+            const auto& tls = doc["tls"];
+            policy.tls_config.cert.cert_chain_path =
+                tls.value("cert_chain_path", "certs/server.crt");
+            policy.tls_config.cert.private_key_path =
+                tls.value("private_key_path", "certs/server.key");
+            policy.tls_config.cert.ca_cert_path =
+                tls.value("ca_cert_path", "certs/ca.crt");
+            auto mode = tls.value("verify_mode", "mutual");
+            if (mode == "mutual") {
+                policy.tls_config.verify_mode =
+                    v3::cluster::TlsVerifyMode::kMutual;
+            } else if (mode == "server") {
+                policy.tls_config.verify_mode =
+                    v3::cluster::TlsVerifyMode::kServer;
+            }
+        }
+
+        if (doc.contains("security_policy")) {
+            const auto& sp = doc["security_policy"];
+            policy.require_tls = sp.value("require_tls", false);
+
+            auto load_svc = [&](const char* key,
+                                v3::cluster::SecurityPolicy::ServiceTlsPolicy& out) {
+                if (sp.contains(key)) {
+                    const auto& svc = sp[key];
+                    out.tls_required = svc.value("tls_required", true);
+                    out.mtls_required = svc.value("mtls_required", false);
+                }
+            };
+            load_svc("login", policy.login_policy);
+            load_svc("room", policy.room_policy);
+            load_svc("battle", policy.battle_policy);
+            load_svc("match", policy.match_policy);
+            load_svc("leaderboard", policy.leaderboard_policy);
+        }
+
+        security_policy_ = std::move(policy);
+        bridge->set_security_policy(*security_policy_);
     }
 }
 

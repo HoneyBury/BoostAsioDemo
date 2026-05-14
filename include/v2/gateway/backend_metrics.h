@@ -79,9 +79,11 @@ private:
 
 inline const char* service_id_to_key(v2::service::ServiceId id) {
     switch (id) {
-        case v2::service::ServiceId::kLogin:  return "login";
-        case v2::service::ServiceId::kRoom:   return "room";
-        case v2::service::ServiceId::kBattle: return "battle";
+        case v2::service::ServiceId::kLogin:       return "login";
+        case v2::service::ServiceId::kRoom:        return "room";
+        case v2::service::ServiceId::kBattle:      return "battle";
+        case v2::service::ServiceId::kMatchmaking: return "matchmaking";
+        case v2::service::ServiceId::kLeaderboard: return "leaderboard";
         default: return "unknown";
     }
 }

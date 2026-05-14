@@ -1,8 +1,17 @@
 // v3.0.0 Phase 15: Raft leader election tests
+// v3.2.0: Multi-node cluster verification with in-memory RPC.
 
 #include <gtest/gtest.h>
 #include "v3/cluster/raft.h"
+
+#include <nlohmann/json.hpp>
+
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <string>
 #include <thread>
+#include <unordered_map>
 
 using namespace v3::cluster;
 
@@ -155,4 +164,149 @@ TEST(RaftTest, LeaderIdIsTracked) {
     EXPECT_EQ(node.leader_id(), "leader-5");
 
     node.stop();
+}
+
+// ── v3.2.0: Multi-node Raft cluster with in-memory RPC ────────────────
+
+namespace {
+
+// In-memory RPC sender that dispatches to the target node via registry.
+auto make_rpc_sender(std::unordered_map<std::string, RaftNode*>& registry,
+                     std::mutex& registry_mutex) {
+    return [&registry, &registry_mutex](const RaftNodeId& target,
+                                         const std::string& data) -> std::string {
+        // Look up target under the registry lock, then release before dispatch.
+        RaftNode* target_node = nullptr;
+        {
+            std::lock_guard lock(registry_mutex);
+            auto it = registry.find(target.id);
+            if (it != registry.end()) target_node = it->second;
+        }
+        if (!target_node) return {};
+
+        try {
+            auto j = nlohmann::json::parse(data, nullptr, false);
+            if (j.is_discarded()) return {};
+
+            std::string msg_type = j.value("type", "");
+
+            if (msg_type == "request_vote") {
+                auto args = parse_request_vote(data);
+                return serialize_request_vote_reply(
+                    target_node->handle_request_vote(args));
+            }
+            if (msg_type == "append_entries") {
+                auto args = parse_append_entries(data);
+                return serialize_append_entries_reply(
+                    target_node->handle_append_entries(args));
+            }
+        } catch (const std::exception&) {
+            // Log swallowed — RPC timeout is the signal.
+        }
+        return {};
+    };
+}
+
+}  // namespace
+
+TEST(RaftClusterTest, ThreeNodeClusterElectsSingleLeader) {
+    std::unordered_map<std::string, std::unique_ptr<RaftNode>> node_store;
+    std::unordered_map<std::string, RaftNode*> registry;
+    std::mutex registry_mutex;
+
+    std::atomic<int> leaders{0};
+    std::mutex leader_mutex;
+
+    for (int i = 1; i <= 3; ++i) {
+        auto id = "n" + std::to_string(i);
+        RaftConfig cfg{
+            .node_id = id,
+            .election_timeout_min = std::chrono::milliseconds(150),
+            .election_timeout_max = std::chrono::milliseconds(300),
+            .heartbeat_interval = std::chrono::milliseconds(50),
+            .peers = {
+                {"n1", "", 0},
+                {"n2", "", 0},
+                {"n3", "", 0},
+            },
+        };
+        auto node = std::make_unique<RaftNode>(std::move(cfg));
+        registry[id] = node.get();
+
+        node->on_become_leader([&leaders, &leader_mutex, id]() {
+            std::lock_guard lock(leader_mutex);
+            leaders++;
+        });
+
+        node->set_rpc_sender(make_rpc_sender(registry, registry_mutex));
+        node_store[id] = std::move(node);
+    }
+
+    // Start all nodes
+    for (auto& [_, node] : node_store) {
+        node->start();
+    }
+
+    // Wait for leader election (up to 3 seconds)
+    for (int i = 0; i < 60; ++i) {
+        if (leaders.load() >= 1) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    EXPECT_EQ(leaders.load(), 1) << "Exactly one leader should be elected";
+
+    // Stop all
+    for (auto& [_, node] : node_store) {
+        node->stop();
+    }
+}
+
+TEST(RaftClusterTest, LeaderStepDownOnHigherTerm) {
+    std::unordered_map<std::string, std::unique_ptr<RaftNode>> node_store;
+    std::unordered_map<std::string, RaftNode*> registry;
+    std::mutex registry_mutex;
+
+    std::atomic<int> leader_elected{0};
+    std::atomic<int> leader_stepped_down{0};
+
+    for (int i = 1; i <= 2; ++i) {
+        auto id = "n" + std::to_string(i);
+        RaftConfig cfg{
+            .node_id = id,
+            .election_timeout_min = std::chrono::milliseconds(100),
+            .election_timeout_max = std::chrono::milliseconds(200),
+            .heartbeat_interval = std::chrono::milliseconds(50),
+            .peers = {{"n1", "", 0}, {"n2", "", 0}},
+        };
+        auto node = std::make_unique<RaftNode>(std::move(cfg));
+        registry[id] = node.get();
+
+        node->on_become_leader([&leader_elected, id]() {
+            leader_elected++;
+        });
+        node->on_step_down([&leader_stepped_down]() {
+            leader_stepped_down++;
+        });
+
+        node->set_rpc_sender(make_rpc_sender(registry, registry_mutex));
+        node_store[id] = std::move(node);
+    }
+
+    for (auto& [_, node] : node_store) node->start();
+
+    for (int i = 0; i < 40 && leader_elected.load() < 1; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_GE(leader_elected.load(), 1);
+
+    // Send a heartbeat with higher term to all nodes to force step down
+    AppendEntriesArgs hb{.term = 100, .leader_id = "external"};
+    for (auto& [_, node] : node_store) {
+        node->handle_append_entries(hb);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    EXPECT_GE(leader_stepped_down.load(), 1)
+        << "Leader should step down on higher term";
+
+    for (auto& [_, node] : node_store) node->stop();
 }

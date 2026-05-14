@@ -157,9 +157,21 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"display_name", login_body->display_name.value_or("")},
                 };
 
+                auto login_body_str = auth_payload.dump();
+                if (schema_validator_.has_schema("login_request")) {
+                    auto sv = schema_validator_.validate("login_request", login_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 auto result = bridge_->route(v2::service::ServiceId::kLogin,
                                              "login_request",
-                                             auth_payload.dump());
+                                             std::move(login_body_str));
 
                 if (result.success) {
                     auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -281,10 +293,22 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"room_id", *room_id},
                 };
 
+                auto room_body_str = room_payload.dump();
+                if (schema_validator_.has_schema("room_create")) {
+                    auto sv = schema_validator_.validate("room_create", room_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 bridge_route(bridge_.get(),
                              v2::service::ServiceId::kRoom,
                              "room_create",
-                             room_payload.dump(),
+                             std::move(room_body_str),
                              [&](const nlohmann::json&) {
                                  lookup_.set_session_room(command.session_id, *room_id);
                                  emit(net::protocol::kRoomCreateResponse,
@@ -360,9 +384,21 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"room_id", *room_id},
                 };
 
+                auto room_body_str = room_payload.dump();
+                if (schema_validator_.has_schema("room_join")) {
+                    auto sv = schema_validator_.validate("room_join", room_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 auto result = bridge_->route(v2::service::ServiceId::kRoom,
                                              "room_join",
-                                             room_payload.dump());
+                                             std::move(room_body_str));
 
                 if (result.success) {
                     auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -449,9 +485,21 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"ready", *ready},
                 };
 
+                auto room_body_str = room_payload.dump();
+                if (schema_validator_.has_schema("room_ready")) {
+                    auto sv = schema_validator_.validate("room_ready", room_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 auto result = bridge_->route(v2::service::ServiceId::kRoom,
                                              "room_ready",
-                                             room_payload.dump());
+                                             std::move(room_body_str));
 
                 if (result.success) {
                     auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -521,9 +569,21 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"room_id", session_room_id},
                 };
 
+                auto room_body_str = room_payload.dump();
+                if (schema_validator_.has_schema("room_leave")) {
+                    auto sv = schema_validator_.validate("room_leave", room_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 auto result = bridge_->route(v2::service::ServiceId::kRoom,
                                              "room_leave",
-                                             room_payload.dump());
+                                             std::move(room_body_str));
 
                 if (result.success) {
                     auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -605,9 +665,21 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"room_id", session_room_id},
                 };
 
+                auto room_body_str = room_payload.dump();
+                if (schema_validator_.has_schema("room_start_battle")) {
+                    auto sv = schema_validator_.validate("room_start_battle", room_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 auto room_result = bridge_->route(v2::service::ServiceId::kRoom,
                                                   "room_start_battle",
-                                                  room_payload.dump());
+                                                  std::move(room_body_str));
 
                 if (!room_result.success) {
                     emit(net::protocol::kErrorResponse,
@@ -656,7 +728,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                                 if (!battle_id.empty()) {
                                     battles_by_room_id_[session_room_id] =
                                         v2::actor::ActorRef{};  // placeholder for bridge mode
-                                    battle_ids_by_room_id_[session_room_id] = battle_id;
+                                    room_to_battle_id_[session_room_id] = battle_id;
                                 }
 
                                 // Emit kBattleStartResponse to requester
@@ -749,17 +821,14 @@ bool Runtime::handle(const GatewayCommand& command) {
                     return true;
                 }
 
-                if (battle_input->is_finish_request) {
-                    // Look up the actual battle_id for the room
-                    std::string actual_battle_id;
-                    auto bid_it = battle_ids_by_room_id_.find(session_room_id);
-                    if (bid_it != battle_ids_by_room_id_.end()) {
-                        actual_battle_id = bid_it->second;
-                    }
+                auto battle_id_it = room_to_battle_id_.find(session_room_id);
+                std::string bridge_battle_id = battle_id_it != room_to_battle_id_.end()
+                    ? battle_id_it->second : "";
 
+                if (battle_input->is_finish_request) {
                     nlohmann::json finish_payload{
                         {"user_id", user_id},
-                        {"battle_id", actual_battle_id},
+                        {"battle_id", bridge_battle_id},
                         {"reason", v2::battle::to_string(battle_input->finish_reason)},
                     };
 
@@ -780,23 +849,19 @@ bool Runtime::handle(const GatewayCommand& command) {
                                 for (const auto& push : resp["push_to_sessions"]) {
                                     std::string kind = push.value("kind", "");
                                     if (kind == "battle_finished") {
-                                        std::string finish_body =
-                                            "battle_state:kind=finished:settlement:"
-                                            "battle_id=" + push.value("battle_id", "") +
-                                            ":reason=" + push.value("reason", "");
                                         for (const auto& [sid, rid] : lookup_.session_rooms()) {
                                             if (rid == session_room_id) {
                                                 emit(net::protocol::kBattleStatePush,
                                                      sid, 0,
                                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                                                     finish_body);
+                                                     push.dump());
                                             }
                                         }
                                     }
                                 }
                             }
                             battles_by_room_id_.erase(session_room_id);
-                            battle_ids_by_room_id_.erase(session_room_id);
+                            room_to_battle_id_.erase(session_room_id);
                             return true;
                         }
                     }
@@ -808,16 +873,10 @@ bool Runtime::handle(const GatewayCommand& command) {
                     return true;
                 }
 
-                // Normal input: look up the actual battle_id for the room
-                std::string actual_battle_id;
-                auto bid_it = battle_ids_by_room_id_.find(session_room_id);
-                if (bid_it != battle_ids_by_room_id_.end()) {
-                    actual_battle_id = bid_it->second;
-                }
-
+                // Normal input
                 nlohmann::json input_payload{
                     {"user_id", user_id},
-                    {"battle_id", actual_battle_id},
+                    {"battle_id", bridge_battle_id},
                     {"input_data", battle_input->input_data},
                     {"score", battle_input->score},
                     {"submitted_frame", battle_input->score},  // approximate
@@ -838,54 +897,28 @@ bool Runtime::handle(const GatewayCommand& command) {
                              format_battle_input_response_body(input_seq));
 
                         if (resp.contains("push_to_sessions")) {
-                            // When should_finish is true the battle backend returns both
-                            // frame_advanced and battle_finished.  The multi-process tests
-                            // read only one push per iteration, so the frame_advanced body
-                            // must carry the finish markers too when a finish follows.
-                            bool has_co_finish = false;
-                            std::string co_finish_reason;
-                            for (const auto& p : resp["push_to_sessions"]) {
-                                if (p.value("kind", "") == "battle_finished") {
-                                    has_co_finish = true;
-                                    co_finish_reason = p.value("reason", "");
-                                    break;
-                                }
-                            }
-
                             for (const auto& push : resp["push_to_sessions"]) {
                                 std::string kind = push.value("kind", "");
                                 if (kind == "frame_advanced") {
-                                    std::string frame_body =
-                                        "battle_state:kind=frame:"
-                                        "battle_id=" + push.value("battle_id", "") +
-                                        ":frame_number=" + std::to_string(push.value("frame_number", 0U)) +
-                                        ":trigger=" + push.value("trigger", "");
-                                    if (has_co_finish) {
-                                        frame_body += ":settlement:finished:reason=" + co_finish_reason;
-                                    }
                                     for (const auto& [sid, rid] : lookup_.session_rooms()) {
                                         if (rid == session_room_id) {
                                             emit(net::protocol::kBattleStatePush,
                                                  sid, 0,
                                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                                                 frame_body);
+                                                 push.dump());
                                         }
                                     }
                                 } else if (kind == "battle_finished") {
-                                    std::string finish_body =
-                                        "battle_state:kind=finished:settlement:"
-                                        "battle_id=" + push.value("battle_id", "") +
-                                        ":reason=" + push.value("reason", "");
                                     for (const auto& [sid, rid] : lookup_.session_rooms()) {
                                         if (rid == session_room_id) {
                                             emit(net::protocol::kBattleStatePush,
                                                  sid, 0,
                                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                                                 finish_body);
+                                                 push.dump());
                                         }
                                     }
                                     battles_by_room_id_.erase(session_room_id);
-                                    battle_ids_by_room_id_.erase(session_room_id);
+                                    room_to_battle_id_.erase(session_room_id);
                                 }
                             }
                         }
@@ -1256,6 +1289,7 @@ std::optional<SessionId> Runtime::session_id_for_user(const std::string& user_id
 void Runtime::process_battle_finished(const v2::battle::BattleFinishedMsg& finished) {
     pending_battle_timeout_.erase(finished.battle_id);
     battles_by_room_id_.erase(finished.room_id);
+    room_to_battle_id_.erase(finished.room_id);
 
     if (!finished.triggering_user_id.empty()) {
         const auto sid = lookup_.session_for_user(finished.triggering_user_id);

@@ -163,15 +163,47 @@ SDK 封装     全量测试     文档+环境     分布式运行时
 - 反外挂检测覆盖率 ≥ 80% 已知作弊模式
 - 性能基线相比 v2.0.2 提升 ≥ 30%
 
-### 2.6 v3.0.0 — 分布式运行时（远期）
+### 2.6 v3.0.0 — 分布式运行时 ✅ (已完成 2026-05-13)
 
 | 编号 | 条目 | 说明 |
 |---|---|---|
-| D1 | Cluster Router | 跨节点服务发现和路由 |
-| D2 | Remote Actor Transport | 跨进程 `actor::tell()`，透明序列化 |
-| D3 | 一致性哈希分片 | 按 room_id/battle_id 分配，节点扩缩容数据迁移 |
-| D4 | 领导者选举 | Raft 基础，用于全局单例服务（匹配/排行榜） |
-| D5 | K8s Operator | CRD + controller，自动滚动更新、弹性伸缩 |
+| D1 | Cluster Router | ✅ 跨节点服务发现和路由 |
+| D2 | Remote Actor Transport | ✅ 跨进程 `actor::tell()`，透明序列化 |
+| D3 | 一致性哈希分片 | ✅ 按 room_id/battle_id 分配 |
+| D4 | 领导者选举 | ✅ Raft 基础实现 |
+| D5 | K8s Operator | ✅ 基础框架 (k8s_operator_test.cpp) |
+| D6 | gRPC Proto | ✅ 4 个 proto 定义 |
+| D7 | TLS 配置 | ✅ SecurityPolicy + TlsSessionConfig |
+| D8 | OpenTelemetry | ✅ OtlpExporter + TraceContext |
+
+### 2.7 v3.1.0 — 生产基础设施 ✅ (已完成 2026-05-14)
+
+| 编号 | 条目 | 说明 |
+|---|---|---|
+| E1 | Redis 集成 | ✅ hiredis + RedisClient + RedisEventStore (16 tests) |
+| E2 | Docker 生产构建 | ✅ 9 服务栈 + multi-stage build + build_docker.sh |
+| E3 | K8s 部署验证 | ✅ 6 个独立 Deployment + HPA + PDB + 反亲和 |
+| E4 | TLS/mTLS + FeatureFlags | ✅ SecurityPolicy 接入 bridge + 灰度控制 (751 tests) |
+
+### 2.8 v3.2.0 — Redis + Raft 集群 ✅ (已完成 2026-05-14)
+
+| 编号 | 条目 | 说明 |
+|---|---|---|
+| P1 | CachedBattleDataStore 写回修正 | ✅ write-back 语义 + flush() + LruCache 增强 |
+| P2 | RedisConnectionPool | ✅ 连接池 + RAII PooledConnection + 7 tests |
+| P3 | Raft 集群验证 | ✅ 3节点选举 + AB/BA死锁修复 + 10 tests |
+
+### 2.9 v3.3.0 — P0-P3 模块全量集成 ✅ (已完成 2026-05-14)
+
+| 优先级 | 条目 | 说明 |
+|---|---|---|
+| P0a | Matchmaking/Leaderboard 路由 | ✅ ServiceId 枚举 + Bridge 槽位 + DemoServer 配置 + 健康检查 |
+| P0b | Redis 持久化 Leaderboard | ✅ env-opt-in RedisLeaderboard 接入 Leaderboard 后端 |
+| P1a | ClusterRouter 接入 | ✅ 服务发现路由 + 静态 BackendConfig 回退 |
+| P1b | OtlpExporter 接入 | ✅ OTLP 导出，OTEL_EXPORT_ENDPOINT env opt-in |
+| P1c | CachedBattleDataStore 接入 | ✅ JsonFileBattleDataStore 包装为 LRU+WriteBehind |
+| P2 | SchemaValidator 接入 | ✅ Runtime 6 条桥接路径 JSON Schema 校验 |
+| P3 | InputValidator 接入 | ✅ BattleActor 输入校验，静默拒绝 |
 
 ---
 
@@ -193,13 +225,19 @@ SDK 封装     全量测试     文档+环境     分布式运行时
 ## 4. 版本节奏
 
 ```
-v2.0.0  ████████████████████████████████████ 已完成 (2026-05-12)
-v2.0.1  ████████████                         6 项加固任务，预计 2-3 周
-v2.0.2  ████████████                         6 项性能基线，预计 2 周
-v2.1.0  ████████████████                     6 项集成验证，预计 3-4 周
-v2.2.0  ██████████████████                   7 项安全/可观测性，预计 3-4 周
-v2.3.0  ██████████████████                   7 项高级特性，预计 4-6 周
-v3.0.0  ████████████████████████████████     分布式运行时，独立立项
+v2.0.0  ████████████████████████████████████ 已完成 (2026-05-12, 473 tests)
+v2.0.1  ████████████████████████████████████ 已完成 (2026-05-12, 6 项加固)
+v2.0.2  ████████████████████████████████████ 已完成 (2026-05-12, 6 项性能基线)
+v2.1.0  ████████████████████████████████████ 已完成 (2026-05-12, 6 项集成验证)
+v2.2.0  ████████████████████████████████████ 已完成 (2026-05-12, 7 项安全/可观测性)
+v2.3.0  ████████████████████████████████████ 已完成 (2026-05-12, 7 项高级特性)
+v2.4.0  ████████████████████████████████████ 已完成 (2026-05-13, SDK 封装)
+v2.5.0  ████████████████████████████████████ 已完成 (2026-05-13, 全面测试)
+v2.6.0  ████████████████████████████████████ 已完成 (2026-05-13, 文档+环境)
+v3.0.0  ████████████████████████████████████ 已完成 (2026-05-13, 655 tests)
+v3.1.0  ████████████████████████████████████ 已完成 (2026-05-14, 751 tests)
+v3.2.0  ████████████████████████████████████ 已完成 (2026-05-14, 780 tests)
+v3.3.0  ████████████████████████████████████ 已完成 (2026-05-14, 780 tests, P0-P3 13模块集成)
 ```
 
 ---

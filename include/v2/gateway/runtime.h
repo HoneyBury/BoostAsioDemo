@@ -10,6 +10,7 @@
 #include "v2/gateway/gateway_actor.h"
 #include "v2/gateway/gateway_service_bridge.h"
 #include "v2/gateway/runtime_helpers.h"
+#include "v2/gateway/schema_validator.h"
 #include "v2/battle/battle_actor.h"
 #include "v2/player/player_actor.h"
 #include "v2/room/room_actor.h"
@@ -77,7 +78,7 @@ private:
     SessionWriteSink& write_sink_;
     SessionLookup lookup_;
     std::unordered_map<std::string, v2::actor::ActorRef> battles_by_room_id_;
-    std::unordered_map<std::string, std::string> battle_ids_by_room_id_;  // bridge mode: room_id → battle_id
+    std::unordered_map<std::string, std::string> room_to_battle_id_;
     std::unordered_map<SessionId, PendingResponse> pending_login_;
     std::unordered_map<std::string, PendingResponse> pending_room_create_;
     std::unordered_map<std::string, PendingResponse> pending_room_join_;
@@ -92,6 +93,7 @@ private:
     std::uint64_t next_battle_id_ = 1;
     BattleArchiveSink* archive_sink_ = nullptr;
     std::unique_ptr<GatewayServiceBridge> bridge_;
+    SchemaValidator schema_validator_;
 };
 
 }  // namespace v2::gateway

@@ -34,7 +34,7 @@ v1.0.0 完成了一个**单进程、功能完整**的游戏服务器框架。核
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## 二点五、当前实现状态（`2026-05-11`）
+## 二点五、当前实现状态（`2026-05-14`）
 
 > 本文档是长期目标，不等于当前代码完成度。下面这段用于避免把 roadmap 误读成“已实现列表”。
 
@@ -47,6 +47,17 @@ v1.0.0 完成了一个**单进程、功能完整**的游戏服务器框架。核
 | `M5 数据层 v2` | `done` | LruCache（thread-safe, O(1)）、WriteBehindDataStore（异步写队列+后台worker）、Snapshotable mixin（Actor::take_snapshot/restore_from_snapshot）、BattleActor 快照/恢复、CachedBattleDataStore（LRU读缓存+WriteBehind写）、31 个单元测试 + 6 个集成测试 |
 | `M6 battle world` | `done` | 7-system ECS pipeline（Clock→Input→Movement→Combat→AOI→Lifecycle→Replay）、authoritative simulation（MovementSystem/CombatSystem）、deterministic replay、AOI 空间管理（SpatialGrid + AoiSystem + AoiViewComponent）、14+12 个单元测试已通过 |
 | `M7 运维成熟度` | `done` | DiagnosticsManager（统一 BackendMetrics+ServiceRegistry+io_core+shadow bridge 快照 + JSON 序列化）、HealthCheck（真实健康检查 pass/fail/warn + RFC 格式 JSON + 替换假 /health）、FeatureFlags（hash(user_id)%100 百分比灰度 + shared_mutex 线程安全 + header-only）、TraceContext+Span（轻量自研追踪 + trace_id 贯穿 gateway→login→room→battle）、27 个单元测试 |
+
+**v3.0.0-v3.3.0 后续演进** (2026-05-14, 780 tests):
+
+| 版本 | 交付 |
+|------|------|
+| v3.0.0 | D1-D8 分布式运行时 (ClusterRouter, Raft, ConsistentHash, K8s Operator 基础, gRPC Proto, TLS, OtlpExporter), 655 tests |
+| v3.1.0 | Redis + Docker 生产构建 + K8s 部署验证 + TLS/mTLS + FeatureFlags, 751 tests |
+| v3.2.0 | RedisLeaderboard + RedisConnectionPool + Raft 集群验证, 780 tests |
+| v3.3.0 | P0-P3 全量集成 (Matchmaking/Leaderboard 路由 + ClusterRouter 接入 + OtlpExporter 接入 + CachedBattleDataStore 接入 + SchemaValidator + InputValidator), 780 tests |
+
+详见 `docs/v2-enterprise-roadmap.md` 和 `docs/v3-environment-roadmap.md`。
 
 当前最重要的边界：
 
@@ -668,7 +679,7 @@ v2.0.0 不会破坏 v1.0.0 的 API 兼容性：
 可观测性:   Prometheus + 审计日志      OpenTelemetry 分布式追踪 + 火焰图
 部署:       Docker + Compose           Kubernetes Operator + 灰度发布
 
-测试:       54 个 (单进程)              473 个 (含 v2 单元+集成测试)
+测试:       54 个 (单进程)              780 个 (v3.3.0, 含 v2+v3 单元+集成测试)
 吞吐:       ~10K msg/s (单核)           目标 ~100K msg/s (8 核) — 待基准测定
 延迟:       p99 < 5ms (单机)            目标 p99 < 2ms (同核心 Actor) — 待基准测定
 ```

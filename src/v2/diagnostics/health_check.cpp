@@ -166,6 +166,10 @@ HealthStatus HealthCheck::check() const {
         check_backend(v2::service::ServiceId::kRoom, "room"));
     result.checks.push_back(
         check_backend(v2::service::ServiceId::kBattle, "battle"));
+    result.checks.push_back(
+        check_backend(v2::service::ServiceId::kMatchmaking, "matchmaking"));
+    result.checks.push_back(
+        check_backend(v2::service::ServiceId::kLeaderboard, "leaderboard"));
     result.checks.push_back(check_registry());
 
     // Aggregate status: fail > warn > pass

@@ -3,6 +3,8 @@
 #include "net/session.h"
 #include "net/http_manager.h"
 #include "v2/config/config_watcher.h"
+#include "v2/config/feature_flags.h"
+#include "v2/data/cached_data_store.h"
 #include "v2/io/io_engine.h"
 #include "v2/diagnostics/health_check.h"
 #include "v2/gateway/backend_metrics.h"
@@ -11,6 +13,7 @@
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 #include "v2/service/service_registry.h"
+#include "v3/cluster/tls_config.h"
 
 #include <cstdint>
 #include <optional>
@@ -30,6 +33,8 @@ struct DemoServerOptions {
     std::optional<GatewayServiceBridge::BackendConfig> login_backend_config;
     std::optional<GatewayServiceBridge::BackendConfig> room_backend_config;
     std::optional<GatewayServiceBridge::BackendConfig> battle_backend_config;
+    std::optional<GatewayServiceBridge::BackendConfig> matchmaking_backend_config;
+    std::optional<GatewayServiceBridge::BackendConfig> leaderboard_backend_config;
 };
 
 struct DemoServerIoCoreSnapshot {
@@ -94,7 +99,7 @@ private:
     v2::runtime::ActorSystem actor_system_;
     SessionAdapter adapter_;
     Runtime runtime_;
-    std::unique_ptr<JsonFileBattleDataStore> archive_store_;
+    std::unique_ptr<v2::data::CachedBattleDataStore> archive_store_;
     std::shared_ptr<BackendMetrics> backend_metrics_;
     std::shared_ptr<v2::service::ServiceRegistry> service_registry_;
     v2::diagnostics::HealthCheck health_check_;
@@ -115,6 +120,10 @@ private:
     std::unique_ptr<boost::asio::io_context> management_io_;
     std::unique_ptr<net::HttpManager> http_manager_;
     std::unique_ptr<std::thread> management_thread_;
+
+    // v3.1.0: Feature flags and security policy
+    std::shared_ptr<v2::config::FeatureFlags> feature_flags_;
+    std::optional<v3::cluster::SecurityPolicy> security_policy_;
 };
 
 }  // namespace v2::gateway

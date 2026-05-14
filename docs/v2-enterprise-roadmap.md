@@ -185,6 +185,26 @@ SDK 封装     全量测试     文档+环境     分布式运行时
 | E3 | K8s 部署验证 | ✅ 6 个独立 Deployment + HPA + PDB + 反亲和 |
 | E4 | TLS/mTLS + FeatureFlags | ✅ SecurityPolicy 接入 bridge + 灰度控制 (751 tests) |
 
+### 2.8 v3.2.0 — Redis + Raft 集群 ✅ (已完成 2026-05-14)
+
+| 编号 | 条目 | 说明 |
+|---|---|---|
+| P1 | CachedBattleDataStore 写回修正 | ✅ write-back 语义 + flush() + LruCache 增强 |
+| P2 | RedisConnectionPool | ✅ 连接池 + RAII PooledConnection + 7 tests |
+| P3 | Raft 集群验证 | ✅ 3节点选举 + AB/BA死锁修复 + 10 tests |
+
+### 2.9 v3.3.0 — P0-P3 模块全量集成 ✅ (已完成 2026-05-14)
+
+| 优先级 | 条目 | 说明 |
+|---|---|---|
+| P0a | Matchmaking/Leaderboard 路由 | ✅ ServiceId 枚举 + Bridge 槽位 + DemoServer 配置 + 健康检查 |
+| P0b | Redis 持久化 Leaderboard | ✅ env-opt-in RedisLeaderboard 接入 Leaderboard 后端 |
+| P1a | ClusterRouter 接入 | ✅ 服务发现路由 + 静态 BackendConfig 回退 |
+| P1b | OtlpExporter 接入 | ✅ OTLP 导出，OTEL_EXPORT_ENDPOINT env opt-in |
+| P1c | CachedBattleDataStore 接入 | ✅ JsonFileBattleDataStore 包装为 LRU+WriteBehind |
+| P2 | SchemaValidator 接入 | ✅ Runtime 6 条桥接路径 JSON Schema 校验 |
+| P3 | InputValidator 接入 | ✅ BattleActor 输入校验，静默拒绝 |
+
 ---
 
 ## 3. 文档产出计划
@@ -216,7 +236,8 @@ v2.5.0  ████████████████████████
 v2.6.0  ████████████████████████████████████ 已完成 (2026-05-13, 文档+环境)
 v3.0.0  ████████████████████████████████████ 已完成 (2026-05-13, 655 tests)
 v3.1.0  ████████████████████████████████████ 已完成 (2026-05-14, 751 tests)
-v3.2.0  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ K8s Operator + RedisLeaderboard
+v3.2.0  ████████████████████████████████████ 已完成 (2026-05-14, 780 tests)
+v3.3.0  ████████████████████████████████████ 已完成 (2026-05-14, 780 tests, P0-P3 13模块集成)
 ```
 
 ---

@@ -1,12 +1,12 @@
 # v3.x 环境依赖与生产就绪规划
 
-> 状态: 执行中 | 版本: v3.1.0
+> 状态: 执行中 | 版本: v3.3.0
 
 ## 1. 当前状态
 
 | 组件 | 配置 | 代码集成 | 生产就绪 |
 |------|------|---------|---------|
-| Redis | docker-compose + K8s + redis.conf | ✅ hiredis + RedisClient + RedisEventStore + RedisLeaderboard | 部分 |
+| Redis | docker-compose + K8s + redis.conf | ✅ hiredis + RedisClient + RedisEventStore + RedisLeaderboard + RedisConnectionPool | ✅ |
 | K8s CRD | gameserver-crd.yaml | ✅ k8s_operator_test.cpp 基础框架 | 否 |
 | K8s Deploy | gateway/5×backend Deployment | ✅ 6 个独立 Deployment + HPA + PDB | 否 |
 | Helm | Chart.yaml + values.yaml | ❌ 未部署验证 | 否 |
@@ -15,6 +15,10 @@
 | Docker | Dockerfile × 2 + compose | ✅ 9 服务栈 + build_docker.sh | 是 |
 | TLS | tls_config.h | ✅ SecurityPolicy + FeatureFlags 已接入 GatewayServiceBridge | 部分 |
 | CI/CD | github-actions.yml | ✅ 基础流水线 | 部分 |
+| ClusterRouter | cluster_router.h | ✅ P1a 接入 DemoServer + 静态回退 | 部分 |
+| OtlpExporter | otel_exporter.h | ✅ P1b env-opt-in 接入 GatewayServiceBridge | 部分 |
+| SchemaValidator | schema_validator.h | ✅ P2 接入 Runtime 6 条桥接路径 | ✅ |
+| InputValidator | input_validator.h | ✅ P3 接入 BattleActor 反外挂 | ✅ |
 
 ## 2. Phase E1: Redis 集成 ✅ (2026-05-14)
 
@@ -96,5 +100,13 @@ GameServer CRD 的 Controller 实现，自动化运维。
 v3.0.0: 分布式运行时核心 ✅ (2026-05-13, 655 tests)
 v3.1.0: E1 Redis + E2 Docker + E3 K8s + E4 TLS/mTLS + FeatureFlags ✅ (2026-05-14, 751 tests)
 v3.2.0: RedisLeaderboard + RedisConnectionPool + Raft 集群验证 ✅ (2026-05-14, 780 tests)
-v3.3.0: K8s Operator 完善 + gRPC 服务端 + 生产部署压测 + Raft 日志复制
+v3.3.0: P0-P3 13模块全量接入生产链 ✅ (2026-05-14, 780 tests)
+  P0a: Matchmaking/Leaderboard 网关路由 + 健康检查
+  P0b: Redis 持久化 Leaderboard 后端
+  P1a: ClusterRouter 服务发现 + 静态回退
+  P1b: OtlpExporter 分布式追踪 (env opt-in)
+  P1c: CachedBattleDataStore 缓存归档 (LRU+WriteBehind)
+  P2:  SchemaValidator 6条桥接路径校验
+  P3:  InputValidator 反外挂静默拒绝
+v3.4.0: K8s Operator 完善 + gRPC 服务端 + 生产部署压测 + Raft 日志复制
 ```

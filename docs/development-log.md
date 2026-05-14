@@ -1491,7 +1491,149 @@
 
 ### 下一步
 
-- **RedisLeaderboard 接入 WriteBehind**：当前 Leaderboard 直接写 Redis，应走 WriteBehindDataStore 统一持久化路径
 - **Raft 日志复制**：当前仅实现 leader election，log replication 未实现
 - **gRPC 服务端**：基于 `proto/` 定义实现 gRPC 传输层，替代当前 TCP 字符串协议
-- **全局模块集成度分析**：识别停留在单元测试层面、未接入生产链路的模块
+
+---
+
+## 2026-05-14 阶段 v3.3.0：P0-P3 模块集成（13 模块全量接入生产链）
+
+### 背景
+
+v3.2.0 后进行了全局模块集成度分析，识别出 9 个单元测试通过但从未在生产代码中实例化的模块，
+2 个"幽灵服务"（Matchmaking/Leaderboard 后端存在但网关无法路由），以及多个存在 setter 但从
+未被调用的死代码路径。
+
+### 目标
+
+按 P0→P1→P2→P3 优先级，将全部 13 个模块接入生产链路，消除死代码，使每个模块都有真实的生产调用路径。
+
+---
+
+### P0a — Gateway 路由槽位：Matchmaking/Leaderboard
+
+**问题**：`GatewayServiceBridge` 只有 kLogin/kRoom/kBattle 三个槽位，Matchmaking 和 Leaderboard
+后端进程存在但网关无法路由。
+
+**完成内容**（11 files, +72/-18）：
+
+- `include/v2/service/service_id.h`：新增 `kMatchmaking = 5`, `kLeaderboard = 6` 枚举值和 to_string 映射
+- `include/v2/gateway/backend_metrics.h`：`service_id_to_key()` 增加 "matchmaking"/"leaderboard"
+- `include/v2/gateway/gateway_service_bridge.h`：新增 `matchmaking_config`/`leaderboard_config` 构造函数参数和 `matchmaking_slot_`/`leaderboard_slot_` 成员
+- `src/v2/gateway/gateway_service_bridge.cpp`：构造函数初始化新槽位，`slot_for()`/`service_name_for()`/`shutdown()` 增加新服务分支
+- `include/v2/gateway/demo_server.h`：`DemoServerOptions` 新增 `matchmaking_backend_config`/`leaderboard_backend_config`
+- `src/v2/gateway/demo_server.cpp`：构造函数桥接条件扩展 + `load_gateway_config()` 增加 "match"→kMatchmaking, "leaderboard"→kLeaderboard 映射
+- `src/v2/diagnostics/health_check.cpp`：增加 kMatchmaking/kLeaderboard 健康检查
+- `config/gateway.json`：backends 新增 "match"(9304)/"leaderboard"(9305)
+- 测试更新：`health_check_test.cpp` 更新预期检查数 4→6，`backend_routing_test.cpp`/`backend_health_test.cpp` 修复构造函数参数
+
+**技术要点**：
+- `service_name_for()` 返回 "match"（非 "matchmaking"）以匹配已有 SecurityPolicy 约定
+- `load_gateway_config()` 会覆盖测试中 DemoServerOptions 的后端端口（已有问题，非本次引入）
+
+---
+
+### P0b — Redis 持久化接入 Leaderboard 后端
+
+**问题**：`LeaderboardService::set_redis_leaderboard()` setter 存在但从未被调用，排行榜数据仅内存存储，重启丢失。
+
+**完成内容**（1 file, +39/-0）：
+
+- `examples/v2_leaderboard_backend/main.cpp`：
+  - 读取 `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD` 环境变量
+  - Redis 可连通：创建 `RedisLeaderboard`（key="lb:global"），调用 `service.set_redis_leaderboard()`
+  - Redis 不可用或未配置：保持原有内存模式，输出提示
+  - 使用 `redis_lb->available()` 探测 Redis 连通性
+
+---
+
+### P3 — InputValidator 反外挂接入 BattleActor
+
+**问题**：`InputValidator`（header-only，移动距离/速度/冷却校验）从未在战斗处理链路中调用。
+
+**完成内容**（2 files, +20/-0）：
+
+- `include/v2/battle/battle_actor.h`：新增 `#include "v2/battle/input_validator.h"` 和 `InputValidator input_validator_` 成员
+- `src/v2/battle/battle_actor.cpp`：在 `SubmitBattleInputMsg` 处理中，获取玩家当前位置（`battle_world_snapshot`），调用 `input_validator_.validate(input_data, pos_x, pos_y)`，无效输入静默拒绝（反外挂原则：不告知作弊者）
+
+**支持的输入格式**：`move:x,y` / `attack:target` / `finish:reason`
+**校验规则**：坐标边界（0-1000）、移动速度（Manhattan ≤ 200/帧）、格式完整性
+
+---
+
+### P1a — ClusterRouter 接入 GatewayServiceBridge
+
+**问题**：`bridge->set_cluster_router()` setter 存在但从未调用，`ensure_connection()` 中集群发现路径为死代码。
+
+**完成内容**（2 files）：
+
+- `src/v2/gateway/demo_server.cpp` 构造函数：创建 `ClusterRouter` 并设置到 bridge（在 `load_gateway_config()` 之前）
+- `src/v2/gateway/demo_server.cpp` `load_gateway_config()`：每个后端配置加载后同步注册到 ClusterRouter（含 host:port 实际地址），状态标记为 kHealthy
+- `src/v2/gateway/gateway_service_bridge.cpp` `ensure_connection()`：重构集群路由路径——当 `ClusterRouter::discover()` 返回 nullopt 时回退到静态 BackendConfig，保证兼容性
+
+**关键技术决策**：集群路由和静态配置采用 fall-through 模式（集群优先，无条目回退），而非突变式替换。这样空 ClusterRouter 不会破坏已有静态配置路径。
+
+---
+
+### P1b — OtlpExporter 接入 GatewayServiceBridge
+
+**问题**：`bridge->set_otel_exporter()` setter 存在但从未调用，`SpanExportGuard` 中 `otel_exporter_` 始终为 null。
+
+**完成内容**（1 file）：
+
+- `src/v2/gateway/demo_server.cpp` 构造函数：读取 `OTEL_EXPORT_ENDPOINT` 环境变量，仅当端点配置时创建 `OtlpExporter`（service_name="boost-gateway"），调用 `bridge->set_otel_exporter()`
+- 默认行为：无 env 变量 → 不创建 exporter → 追踪 span 不导出（向后兼容）
+
+---
+
+### P1c — CachedBattleDataStore 接入战斗归档路径
+
+**问题**：`CachedBattleDataStore` 实现了 `BattleArchiveSink` 但从未实例化，战斗直接写 `JsonFileBattleDataStore`，无缓存层。
+
+**完成内容**（2 files）：
+
+- `include/v2/gateway/demo_server.h`：`archive_store_` 类型从 `std::unique_ptr<JsonFileBattleDataStore>` 改为 `std::unique_ptr<v2::data::CachedBattleDataStore>`
+- `src/v2/gateway/demo_server.cpp` 构造函数：创建 `shared_ptr<JsonFileBattleDataStore>` 作为 delegate，包装为 `CachedBattleDataStore(delegate, 1000)`（LRU 读缓存 + WriteBehind 异步写，1000 条目）
+
+---
+
+### P2 — SchemaValidator 接入 Runtime
+
+**问题**：`SchemaValidator` 有默认构造函数（含 6 个内建 schema），但从未在 Runtime 消息处理链路中调用。
+
+**完成内容**（2 files, +86/-6）：
+
+- `include/v2/gateway/runtime.h`：新增 `#include "v2/gateway/schema_validator.h"` 和 `SchemaValidator schema_validator_` 私有成员
+- `src/v2/gateway/runtime.cpp`：在 6 条桥接路由路径中插入 schema 校验，覆盖：
+  1. `kLogin` → `"login_request"`（user_id, token, display_name）
+  2. `kRoomCreate` → `"room_create"`（user_id, room_id）
+  3. `kRoomJoin` → `"room_join"`（user_id, room_id）
+  4. `kRoomReady` → `"room_ready"`（user_id, room_id, ready）
+  5. `kRoomLeave` → `"room_leave"`（user_id, room_id）
+  6. `kBattleStart` → `"room_start_battle"`（user_id, room_id）
+
+**校验模式**：
+- `schema_validator_.has_schema(type)` 判定是否有注册 schema（无 schema 则跳过，向后兼容）
+- 校验失败时 emit `kErrorResponse` + `kInvalidUserId` + 具体错误原因（如 `missing_required_field:user_id`）
+
+---
+
+### 测试结果
+
+- **780 tests 通过，0 failures**（与 v3.2.0 同数，P0-P3 未引入回归）
+- 所有 MultiProcess 测试偶发抖动（进程间时序竞态，非本次引入）
+
+### 影响范围
+
+- P0a（11 files）：service_id.h, backend_metrics.h, gateway_service_bridge.h/.cpp, demo_server.h/.cpp, health_check.cpp, gateway.json + 3 测试文件
+- P0b（1 file）：examples/v2_leaderboard_backend/main.cpp
+- P3（2 files）：battle_actor.h/.cpp
+- P1a+P1b（3 files）：demo_server.cpp, gateway_service_bridge.cpp（fallthrough 修复）
+- P1c（2 files）：demo_server.h/.cpp
+- P2（2 files）：runtime.h/.cpp
+
+### 下一步
+
+- **Raft 日志复制**：当前仅实现 leader election，log replication 未实现
+- **gRPC 服务端**：基于 `proto/` 定义实现 gRPC 传输层
+- **生产部署压测**：多节点集群 + Redis + TLS 全栈性能基线

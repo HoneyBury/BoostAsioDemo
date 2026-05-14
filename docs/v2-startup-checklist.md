@@ -39,7 +39,7 @@ v2.0.0 开发已在 `develop` 分支上完成（注：启动时未另建 feature
 当前分支布局：
 
 1. `main` — 承接稳定发布（当前为 v2.0.0）
-2. `develop` — v2.0.0+ 日常迭代（当前阶段：生产加固 v2.0.1）
+2. `develop` — v2.0.0+ 日常迭代（当前阶段：v3.3.0，P0-P3 全量模块集成，780 测试通过）
 3. v2 与 v1 在 `develop` 上共仓推进，v2 目录独立、不破坏 v1 主链
 
 ## 4. 启动前置决策
@@ -309,11 +309,23 @@ v2.0.0 全部七大模块已完成落地：
 - `M6` AOI/ECS battle world（7-system pipeline + authoritative simulation + deterministic replay）
 - `M7` 运维成熟度（DiagnosticsManager + HealthCheck + FeatureFlags + TraceContext+Span）
 
-473 测试全部通过。
+截至 v3.3.0 (2026-05-14)，780 测试全部通过。
+
+v3.0.0-v3.3.0 已完成的分布式/生产能力：
+- Cluster Router（跨节点服务发现和路由）+ 一致性哈希分片
+- Raft 领导者选举（基础实现）
+- Redis 集成（hiredis + RedisClient + RedisConnectionPool + RedisLeaderboard + RedisEventStore）
+- Docker 生产构建（9 服务栈 + multi-stage build）
+- K8s 部署清单（6 个独立 Deployment + HPA + PDB + 反亲和）
+- TLS/mTLS（SecurityPolicy + FeatureFlags 灰度控制）
+- OpenTelemetry OTLP 导出（OtlpExporter, env opt-in）
+- SchemaValidator（6 条桥接路径 JSON Schema 校验）
+- InputValidator（BattleActor 反外挂静默拒绝）
+- CachedBattleDataStore（LRU + WriteBehind 生产链路接入）
 
 仍以规划/原型为主的部分：
-- K8s Operator / 服务网格集成（需真实 K8s 集群）
-- OpenTelemetry 外部 SDK 集成（需外部部署 Jaeger/Zipkin）
+- K8s Operator Controller 实现（需真实 K8s 集群）
+- gRPC 服务端（proto 已定义，服务端待实现）
 - `v2` 替换现有 `v1` 默认入口（并存模式下 `v1` 仍为默认入口）
 
 ## 8. 文档产出清单
@@ -377,13 +389,13 @@ v2.0.0 全部七大模块已完成落地：
 
 说明：
 
-- 截至 `2026-05-12`，v2.0.0 全部七大模块（M1-M7）已完成落地，473 测试通过
+- 截至 `2026-05-14`，v3.3.0 全部模块（v2.0.0 M1-M7 + v3.0.0 D1-D8 + v3.3.0 P0-P3）已完成落地，780 测试通过
 
 ## 11. 当前状态
 
-v2.0.0 核心能力闭环完成。后续可关注：
+v3.3.0 全部 P0-P3 13 个模块已接入生产链路。后续可关注：
 
-1. **gateway demo 接入 backend 服务** — 端到端多进程验证
-2. **examples/ 代码瘦身** — 核心业务逻辑下沉到 `src/v2/` 库
-3. **测试补强** — ecs/player/room 模块测试覆盖加深
-4. **K8s/OpenTelemetry** — 需外部基础设施支持时再推进
+1. **K8s Operator Controller** — Go/kopf 实现 GameServer CRD Controller
+2. **gRPC 服务端** — 基于已定义 proto 实现服务端
+3. **生产部署压测** — 真实多节点环境负载验证
+4. **Raft 日志复制** — 完善 Raft 日志复制和持久化

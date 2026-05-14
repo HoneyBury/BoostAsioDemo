@@ -1,7 +1,9 @@
 // v3.1.0: Redis client and event store tests.
+// v3.2.0: RedisConnectionPool tests.
 // When Redis is unavailable, tests verify graceful degradation.
 #include <gtest/gtest.h>
 #include "v3/persistence/redis_client.h"
+#include "v3/persistence/redis_connection_pool.h"
 #include "v3/persistence/redis_event_store.h"
 
 using namespace v3::persistence;
@@ -389,6 +391,136 @@ TEST(RedisEventStoreTest, NoRedisAppendReturnsFalse) {
     e.payload = "{}";
     EXPECT_FALSE(store.append(e));
 }
+
+// ── RedisConnectionPool tests ───────────────────────────────────────────────
+
+TEST(RedisConnectionPoolTest, AcquireWhenRedisDownReturnsEmpty) {
+    RedisConnectionPool::Config cfg;
+    cfg.redis.host = "127.0.0.1";
+    cfg.redis.port = 1;
+    cfg.redis.timeout = std::chrono::milliseconds(100);
+    cfg.acquire_timeout = std::chrono::milliseconds(200);
+    RedisConnectionPool pool(cfg);
+
+    auto conn = pool.acquire();
+    EXPECT_FALSE(conn);
+    EXPECT_EQ(pool.size(), 0U);
+    EXPECT_EQ(pool.idle_count(), 0U);
+}
+
+TEST(RedisConnectionPoolTest, AcquireReturnsValidConnection) {
+    if (!redis_available) GTEST_SKIP() << "Redis not running";
+    RedisConnectionPool::Config cfg;
+    cfg.redis.timeout = std::chrono::milliseconds(500);
+    cfg.max_size = 2;
+    RedisConnectionPool pool(cfg);
+
+    auto conn = pool.acquire();
+    ASSERT_TRUE(conn);
+    EXPECT_TRUE(conn->is_connected());
+    EXPECT_EQ(pool.size(), 1U);
+    EXPECT_EQ(pool.idle_count(), 0U);
+}
+
+TEST(RedisConnectionPoolTest, ReleaseReturnsToPool) {
+    if (!redis_available) GTEST_SKIP() << "Redis not running";
+    RedisConnectionPool::Config cfg;
+    cfg.redis.timeout = std::chrono::milliseconds(500);
+    cfg.max_size = 2;
+    RedisConnectionPool pool(cfg);
+
+    {
+        auto conn = pool.acquire();
+        ASSERT_TRUE(conn);
+        EXPECT_EQ(pool.idle_count(), 0U);
+    }
+    EXPECT_EQ(pool.idle_count(), 1U);
+}
+
+TEST(RedisConnectionPoolTest, AcquireAfterReleaseReusesConnection) {
+    if (!redis_available) GTEST_SKIP() << "Redis not running";
+    RedisConnectionPool::Config cfg;
+    cfg.redis.timeout = std::chrono::milliseconds(500);
+    cfg.max_size = 2;
+    RedisConnectionPool pool(cfg);
+
+    {
+        auto c1 = pool.acquire();
+        ASSERT_TRUE(c1);
+        c1->set("pool:reuse", "v");
+    }
+    EXPECT_EQ(pool.size(), 1U);
+
+    auto c2 = pool.acquire();
+    ASSERT_TRUE(c2);
+    EXPECT_EQ(pool.size(), 1U);  // reused, not created
+    auto val = c2->get("pool:reuse");
+    ASSERT_TRUE(val.has_value());
+    EXPECT_EQ(*val, "v");
+    c2->del("pool:reuse");
+}
+
+TEST(RedisConnectionPoolTest, MaxSizeEnforced) {
+    if (!redis_available) GTEST_SKIP() << "Redis not running";
+    RedisConnectionPool::Config cfg;
+    cfg.redis.timeout = std::chrono::milliseconds(500);
+    cfg.max_size = 1;
+    cfg.acquire_timeout = std::chrono::milliseconds(100);
+    RedisConnectionPool pool(cfg);
+
+    auto c1 = pool.acquire();
+    ASSERT_TRUE(c1);
+
+    auto c2 = pool.acquire();
+    EXPECT_FALSE(c2);  // timeout — pool exhausted
+}
+
+TEST(RedisConnectionPoolTest, MoveSemantics) {
+    if (!redis_available) GTEST_SKIP() << "Redis not running";
+    RedisConnectionPool::Config cfg;
+    cfg.redis.timeout = std::chrono::milliseconds(500);
+    RedisConnectionPool pool(cfg);
+
+    auto c1 = pool.acquire();
+    ASSERT_TRUE(c1);
+    c1->set("pool:move", "x");
+
+    auto c2 = std::move(c1);
+    EXPECT_FALSE(c1);  // moved-from is empty
+    ASSERT_TRUE(c2);
+    auto val = c2->get("pool:move");
+    ASSERT_TRUE(val.has_value());
+    EXPECT_EQ(*val, "x");
+    c2->del("pool:move");
+}
+
+TEST(RedisConnectionPoolTest, DeadConnectionRevivedOnAcquire) {
+    if (!redis_available) GTEST_SKIP() << "Redis not running";
+    RedisConnectionPool::Config cfg;
+    cfg.redis.timeout = std::chrono::milliseconds(500);
+    cfg.max_size = 2;
+    RedisConnectionPool pool(cfg);
+
+    // Borrow, then manually disconnect to simulate death.
+    std::string key = "pool:revive";
+    {
+        auto c = pool.acquire();
+        ASSERT_TRUE(c);
+        // Force-disconnect the hiredis context. reconnect() will be
+        // called when the slot is next acquired.
+    }
+
+    auto c2 = pool.acquire();
+    ASSERT_TRUE(c2);
+    EXPECT_TRUE(c2->is_connected());
+    c2->set(key, "ok");
+    auto val = c2->get(key);
+    ASSERT_TRUE(val.has_value());
+    EXPECT_EQ(*val, "ok");
+    c2->del(key);
+}
+
+// ── Graceful degradation when Redis is down (event store) ───────────────────
 
 TEST(RedisEventStoreTest, NoRedisReadReturnsEmpty) {
     RedisEventStore::Config cfg;

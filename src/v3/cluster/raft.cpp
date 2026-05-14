@@ -1,4 +1,5 @@
 // v3.0.0 D4: RaftNode implementation — leader election with heartbeat.
+// v3.2.0: Real inter-node RPC via rpc_sender_ + JSON serialization.
 
 #include "v3/cluster/raft.h"
 
@@ -45,16 +46,23 @@ std::string RaftNode::leader_id() const {
 void RaftNode::run() {
     while (running_) {
         auto now = std::chrono::steady_clock::now();
+        bool should_elect = false;
+        bool should_send_hb = false;
         {
             std::lock_guard lock(mutex_);
             if (state_ == RaftState::kLeader) {
-                send_heartbeat();
-                std::this_thread::sleep_for(config_.heartbeat_interval);
-                continue;
+                should_send_hb = true;
+            } else if (now >= election_deadline_) {
+                should_elect = true;
             }
-            if (now >= election_deadline_) {
-                become_candidate();
-            }
+        }
+        if (should_send_hb) {
+            send_heartbeat();
+            std::this_thread::sleep_for(config_.heartbeat_interval);
+            continue;
+        }
+        if (should_elect) {
+            start_election();
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -69,6 +77,7 @@ void RaftNode::reset_election_timeout() {
 }
 
 void RaftNode::start_election() {
+    std::unique_lock lock(mutex_);
     current_term_++;
     voted_for_ = config_.node_id;
     votes_received_ = 1;
@@ -79,32 +88,57 @@ void RaftNode::start_election() {
     RequestVoteArgs args;
     args.term = current_term_;
     args.candidate_id = config_.node_id;
+    lock.unlock();
 
     for (const auto& peer : peers_) {
         if (peer.id == config_.node_id) continue;
-        auto reply = handle_request_vote_internal(peer, args);
+
+        RequestVoteReply reply;
+        if (rpc_sender_) {
+            auto raw = rpc_sender_(peer, serialize_request_vote(args));
+            if (!raw.empty()) {
+                reply = parse_request_vote_reply(raw);
+            }
+        } else {
+            reply = handle_request_vote_internal(peer, args);
+        }
+
+        lock.lock();
         if (reply.vote_granted) {
             votes_received_++;
         } else if (reply.term > current_term_) {
             become_follower(reply.term);
             return;
         }
+        lock.unlock();
     }
 
+    lock.lock();
     if (votes_received_ >= quorum_size()) {
         become_leader();
     }
 }
 
 void RaftNode::send_heartbeat() {
+    std::unique_lock lock(mutex_);
     AppendEntriesArgs args;
     args.term = current_term_;
     args.leader_id = config_.node_id;
+    lock.unlock();
 
     for (const auto& peer : peers_) {
         if (peer.id == config_.node_id) continue;
         if (rpc_sender_) {
-            // RPC heartbeat to peer (gRPC in full implementation)
+            auto raw = rpc_sender_(peer, serialize_append_entries(args));
+            if (!raw.empty()) {
+                auto reply = parse_append_entries_reply(raw);
+                lock.lock();
+                if (reply.term > current_term_) {
+                    become_follower(reply.term);
+                    return;
+                }
+                lock.unlock();
+            }
         }
     }
 }

@@ -6,7 +6,7 @@
 
 | 组件 | 配置 | 代码集成 | 生产就绪 |
 |------|------|---------|---------|
-| Redis | docker-compose + K8s + redis.conf | ✅ hiredis + RedisClient + RedisEventStore | 部分 |
+| Redis | docker-compose + K8s + redis.conf | ✅ hiredis + RedisClient + RedisEventStore + RedisLeaderboard | 部分 |
 | K8s CRD | gameserver-crd.yaml | ✅ k8s_operator_test.cpp 基础框架 | 否 |
 | K8s Deploy | gateway/5×backend Deployment | ✅ 6 个独立 Deployment + HPA + PDB | 否 |
 | Helm | Chart.yaml + values.yaml | ❌ 未部署验证 | 否 |
@@ -28,8 +28,8 @@ Leaderboard 和 EventStore 从内存切换到 Redis 持久化存储。
 - 16 项测试，Redis 不可用时优雅降级（GTEST_SKIP）
 
 ### 待完成
-- `RedisLeaderboard` 实现（排行榜 Sorted Set 存储）
-- `RedisConnectionPool` 连接池
+- ~~`RedisLeaderboard` 实现（排行榜 Sorted Set 存储）~~ ✅ v3.2.0
+- ~~`RedisConnectionPool` 连接池~~ ✅ v3.2.0
 
 ## 3. Phase E2: Docker 生产构建 ✅ (2026-05-14)
 
@@ -95,6 +95,6 @@ GameServer CRD 的 Controller 实现，自动化运维。
 ```
 v3.0.0: 分布式运行时核心 ✅ (2026-05-13, 655 tests)
 v3.1.0: E1 Redis + E2 Docker + E3 K8s + E4 TLS/mTLS + FeatureFlags ✅ (2026-05-14, 751 tests)
-v3.2.0: E5 K8s Operator + RedisLeaderboard + Raft 集群验证
-v3.3.0: gRPC 服务端 + 生产部署压测
+v3.2.0: RedisLeaderboard + RedisConnectionPool + Raft 集群验证 ✅ (2026-05-14, 780 tests)
+v3.3.0: K8s Operator 完善 + gRPC 服务端 + 生产部署压测 + Raft 日志复制
 ```

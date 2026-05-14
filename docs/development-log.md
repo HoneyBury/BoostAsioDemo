@@ -1437,3 +1437,61 @@
 - **Raft 集成测试**：多节点集群验证
 - **gRPC 服务端**：基于 proto 定义实现
 - **生产环境部署与压测**
+
+---
+
+## 2026-05-14 阶段 v3.2.0：持久化层强化 + Raft 集群验证
+
+### 目标
+
+将 v3.1.0 的持久化和共识层从"功能可用"推进到"并发安全 + 集群可验证"：Redis 连接池实现、LruCache 写回语义修正、Raft 多节点真实 RPC 选举验证。
+
+### 完成内容
+
+#### P1 — CachedBattleDataStore 写回修正
+
+- **LruCache 增强**：`put()` 返回被驱逐条目（`std::optional<std::pair<K,V>>`）、`for_each()` 只读遍历、`drain()` 清空并返回全部条目
+- **CachedBattleDataStore 重构**：`save_replay/save_result/save_snapshot` 从 write-through 改为 write-back（仅写缓存，驱逐时才写 WriteBehind）
+- **`flush()` 使用 `for_each()`**：推送所有缓存条目到 WriteBehind 而不清空缓存，确保后续读取仍命中
+- 所有 24 项 DataLayer 测试通过
+
+#### P2 — RedisConnectionPool 连接池
+
+- **`PooledConnection` RAII 类**：移动语义，析构自动归还；`operator->()` / `operator*()` / `operator bool()`
+- **`RedisConnectionPool`**：线程安全 acquire/release、条件变量阻塞等待、`max_size` 限制、死连接自动重连
+- **7 项新测试**：AcquireReturnsValidConnection、ReleaseReturnsToPool、AcquireAfterReleaseReusesConnection、MaxSizeEnforced、MoveSemantics、DeadConnectionRevivedOnAcquire、AcquireWhenRedisDownReturnsEmpty
+- Redis 不可用时所有连接池测试 GTEST_SKIP
+
+#### P3 — Raft 多节点集群验证
+
+- **RPC 序列化接入**：8 个 inline 序列化/反序列化辅助函数（`serialize_request_vote`/`parse`/`serialize/parse_reply`/`serialize_append_entries`/`parse`…），JSON 格式
+- **`start_election()` / `send_heartbeat()` RPC 实装**：优先走 `rpc_sender_`，fallback 到 `handle_request_vote_internal`
+- **AB/BA 死锁修复**：`run()` 不再在 RPC 调用期间持有 mutex；`start_election()` 和 `send_heartbeat()` 仅在修改本地状态时持锁，RPC 调用前释放
+- **集群测试**：
+  - `ThreeNodeClusterElectsSingleLeader` — 3 节点通过内存 RPC 总线选举出恰好 1 个 leader
+  - `LeaderStepDownOnHigherTerm` — leader 收到更高 term 心跳后自动退位
+- **测试修复**：消除 `node->start()` 重复调用导致的 `std::terminate()` 崩溃
+
+### 测试结果
+
+- **780 tests 通过，0 failures**（v3.1.0 基线 751 + RedisConnectionPool 7 + Raft 集群 2 + DataLayer 重构验证）
+- 780 tests enumerated（含 Redis 依赖项 GTEST_SKIP 约 20 项）
+
+### 影响范围
+
+- `include/v2/data/lru_cache.h`（`put` 返回值变更、`for_each`、`drain` 新增）
+- `src/v2/data/cached_data_store.cpp`（write-back 重构）
+- `include/v3/persistence/redis_connection_pool.h`（新）
+- `src/v3/persistence/redis_connection_pool.cpp`（新）
+- `src/v3/persistence/CMakeLists.txt`
+- `include/v3/cluster/raft.h`（8 个 JSON RPC 序列化辅助函数）
+- `src/v3/cluster/raft.cpp`（RPC 实装 + 死锁修复）
+- `tests/v2/unit/raft_test.cpp`（3 节点集群 RPC 测试）
+- `tests/unit/redis_event_store_test.cpp`（连接池 7 项测试）
+
+### 下一步
+
+- **RedisLeaderboard 接入 WriteBehind**：当前 Leaderboard 直接写 Redis，应走 WriteBehindDataStore 统一持久化路径
+- **Raft 日志复制**：当前仅实现 leader election，log replication 未实现
+- **gRPC 服务端**：基于 `proto/` 定义实现 gRPC 传输层，替代当前 TCP 字符串协议
+- **全局模块集成度分析**：识别停留在单元测试层面、未接入生产链路的模块

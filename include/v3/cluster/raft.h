@@ -1,7 +1,10 @@
 #pragma once
 // v3.0.0 D4: Simplified Raft consensus for leader election.
+// v3.2.0: Real inter-node RPC with JSON serialization.
 // Used for global singleton services (matchmaking, leaderboard).
 // Implements leader election + heartbeat; log replication is future scope.
+
+#include <nlohmann/json.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -14,6 +17,8 @@
 #include <vector>
 
 namespace v3::cluster {
+
+// ── Raft types ─────────────────────────────────────────────────────────
 
 // ── Raft types ─────────────────────────────────────────────────────────
 
@@ -64,6 +69,64 @@ struct RaftConfig {
     std::chrono::milliseconds heartbeat_interval{50};
     std::vector<RaftNodeId> peers;  // all cluster members (including self)
 };
+
+// ── RPC serialization helpers (inline) ─────────────────────────────────
+
+inline std::string serialize_request_vote(const RequestVoteArgs& args) {
+    nlohmann::json j;
+    j["type"] = "request_vote";
+    j["term"] = args.term;
+    j["candidate_id"] = args.candidate_id;
+    return j.dump();
+}
+
+inline RequestVoteArgs parse_request_vote(const std::string& data) {
+    auto j = nlohmann::json::parse(data);
+    return {j.value("term", std::uint64_t{0}),
+            j.value("candidate_id", std::string{})};
+}
+
+inline std::string serialize_request_vote_reply(const RequestVoteReply& r) {
+    nlohmann::json j;
+    j["type"] = "request_vote_reply";
+    j["term"] = r.term;
+    j["vote_granted"] = r.vote_granted;
+    return j.dump();
+}
+
+inline RequestVoteReply parse_request_vote_reply(const std::string& data) {
+    auto j = nlohmann::json::parse(data);
+    return {j.value("term", std::uint64_t{0}),
+            j.value("vote_granted", false)};
+}
+
+inline std::string serialize_append_entries(const AppendEntriesArgs& args) {
+    nlohmann::json j;
+    j["type"] = "append_entries";
+    j["term"] = args.term;
+    j["leader_id"] = args.leader_id;
+    return j.dump();
+}
+
+inline AppendEntriesArgs parse_append_entries(const std::string& data) {
+    auto j = nlohmann::json::parse(data);
+    return {j.value("term", std::uint64_t{0}),
+            j.value("leader_id", std::string{})};
+}
+
+inline std::string serialize_append_entries_reply(const AppendEntriesReply& r) {
+    nlohmann::json j;
+    j["type"] = "append_entries_reply";
+    j["term"] = r.term;
+    j["success"] = r.success;
+    return j.dump();
+}
+
+inline AppendEntriesReply parse_append_entries_reply(const std::string& data) {
+    auto j = nlohmann::json::parse(data);
+    return {j.value("term", std::uint64_t{0}),
+            j.value("success", false)};
+}
 
 // ── Forward declaration ───────────────────────────────────────────────
 

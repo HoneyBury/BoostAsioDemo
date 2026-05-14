@@ -100,6 +100,24 @@ void BattleActor::on_message(v2::actor::Message&& message) {
         if (world_ == nullptr) {
             return;
         }
+
+        // Anti-cheat: validate input before processing
+        {
+            auto snap = battle_world_snapshot(*world_);
+            std::int32_t px = 0, py = 0;
+            for (const auto& p : snap.participants) {
+                if (p.user_id == input->user_id) {
+                    px = p.pos_x;
+                    py = p.pos_y;
+                    break;
+                }
+            }
+            auto vresult = input_validator_.validate(input->input_data, px, py);
+            if (!vresult.valid) {
+                return;  // reject silently — anti-cheat
+            }
+        }
+
         const auto result = battle_world_process_input(
             *world_, input->user_id, input->input_data, input->score, input->submitted_frame);
         if (!result.accepted) {

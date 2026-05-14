@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include "v2/actor/actor.h"
+#include "v2/battle/input_validator.h"
 #include "v2/battle/message_types.h"
 #include "v2/battle/runtime_world.h"
 #include "v2/ecs/world.h"
@@ -37,6 +38,7 @@ private:
     BattleEventSink& sink_;
     std::unique_ptr<v2::ecs::World> world_;
     std::map<std::string, v2::actor::ScheduleId> disconnect_grace_timers_;
+    InputValidator input_validator_;
 
     static constexpr std::chrono::seconds kDisconnectGracePeriod{15};
 };

@@ -1361,6 +1361,8 @@ TEST(V2BackendRoutingTest, ClusterRouterDiscoveryRoutesToBackend) {
         /*login_config=*/std::nullopt,
         /*room_config=*/std::nullopt,
         /*battle_config=*/std::nullopt,
+        /*matchmaking_config=*/std::nullopt,
+        /*leaderboard_config=*/std::nullopt,
         metrics);
     bridge.set_cluster_router(router);
 
@@ -1390,7 +1392,7 @@ TEST(V2BackendRoutingTest, ClusterRouterUnreachableMarkedUnhealthy) {
 
     auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
     v2::gateway::GatewayServiceBridge bridge(
-        std::nullopt, std::nullopt, std::nullopt, metrics);
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, metrics);
     bridge.set_cluster_router(router);
 
     auto result = bridge.route(v2::service::ServiceId::kLogin,
@@ -1415,6 +1417,7 @@ TEST(V2BackendRoutingTest, ClusterRouterFallbackToStaticConfig) {
             .host = "127.0.0.1",
             .port = backend.port,
         },
+        std::nullopt, std::nullopt,
         std::nullopt, std::nullopt, metrics);
 
     auto result = bridge.route(v2::service::ServiceId::kLogin,
@@ -1446,7 +1449,7 @@ TEST(V2BackendRoutingTest, ShardRouterRoutesWithShardKey) {
 
     auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
     v2::gateway::GatewayServiceBridge bridge(
-        std::nullopt, std::nullopt, std::nullopt, metrics);
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, metrics);
     bridge.set_cluster_router(router);
     bridge.set_shard_router(shard_router);
 
@@ -1495,7 +1498,7 @@ TEST(V2BackendRoutingTest, ShardRouterConsistentAffinityAcrossBackends) {
 
     auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
     v2::gateway::GatewayServiceBridge bridge(
-        std::nullopt, std::nullopt, std::nullopt, metrics);
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, metrics);
     bridge.set_cluster_router(router);
     bridge.set_shard_router(shard_router);
 
@@ -1548,7 +1551,7 @@ TEST(V2BackendRoutingTest, ShardRouterWithoutShardKeyFallsBackToRoundRobin) {
 
     auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
     v2::gateway::GatewayServiceBridge bridge(
-        std::nullopt, std::nullopt, std::nullopt, metrics);
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, metrics);
     bridge.set_cluster_router(router);
     bridge.set_shard_router(shard_router);
 

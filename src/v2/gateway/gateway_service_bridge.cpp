@@ -41,9 +41,11 @@ namespace {
 
 std::string service_name_for(v2::service::ServiceId service) {
     switch (service) {
-        case v2::service::ServiceId::kLogin: return "login";
-        case v2::service::ServiceId::kRoom: return "room";
-        case v2::service::ServiceId::kBattle: return "battle";
+        case v2::service::ServiceId::kLogin:       return "login";
+        case v2::service::ServiceId::kRoom:        return "room";
+        case v2::service::ServiceId::kBattle:      return "battle";
+        case v2::service::ServiceId::kMatchmaking: return "match";
+        case v2::service::ServiceId::kLeaderboard: return "leaderboard";
         default: return "login";
     }
 }
@@ -76,6 +78,8 @@ GatewayServiceBridge::GatewayServiceBridge(
     std::optional<BackendConfig> login_config,
     std::optional<BackendConfig> room_config,
     std::optional<BackendConfig> battle_config,
+    std::optional<BackendConfig> matchmaking_config,
+    std::optional<BackendConfig> leaderboard_config,
     std::shared_ptr<BackendMetrics> metrics)
     : metrics_(std::move(metrics)) {
     if (login_config) {
@@ -86,6 +90,12 @@ GatewayServiceBridge::GatewayServiceBridge(
     }
     if (battle_config) {
         battle_slot_.config = std::move(*battle_config);
+    }
+    if (matchmaking_config) {
+        matchmaking_slot_.config = std::move(*matchmaking_config);
+    }
+    if (leaderboard_config) {
+        leaderboard_slot_.config = std::move(*leaderboard_config);
     }
 }
 
@@ -100,6 +110,10 @@ GatewayServiceBridge::BackendSlot& GatewayServiceBridge::slot_for(
             return room_slot_;
         case v2::service::ServiceId::kBattle:
             return battle_slot_;
+        case v2::service::ServiceId::kMatchmaking:
+            return matchmaking_slot_;
+        case v2::service::ServiceId::kLeaderboard:
+            return leaderboard_slot_;
         default:
             return login_slot_;
     }
@@ -444,7 +458,8 @@ GatewayServiceBridge::get_feature_flags() const {
 
 void GatewayServiceBridge::shutdown() {
     std::scoped_lock lock(mutex_);
-    for (auto* slot : {&login_slot_, &room_slot_, &battle_slot_}) {
+    for (auto* slot : {&login_slot_, &room_slot_, &battle_slot_,
+                       &matchmaking_slot_, &leaderboard_slot_}) {
         if (slot->connection) {
             slot->connection->close();
             slot->connection.reset();

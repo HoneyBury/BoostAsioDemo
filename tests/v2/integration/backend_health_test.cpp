@@ -47,6 +47,7 @@ TEST(V2BackendHealthTest, MetricsCountersAfterSuccessfulRoute) {
         v2::gateway::GatewayServiceBridge::BackendConfig{
             .host = "127.0.0.1", .port = backend->port},
         std::nullopt, std::nullopt,
+        std::nullopt, std::nullopt,
         metrics);
 
     auto result = bridge.route(
@@ -68,7 +69,8 @@ TEST(V2BackendHealthTest, MetricsCountersAfterUnavailable) {
 
     // Bridge with no backend configured — route should fail with unavailable
     v2::gateway::GatewayServiceBridge bridge(
-        std::nullopt, std::nullopt, std::nullopt, metrics);
+        std::nullopt, std::nullopt, std::nullopt,
+        std::nullopt, std::nullopt, metrics);
 
     auto result = bridge.route(
         v2::service::ServiceId::kLogin, "echo", "hello");

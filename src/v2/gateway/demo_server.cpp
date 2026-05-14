@@ -50,11 +50,15 @@ DemoServer::DemoServer(std::uint16_t port,
 
     if (options_.login_backend_config.has_value() ||
         options_.room_backend_config.has_value() ||
-        options_.battle_backend_config.has_value()) {
+        options_.battle_backend_config.has_value() ||
+        options_.matchmaking_backend_config.has_value() ||
+        options_.leaderboard_backend_config.has_value()) {
         auto bridge = std::make_unique<GatewayServiceBridge>(
             options_.login_backend_config,
             options_.room_backend_config,
             options_.battle_backend_config,
+            options_.matchmaking_backend_config,
+            options_.leaderboard_backend_config,
             backend_metrics_);
         bridge->set_service_registry(service_registry_);
         runtime_.set_service_bridge(std::move(bridge));
@@ -462,6 +466,10 @@ void DemoServer::load_gateway_config() {
             service_id = v2::service::ServiceId::kRoom;
         } else if (key == "battle") {
             service_id = v2::service::ServiceId::kBattle;
+        } else if (key == "match") {
+            service_id = v2::service::ServiceId::kMatchmaking;
+        } else if (key == "leaderboard") {
+            service_id = v2::service::ServiceId::kLeaderboard;
         } else {
             continue;
         }

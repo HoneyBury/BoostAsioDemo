@@ -40,6 +40,8 @@ public:
         std::optional<BackendConfig> login_config = std::nullopt,
         std::optional<BackendConfig> room_config = std::nullopt,
         std::optional<BackendConfig> battle_config = std::nullopt,
+        std::optional<BackendConfig> matchmaking_config = std::nullopt,
+        std::optional<BackendConfig> leaderboard_config = std::nullopt,
         std::shared_ptr<BackendMetrics> metrics = nullptr);
     ~GatewayServiceBridge();
 
@@ -124,6 +126,8 @@ private:
     BackendSlot login_slot_;
     BackendSlot room_slot_;
     BackendSlot battle_slot_;
+    BackendSlot matchmaking_slot_;
+    BackendSlot leaderboard_slot_;
     std::shared_ptr<BackendMetrics> metrics_;
     std::shared_ptr<v2::service::ServiceRegistry> registry_;
     std::shared_ptr<v3::cluster::ClusterRouter> cluster_router_;

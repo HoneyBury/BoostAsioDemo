@@ -32,6 +32,8 @@ struct DemoServerOptions {
     std::optional<GatewayServiceBridge::BackendConfig> login_backend_config;
     std::optional<GatewayServiceBridge::BackendConfig> room_backend_config;
     std::optional<GatewayServiceBridge::BackendConfig> battle_backend_config;
+    std::optional<GatewayServiceBridge::BackendConfig> matchmaking_backend_config;
+    std::optional<GatewayServiceBridge::BackendConfig> leaderboard_backend_config;
 };
 
 struct DemoServerIoCoreSnapshot {

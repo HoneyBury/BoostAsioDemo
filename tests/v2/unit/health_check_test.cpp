@@ -22,6 +22,8 @@ TEST(HealthCheckTest, AllPassWhenBackendsHealthy) {
     registry->register_instance(ServiceId::kLogin, "127.0.0.1", 9001);
     registry->register_instance(ServiceId::kRoom, "127.0.0.1", 9002);
     registry->register_instance(ServiceId::kBattle, "127.0.0.1", 9003);
+    registry->register_instance(ServiceId::kMatchmaking, "127.0.0.1", 9004);
+    registry->register_instance(ServiceId::kLeaderboard, "127.0.0.1", 9005);
 
     HealthCheck hc;
     hc.set_backend_metrics(metrics);
@@ -30,7 +32,7 @@ TEST(HealthCheckTest, AllPassWhenBackendsHealthy) {
     auto result = hc.check();
     EXPECT_EQ(result.status, "pass");
     EXPECT_TRUE(result.is_healthy());
-    ASSERT_EQ(result.checks.size(), 4U);
+    ASSERT_EQ(result.checks.size(), 6U);  // login + room + battle + matchmaking + leaderboard + registry
 
     // All per-backend checks should pass
     for (const auto& c : result.checks) {

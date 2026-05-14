@@ -157,9 +157,21 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"display_name", login_body->display_name.value_or("")},
                 };
 
+                auto login_body_str = auth_payload.dump();
+                if (schema_validator_.has_schema("login_request")) {
+                    auto sv = schema_validator_.validate("login_request", login_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 auto result = bridge_->route(v2::service::ServiceId::kLogin,
                                              "login_request",
-                                             auth_payload.dump());
+                                             std::move(login_body_str));
 
                 if (result.success) {
                     auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -281,10 +293,22 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"room_id", *room_id},
                 };
 
+                auto room_body_str = room_payload.dump();
+                if (schema_validator_.has_schema("room_create")) {
+                    auto sv = schema_validator_.validate("room_create", room_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 bridge_route(bridge_.get(),
                              v2::service::ServiceId::kRoom,
                              "room_create",
-                             room_payload.dump(),
+                             std::move(room_body_str),
                              [&](const nlohmann::json&) {
                                  lookup_.set_session_room(command.session_id, *room_id);
                                  emit(net::protocol::kRoomCreateResponse,
@@ -360,9 +384,21 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"room_id", *room_id},
                 };
 
+                auto room_body_str = room_payload.dump();
+                if (schema_validator_.has_schema("room_join")) {
+                    auto sv = schema_validator_.validate("room_join", room_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 auto result = bridge_->route(v2::service::ServiceId::kRoom,
                                              "room_join",
-                                             room_payload.dump());
+                                             std::move(room_body_str));
 
                 if (result.success) {
                     auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -449,9 +485,21 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"ready", *ready},
                 };
 
+                auto room_body_str = room_payload.dump();
+                if (schema_validator_.has_schema("room_ready")) {
+                    auto sv = schema_validator_.validate("room_ready", room_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 auto result = bridge_->route(v2::service::ServiceId::kRoom,
                                              "room_ready",
-                                             room_payload.dump());
+                                             std::move(room_body_str));
 
                 if (result.success) {
                     auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -521,9 +569,21 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"room_id", session_room_id},
                 };
 
+                auto room_body_str = room_payload.dump();
+                if (schema_validator_.has_schema("room_leave")) {
+                    auto sv = schema_validator_.validate("room_leave", room_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 auto result = bridge_->route(v2::service::ServiceId::kRoom,
                                              "room_leave",
-                                             room_payload.dump());
+                                             std::move(room_body_str));
 
                 if (result.success) {
                     auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -605,9 +665,21 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"room_id", session_room_id},
                 };
 
+                auto room_body_str = room_payload.dump();
+                if (schema_validator_.has_schema("room_start_battle")) {
+                    auto sv = schema_validator_.validate("room_start_battle", room_body_str);
+                    if (!sv.valid) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id, command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                             sv.error);
+                        return true;
+                    }
+                }
+
                 auto room_result = bridge_->route(v2::service::ServiceId::kRoom,
                                                   "room_start_battle",
-                                                  room_payload.dump());
+                                                  std::move(room_body_str));
 
                 if (!room_result.success) {
                     emit(net::protocol::kErrorResponse,

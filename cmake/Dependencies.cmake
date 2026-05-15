@@ -10,6 +10,8 @@ set(FETCHCONTENT_QUIET OFF)
 # Local third-party archive directory (for offline / internal-network builds)
 # ---------------------------------------------------------------------------
 set(THIRD_PARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
+set(THIRD_PARTY_CACHE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/_deps")
+set(THIRD_PARTY_BINARY_CACHE_DIR "${CMAKE_BINARY_DIR}/_deps")
 
 if(EXISTS "${THIRD_PARTY_DIR}")
     message(STATUS "Third-party directory found: ${THIRD_PARTY_DIR}")
@@ -17,10 +19,34 @@ else()
     message(STATUS "Third-party directory not found — fetching from remote URLs")
 endif()
 
+function(project_try_local_source dep_name local_dir sentinel out_var)
+    if(EXISTS "${local_dir}/${sentinel}")
+        message(STATUS "Using local source directory: ${dep_name} -> ${local_dir}")
+        set(${out_var} "${local_dir}" PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(project_resolve_source_dir dep_name sentinel out_var)
+    set(_resolved "")
+    project_try_local_source("${dep_name}" "${THIRD_PARTY_DIR}/${dep_name}-src" "${sentinel}" _resolved)
+    if(NOT _resolved)
+        project_try_local_source("${dep_name}" "${THIRD_PARTY_CACHE_DIR}/${dep_name}-src" "${sentinel}" _resolved)
+    endif()
+    if(NOT _resolved)
+        project_try_local_source("${dep_name}" "${THIRD_PARTY_BINARY_CACHE_DIR}/${dep_name}-src" "${sentinel}" _resolved)
+    endif()
+    set(${out_var} "${_resolved}" PARENT_SCOPE)
+endfunction()
+
 # ---------------------------------------------------------------------------
 # fmt 11.2.0
 # ---------------------------------------------------------------------------
-if(EXISTS "${THIRD_PARTY_DIR}/fmt-11.2.0.tar.gz")
+project_resolve_source_dir("fmt" "CMakeLists.txt" FMT_SOURCE_DIR)
+if(FMT_SOURCE_DIR)
+    FetchContent_Declare(fmt
+        SOURCE_DIR "${FMT_SOURCE_DIR}"
+    )
+elseif(EXISTS "${THIRD_PARTY_DIR}/fmt-11.2.0.tar.gz")
     message(STATUS "Using local archive: fmt-11.2.0.tar.gz")
     FetchContent_Declare(fmt
         URL "${THIRD_PARTY_DIR}/fmt-11.2.0.tar.gz"
@@ -36,7 +62,12 @@ endif()
 # ---------------------------------------------------------------------------
 # googletest v1.17.0
 # ---------------------------------------------------------------------------
-if(EXISTS "${THIRD_PARTY_DIR}/googletest-1.17.0.tar.gz")
+project_resolve_source_dir("googletest" "CMakeLists.txt" GOOGLETEST_SOURCE_DIR)
+if(GOOGLETEST_SOURCE_DIR)
+    FetchContent_Declare(googletest
+        SOURCE_DIR "${GOOGLETEST_SOURCE_DIR}"
+    )
+elseif(EXISTS "${THIRD_PARTY_DIR}/googletest-1.17.0.tar.gz")
     message(STATUS "Using local archive: googletest-1.17.0.tar.gz")
     FetchContent_Declare(googletest
         URL "${THIRD_PARTY_DIR}/googletest-1.17.0.tar.gz"
@@ -52,7 +83,12 @@ endif()
 # ---------------------------------------------------------------------------
 # spdlog v1.15.3
 # ---------------------------------------------------------------------------
-if(EXISTS "${THIRD_PARTY_DIR}/spdlog-1.15.3.tar.gz")
+project_resolve_source_dir("spdlog" "CMakeLists.txt" SPDLOG_SOURCE_DIR)
+if(SPDLOG_SOURCE_DIR)
+    FetchContent_Declare(spdlog
+        SOURCE_DIR "${SPDLOG_SOURCE_DIR}"
+    )
+elseif(EXISTS "${THIRD_PARTY_DIR}/spdlog-1.15.3.tar.gz")
     message(STATUS "Using local archive: spdlog-1.15.3.tar.gz")
     FetchContent_Declare(spdlog
         URL "${THIRD_PARTY_DIR}/spdlog-1.15.3.tar.gz"
@@ -68,7 +104,12 @@ endif()
 # ---------------------------------------------------------------------------
 # nlohmann_json v3.12.0
 # ---------------------------------------------------------------------------
-if(EXISTS "${THIRD_PARTY_DIR}/nlohmann_json-3.12.0.tar.gz")
+project_resolve_source_dir("nlohmann_json" "CMakeLists.txt" NLOHMANN_JSON_SOURCE_DIR)
+if(NLOHMANN_JSON_SOURCE_DIR)
+    FetchContent_Declare(nlohmann_json
+        SOURCE_DIR "${NLOHMANN_JSON_SOURCE_DIR}"
+    )
+elseif(EXISTS "${THIRD_PARTY_DIR}/nlohmann_json-3.12.0.tar.gz")
     message(STATUS "Using local archive: nlohmann_json-3.12.0.tar.gz")
     FetchContent_Declare(nlohmann_json
         URL "${THIRD_PARTY_DIR}/nlohmann_json-3.12.0.tar.gz"
@@ -93,7 +134,12 @@ message(STATUS "  crypto:  ${OPENSSL_CRYPTO_LIBRARY}")
 # ---------------------------------------------------------------------------
 # Boost 1.90.0
 # ---------------------------------------------------------------------------
-if(EXISTS "${THIRD_PARTY_DIR}/boost_1_90_0.zip")
+project_resolve_source_dir("boost" "boost/version.hpp" BOOST_SOURCE_CACHE_DIR)
+if(BOOST_SOURCE_CACHE_DIR)
+    FetchContent_Declare(Boost
+        SOURCE_DIR "${BOOST_SOURCE_CACHE_DIR}"
+    )
+elseif(EXISTS "${THIRD_PARTY_DIR}/boost_1_90_0.zip")
     message(STATUS "Using local archive: boost_1_90_0.zip")
     FetchContent_Declare(Boost
         URL "${THIRD_PARTY_DIR}/boost_1_90_0.zip"
@@ -111,7 +157,12 @@ endif()
 # ---------------------------------------------------------------------------
 # hiredis v1.2.0 (Redis C client)
 # ---------------------------------------------------------------------------
-if(EXISTS "${THIRD_PARTY_DIR}/hiredis-1.2.0.tar.gz")
+project_resolve_source_dir("hiredis" "CMakeLists.txt" HIREDIS_SOURCE_DIR)
+if(HIREDIS_SOURCE_DIR)
+    FetchContent_Declare(hiredis
+        SOURCE_DIR "${HIREDIS_SOURCE_DIR}"
+    )
+elseif(EXISTS "${THIRD_PARTY_DIR}/hiredis-1.2.0.tar.gz")
     message(STATUS "Using local archive: hiredis-1.2.0.tar.gz")
     FetchContent_Declare(hiredis
         URL "${THIRD_PARTY_DIR}/hiredis-1.2.0.tar.gz"

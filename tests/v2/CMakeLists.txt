@@ -68,10 +68,14 @@ target_compile_definitions(project_v2_unit_tests
         PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 apply_project_warnings(project_v2_unit_tests)
+if(COMMAND boost_gateway_stage_runtime_dlls)
+    boost_gateway_stage_runtime_dlls(project_v2_unit_tests)
+endif()
 
 include(GoogleTest)
 gtest_discover_tests(project_v2_unit_tests
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
+    DISCOVERY_MODE POST_BUILD
 )
 
 add_executable(project_v2_integration_tests
@@ -87,9 +91,13 @@ target_link_libraries(project_v2_integration_tests
         GTest::gtest_main
 )
 apply_project_warnings(project_v2_integration_tests)
+if(COMMAND boost_gateway_stage_runtime_dlls)
+    boost_gateway_stage_runtime_dlls(project_v2_integration_tests)
+endif()
 
 gtest_discover_tests(project_v2_integration_tests
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
+    DISCOVERY_MODE POST_BUILD
 )
 
 # ─── Multi-process E2E tests (real OS processes) ────────────────────
@@ -120,6 +128,10 @@ target_link_libraries(project_v2_multi_process_tests
         GTest::gtest_main
 )
 apply_project_warnings(project_v2_multi_process_tests)
+if(COMMAND boost_gateway_stage_runtime_dlls)
+    boost_gateway_stage_runtime_dlls(project_v2_multi_process_tests)
+endif()
 gtest_discover_tests(project_v2_multi_process_tests
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
+    DISCOVERY_MODE POST_BUILD
 )

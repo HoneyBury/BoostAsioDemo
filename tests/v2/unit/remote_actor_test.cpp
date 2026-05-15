@@ -24,6 +24,36 @@ TEST(RemoteActorTest, RemoteRefIsNotLocal) {
     EXPECT_FALSE(ref.local_ref().has_value());
 }
 
+TEST(RemoteActorTest, SerializeDeserializePreservesEnvelopeFieldsAndStringPayload) {
+    v2::actor::Message msg;
+    msg.header.kind = v2::actor::MessageKind::kUser;
+    msg.header.trace_id = 0xAABBCCDD;
+    msg.header.request_id = 42;
+    msg.header.source_actor = 1001;
+    msg.header.target_actor = 2002;
+    msg.header.created_at = 123456789;
+    msg.payload = std::string("match_join:alice");
+
+    auto encoded = RemoteActorTransport::serialize(msg);
+    auto decoded = RemoteActorTransport::deserialize(encoded);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->header.kind, v2::actor::MessageKind::kUser);
+    EXPECT_EQ(decoded->header.trace_id, 0xAABBCCDDU);
+    EXPECT_EQ(decoded->header.request_id, 42U);
+    EXPECT_EQ(decoded->header.source_actor, 1001U);
+    EXPECT_EQ(decoded->header.target_actor, 2002U);
+    EXPECT_EQ(decoded->header.created_at, 123456789U);
+
+    const auto* payload = std::get_if<std::string>(&decoded->payload);
+    ASSERT_NE(payload, nullptr);
+    EXPECT_EQ(*payload, "match_join:alice");
+}
+
+TEST(RemoteActorTest, DeserializeRejectsTruncatedEnvelope) {
+    auto decoded = RemoteActorTransport::deserialize("short");
+    EXPECT_FALSE(decoded.has_value());
+}
+
 // ─── ActorLocationRegistry ───────────────────────────────────────────────
 
 TEST(ActorLocationTest, RegisterAndLocate) {

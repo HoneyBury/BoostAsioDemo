@@ -14,8 +14,12 @@ target_link_libraries(project_integration_tests
         GTest::gtest_main
 )
 apply_project_warnings(project_integration_tests)
+if(COMMAND boost_gateway_stage_runtime_dlls)
+    boost_gateway_stage_runtime_dlls(project_integration_tests)
+endif()
 
 include(GoogleTest)
 gtest_discover_tests(project_integration_tests
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
+    DISCOVERY_MODE POST_BUILD
 )

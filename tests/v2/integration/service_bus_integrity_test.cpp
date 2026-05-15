@@ -4,7 +4,13 @@
 //   correlation_id matching, error propagation, trace context propagation.
 
 #include "app/logging.h"
+#include "v2/auth/jwt_validator.h"
 #include "v2/gateway/demo_server.h"
+#include "v2/leaderboard/leaderboard_service.h"
+#include "v2/battle/battle_backend_service.h"
+#include "v2/login/login_backend_service.h"
+#include "v2/match/matchmaking_service.h"
+#include "v2/room/room_backend_service.h"
 #include "v2/service/backend_connection.h"
 #include "v2/service/backend_envelope.h"
 #include "v2/service/backend_server.h"
@@ -12,6 +18,7 @@
 #include "v2/service/service_registry.h"
 #include "v2/service/error_codes.h"
 #include "v2/tracing/trace_context.h"
+#include "v3/proto/envelope_codec.h"
 
 #include <boost/asio.hpp>
 #include <nlohmann/json.hpp>
@@ -29,6 +36,45 @@ namespace {
 
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
+
+constexpr const char* kRs256PrivateKey = R"(-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDdKPKcv8FJB88T
+/tAjorWED7EQ/q5cXWlXcBWV5csqFalnD1OClbLf1I+vJYVIqgfGPpRZxRiVNLR6
+oFwUykUNzPbbm9YMNPgcpQZIJPXHIEMpzbq4IovS8ZEHGyJGyNOo5OH1G1ZVkRtu
+r9b4yySfufsOQkteTnsOKweumKPNjH0VvFOHhyJ3KNKfbn5cEJ4JfI5WQnGSas7I
+JX9oOP4c/hA5ml32RIR1dklq3sgDTgKFjBoJOL5qfcBIya/Y8tGisvuo6at3tbcS
+zNXSR0oo0FSSc1et4U6/5n+MLOTicU27481rblrYz6p1XqY4sSUezsMdxYWxBD35
+enwHzFFbAgMBAAECggEADbHvvO6QHAmGDiFtDYyrIkEZTTADZ3tui56u7E522b80
+ppahRiImzP7r+0Pe1vFi50JQMnNNKRqPg7mmNuPECe1waruU/vWEWO9ZJ7xUlR7P
+OemTXFXht0+d+pHFRufZv4j8FKihz7OoJLila1hwOkBGJr7KzWcdVKYsGBvVc0o+
+o7Qu7Ixd21DVgEurADa3dogVC1znpzQ7zV/VTxV8LO2kYLwn2ch2eWxHKZwUqdZm
+8FiknokgQ3GwSqGHy4T6FbjI9HzyX9+4WOjI7rAqpJS0kyqMZWjvjrpvlhaBeGFc
+hHkYP4aDDFLbQc2iNtZP43HEPz4l5B9mJ9oU2A/kJQKBgQD47o1ZkGBoeUeKU8te
+jTbF5Jjv2LwMEdkSFnkuSfRNQ8rPgugiWZ9oSo4RLZcqr/wu0GZnevI0kKfKATHb
+ieuU/n4Q5kRBHjGOvVtDKXaBgIWC2kz4vvWecgLJ8uJG0Rz70drPCysxRcfRVyyY
+T8/PyY+4Ru2yYiG+1jvmgr/BDwKBgQDjcIagCsN84V5AFJuOB6doEnKkrPo3v9Iv
+ptCQZK+B/Con+y/gsP5w76vO7VXAqxrSexUsK5IKKkEDjPLlq/EDaJJ8Zwv0jtav
+P6qLbp4SRPs+7r0FtVnuLqo99WiYkwIrlZHGuzojIa5LNuEqPBaSXcCap/Y9oeFp
+uzDQVvKS9QKBgAIBagIet6gf0gO7SRgp6xcNEG5eQKWYPzd2FuPYlK9KrIefdl9Q
+eYhNkXdx9pXRdSarZyfORcVGpRNrjwtFwTAiHMHmGQatR5juzZ1s6BeDAZBcUeJv
+J2tvX7ZgzpHjfWhJ+IlSfbaX6VQ2b5WKjxINfaruZ1vYjo0LDNB+nSzhAoGAW0As
+Y02uPQ5WuDMMbiGYAuNT58oW4gMuGzw8dZJP8EDx0PSwst+QVlNyhSUnwJNlwYjs
+Z7pbb4SgbQJB+e/QVOPB0fOuEkK0078hd6u78+yFOSyj3gRyvmMunok1m/Fvb3kk
+8azwmGPNABRWppFRJQxEWEiHPRcTz03xOcWIsXkCgYEAitzP/18TLvA+RMZ0AFEg
+VyAcc44fyCbjipJJayeJMI+mxhvSjMsWNqP/cUzwxNn8dm9BZxKC1VOWnYBe6kSo
+/J2podgtAsNK938995tD2ELPwB7XhSPm4fC2AHEewMH3xOD1yxOEouuhyDK7bKBu
+lZ538VHoMkT6G7FCjou+F5s=
+-----END PRIVATE KEY-----)";
+
+constexpr const char* kRs256PublicKey = R"(-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3SjynL/BSQfPE/7QI6K1
+hA+xEP6uXF1pV3AVleXLKhWpZw9TgpWy39SPryWFSKoHxj6UWcUYlTS0eqBcFMpF
+Dcz225vWDDT4HKUGSCT1xyBDKc26uCKL0vGRBxsiRsjTqOTh9RtWVZEbbq/W+Msk
+n7n7DkJLXk57DisHrpijzYx9FbxTh4cidyjSn25+XBCeCXyOVkJxkmrOyCV/aDj+
+HP4QOZpd9kSEdXZJat7IA04ChYwaCTi+an3ASMmv2PLRorL7qOmrd7W3EszV0kdK
+KNBUknNXreFOv+Z/jCzk4nFNu+PNa25a2M+qdV6mOLElHs7DHcWFsQQ9+Xp8B8xR
+WwIDAQAB
+-----END PUBLIC KEY-----)";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -176,6 +222,70 @@ TEST(ServiceBusIntegrity, LoginBackendErrorPropagation) {
                 resp->error_code != 0);
 
     server.stop();
+}
+
+TEST(ServiceBusIntegrity, LoginBackendAcceptsRs256JwtAndValidatesToken) {
+    v2::login::LoginBackendService service(v2::login::LoginBackendOptions{
+        .port = 0,
+        .jwt_public_key_pem = kRs256PublicKey,
+        .jwt_issuer = "boost-gateway",
+        .jwt_audience = "game-client",
+    });
+    service.start();
+
+    v2::auth::JwtValidator signer({
+        .public_key_pem = kRs256PublicKey,
+        .private_key_pem = kRs256PrivateKey,
+        .issuer = "boost-gateway",
+        .audience = "game-client",
+    });
+    v2::auth::JwtPayload payload;
+    payload.sub = "alice";
+    payload.role = "player";
+    payload.display_name = "Alice";
+    payload.aud = "game-client";
+    auto token = signer.generate(payload);
+    ASSERT_FALSE(token.empty());
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    auto login_req = payload_envelope(nlohmann::json{
+        {"user_id", "alice"},
+        {"token", token},
+        {"display_name", "Alice"},
+    }.dump());
+    login_req.message_type = "login_request";
+    login_req.target_service = v2::service::ServiceId::kLogin;
+
+    auto login_resp = conn.send_request(login_req);
+    ASSERT_TRUE(login_resp.has_value());
+    EXPECT_EQ(login_resp->kind, v2::service::MessageKind::kResponse);
+    auto login_doc = nlohmann::json::parse(login_resp->payload, nullptr, false);
+    ASSERT_FALSE(login_doc.is_discarded());
+    EXPECT_EQ(login_doc.value("status", ""), "ok");
+    EXPECT_EQ(login_doc.value("role", ""), "player");
+
+    auto validate_req = payload_envelope(nlohmann::json{{"token", token}}.dump());
+    validate_req.message_type = "token_validate";
+    validate_req.target_service = v2::service::ServiceId::kLogin;
+    auto validate_resp = conn.send_request(validate_req);
+    ASSERT_TRUE(validate_resp.has_value());
+    auto validate_doc = nlohmann::json::parse(validate_resp->payload, nullptr, false);
+    ASSERT_FALSE(validate_doc.is_discarded());
+    EXPECT_TRUE(validate_doc.value("valid", false));
+
+    auto bad_validate_req = payload_envelope(nlohmann::json{{"token", token + "x"}}.dump());
+    bad_validate_req.message_type = "token_validate";
+    bad_validate_req.target_service = v2::service::ServiceId::kLogin;
+    auto bad_validate_resp = conn.send_request(bad_validate_req);
+    ASSERT_TRUE(bad_validate_resp.has_value());
+    auto bad_validate_doc = nlohmann::json::parse(bad_validate_resp->payload, nullptr, false);
+    ASSERT_FALSE(bad_validate_doc.is_discarded());
+    EXPECT_FALSE(bad_validate_doc.value("valid", true));
+
+    service.stop();
 }
 
 // ─── Room backend data chain ────────────────────────────────────────────
@@ -412,6 +522,167 @@ TEST(ServiceBusIntegrity, ForwardCascadePreservesPayload) {
     auto doc = nlohmann::json::parse(parsed->payload, nullptr, false);
     EXPECT_EQ(doc.value("room_id", ""), "r1");
     EXPECT_EQ(doc.value("user_id", ""), "alice");
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughMatchBackend) {
+    v2::match::MatchmakingService service(0);
+    v2::match::MatchmakingConfig cfg;
+    cfg.match_check_interval_ms = 1000;
+    service.set_matchmaking_config(cfg);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 100;
+    meta.source_service = "gateway";
+    meta.target_service = "match";
+    auto encoded = v3::proto::encode_match_join_request(
+        meta,
+        v3::proto::MatchJoinRequestPayload{
+            .user_id = "alice",
+            .mmr = 1000,
+            .mode = "1v1",
+        });
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "match_join";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->domain, v3::proto::EnvelopeDomain::kMatch);
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kMatchJoinResponse);
+    EXPECT_TRUE(decoded->payload.value("queued", false));
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLeaderboardBackend) {
+    v2::leaderboard::LeaderboardService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 200;
+    meta.source_service = "gateway";
+    meta.target_service = "leaderboard";
+    auto encoded = v3::proto::encode_leaderboard_submit_request(
+        meta,
+        v3::proto::LeaderboardSubmitRequestPayload{
+            .user_id = "alice",
+            .display_name = "Alice",
+            .score = 1200,
+        });
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "leaderboard_submit";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->domain, v3::proto::EnvelopeDomain::kLeaderboard);
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse);
+    EXPECT_EQ(decoded->payload.value("user_id", ""), "alice");
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLoginBackend) {
+    v2::login::LoginBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 300;
+    meta.source_service = "gateway";
+    meta.target_service = "login";
+    auto encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kLoginRequest,
+        {{"user_id", "alice"}, {"token", "token:alice"}, {"display_name", "Alice"}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "login_request";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kLoginResponse);
+    EXPECT_EQ(decoded->payload.value("user_id", ""), "alice");
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughRoomBackend) {
+    v2::room::RoomBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 400;
+    meta.source_service = "gateway";
+    meta.target_service = "room";
+    auto encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kRoomCreateRequest,
+        {{"user_id", "alice"}, {"room_id", "room_42"}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "room_create";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kRoomCreateResponse);
+    EXPECT_EQ(decoded->payload.value("room_id", ""), "room_42");
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughBattleBackend) {
+    v2::battle::BattleBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v2::service::BackendEnvelope create_req = payload_envelope(R"({"battle_id":"battle_1","room_id":"room_1","player_ids":["alice","bob"],"max_frames":3})");
+    create_req.message_type = "battle_create";
+    auto create_resp = conn.send_request(create_req);
+    ASSERT_TRUE(create_resp.has_value());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 500;
+    meta.source_service = "gateway";
+    meta.target_service = "battle";
+    auto encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kBattleInputRequest,
+        {{"user_id", "alice"}, {"battle_id", "battle_1"}, {"input_data", "move:1,2"}, {"submitted_frame", 1}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "battle_input";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleInputResponse);
+    EXPECT_EQ(decoded->payload.value("battle_id", ""), "battle_1");
+
+    service.stop();
 }
 
 }  // namespace

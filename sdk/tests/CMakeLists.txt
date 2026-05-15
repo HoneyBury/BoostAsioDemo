@@ -9,5 +9,11 @@ target_link_libraries(sdk_tests PRIVATE boost_gateway_sdk GTest::gtest_main)
 if(COMMAND apply_project_warnings)
     apply_project_warnings(sdk_tests)
 endif()
+if(COMMAND boost_gateway_stage_runtime_dlls)
+    boost_gateway_stage_runtime_dlls(sdk_tests)
+endif()
 include(GoogleTest)
-gtest_discover_tests(sdk_tests DISCOVERY_TIMEOUT 10)
+gtest_discover_tests(sdk_tests
+    DISCOVERY_TIMEOUT 10
+    DISCOVERY_MODE POST_BUILD
+)

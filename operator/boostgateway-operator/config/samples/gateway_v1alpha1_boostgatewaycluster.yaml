@@ -1,0 +1,37 @@
+apiVersion: gateway.boost.io/v1alpha1
+kind: BoostGatewayCluster
+metadata:
+  name: demo-cluster
+  namespace: boost-gateway
+spec:
+  imageRegistry: ghcr.io/honeybury
+  imageTag: v3.3.0
+  pullPolicy: IfNotPresent
+  gateway:
+    replicas: 2
+    image: boost-gateway
+    port: 9201
+    managementPort: 9080
+  login:
+    replicas: 2
+    image: boost-backend
+    port: 9202
+  room:
+    replicas: 3
+    image: boost-backend
+    port: 9302
+  battle:
+    replicas: 3
+    image: boost-backend
+    port: 9303
+  match:
+    replicas: 1
+    image: boost-backend
+    port: 9304
+  leaderboard:
+    replicas: 1
+    image: boost-backend
+    port: 9305
+  tls:
+    enabled: false
+

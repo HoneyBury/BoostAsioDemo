@@ -6,7 +6,9 @@
 #include "app/logging.h"
 #include "v2/auth/jwt_validator.h"
 #include "v2/gateway/demo_server.h"
+#include "v2/leaderboard/leaderboard_service.h"
 #include "v2/login/login_backend_service.h"
+#include "v2/match/matchmaking_service.h"
 #include "v2/service/backend_connection.h"
 #include "v2/service/backend_envelope.h"
 #include "v2/service/backend_server.h"
@@ -14,6 +16,7 @@
 #include "v2/service/service_registry.h"
 #include "v2/service/error_codes.h"
 #include "v2/tracing/trace_context.h"
+#include "v3/proto/envelope_codec.h"
 
 #include <boost/asio.hpp>
 #include <nlohmann/json.hpp>
@@ -517,6 +520,71 @@ TEST(ServiceBusIntegrity, ForwardCascadePreservesPayload) {
     auto doc = nlohmann::json::parse(parsed->payload, nullptr, false);
     EXPECT_EQ(doc.value("room_id", ""), "r1");
     EXPECT_EQ(doc.value("user_id", ""), "alice");
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughMatchBackend) {
+    v2::match::MatchmakingService service(0);
+    v2::match::MatchmakingConfig cfg;
+    cfg.match_check_interval_ms = 1000;
+    service.set_matchmaking_config(cfg);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 100;
+    meta.source_service = "gateway";
+    meta.target_service = "match";
+    auto encoded = v3::proto::encode_envelope(
+        meta,
+        "match",
+        "match_join",
+        {{"user_id", "alice"}, {"mmr", 1000}, {"mode", "1v1"}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "match_join";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->domain, "match");
+    EXPECT_EQ(decoded->message_name, "match_join_response");
+    EXPECT_TRUE(decoded->payload.value("queued", false));
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLeaderboardBackend) {
+    v2::leaderboard::LeaderboardService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 200;
+    meta.source_service = "gateway";
+    meta.target_service = "leaderboard";
+    auto encoded = v3::proto::encode_envelope(
+        meta,
+        "leaderboard",
+        "submit",
+        {{"user_id", "alice"}, {"display_name", "Alice"}, {"score", 1200}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "leaderboard_submit";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->domain, "leaderboard");
+    EXPECT_EQ(decoded->message_name, "submit_response");
+    EXPECT_EQ(decoded->payload.value("user_id", ""), "alice");
+
+    service.stop();
 }
 
 }  // namespace

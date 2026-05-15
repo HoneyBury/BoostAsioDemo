@@ -97,7 +97,7 @@ endif()
 
 gtest_discover_tests(project_v2_integration_tests
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
-    DISCOVERY_MODE POST_BUILD
+    DISCOVERY_MODE PRE_TEST
 )
 
 # ─── Multi-process E2E tests (real OS processes) ────────────────────

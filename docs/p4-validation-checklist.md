@@ -5,6 +5,15 @@ Date: 2026-05-15
 The final hardening pass for JWT, OTLP tracing, and gateway bridge behavior
 should be validated with the following focused checks.
 
+## Quick start
+
+- PowerShell one-shot entry:
+  `powershell -ExecutionPolicy Bypass -File scripts/p4_validate.ps1`
+
+This wrapper currently runs the highest-signal local checks that do not require
+external infra binaries beyond the existing build and Go toolchain.
+Current default build root is `build/windows-msvc-debug`.
+
 ## JWT / auth
 
 - `project_v2_unit_tests --gtest_filter="JwtValidatorTest.*"`
@@ -19,7 +28,7 @@ Expected:
 ## Raft-backed services
 
 - `project_v2_unit_tests --gtest_filter="RaftTest.ApplyCallbackReplaysCommittedEntriesAfterRestart:RaftClusterTest.LeaderReplicatesCommittedLogToFollowers"`
-- `project_v2_integration_tests --gtest_filter="V2BackendRoutingTest.LeaderboardReplicatesCommittedScoresAcrossRaftFollowers:V2BackendRoutingTest.MatchmakingReplicatesQueuedPlayersAndMatchesAcrossFollowers"`
+- `project_v2_integration_tests --gtest_filter="V2BackendRoutingTest.LeaderboardReplicatesCommittedScoresAcrossRaftFollowers:V2BackendRoutingTest.MatchmakingReplicatesQueuedPlayersAndMatchesAcrossFollowers:V2BackendRoutingTest.LeaderboardRestoresCommittedScoresAfterRestart:V2BackendRoutingTest.MatchmakingRestoresCommittedMatchAfterRestart"`
 
 Expected:
 
@@ -40,6 +49,17 @@ Expected:
 - envtest reconcile passes when local API server / etcd binaries are installed
 - sample `BoostGatewayCluster` install path remains aligned with `config/default`
 - kind smoke verifies CRD install, operator rollout, and sample cluster reconcile
+- fake-client tests now also verify `desiredReplicas`, `TLSReady`, and cert-manager `Certificate` reconcile
+
+## Proto / transport
+
+- `project_v2_unit_tests --gtest_filter="ProtoSchemaTest.*"`
+- `project_v2_integration_tests --gtest_filter="ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughMatchBackend:ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughLeaderboardBackend"`
+
+Expected:
+
+- `ServiceEnvelope`-style payloads can be encoded/decoded locally without generated gRPC stubs
+- `match` and `leaderboard` backends accept both legacy raw JSON and wrapped envelope payloads
 
 ## Gateway bridge / readiness
 
@@ -70,6 +90,11 @@ Expected:
 
 - login, room, ready, battle start, input, settlement, and post-finish error
   handling all complete over real OS processes
+
+## Build note
+
+- `tests/v2` GoogleTest discovery now uses `PRE_TEST` for `project_v2_integration_tests`
+  to avoid Visual Studio post-build discovery failures in local Windows builds.
 
 ## Dependency governance
 

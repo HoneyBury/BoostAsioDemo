@@ -47,8 +47,11 @@ Current scaffold behavior:
 - Reconciles `StatefulSet` + headless `Service` for `match/leaderboard`
 - Injects stable Raft peer env vars into `match/leaderboard` pods
 - Reconciles per-service `ConfigMap` objects and injects them into pod env
-- Reconciles a placeholder TLS `Secret` when `.spec.tls.enabled=true`
-- Writes basic `.status.phase`, `.status.readyReplicas`, `.status.conditions`
+- Reconciles a TLS `Secret` when `.spec.tls.enabled=true`
+- Reconciles a `cert-manager.io/v1 Certificate` when
+  `.spec.tls.managedByCertManager=true` and `.spec.tls.certManagerIssuer` is set
+- Writes `.status.phase`, `.status.readyReplicas`, `.status.desiredReplicas`,
+  and `Ready` / `TLSReady` conditions
 - Uses HTTP readiness/liveness probes when `managementPort` is configured
 
 ## Production Shape

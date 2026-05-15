@@ -10,6 +10,7 @@ import (
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/runtime"
     "k8s.io/apimachinery/pkg/types"
+    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -20,6 +21,7 @@ func TestReconcileCreatesManagedResources(t *testing.T) {
     scheme := newTestScheme(t)
     managementPort := int32(18080)
     matchReplicas := int32(3)
+    disabled := false
 
     cluster := &gatewayv1alpha1.BoostGatewayCluster{
         ObjectMeta: metav1.ObjectMeta{
@@ -29,19 +31,25 @@ func TestReconcileCreatesManagedResources(t *testing.T) {
         Spec: gatewayv1alpha1.BoostGatewayClusterSpec{
             PullPolicy: corev1.PullIfNotPresent,
             TLS: gatewayv1alpha1.TLSConfig{
-                Enabled:    true,
-                SecretName: "demo-tls",
+                Enabled:              true,
+                SecretName:           "demo-tls",
+                ManagedByCertManager: true,
+                CertManagerIssuer:    "shared-ca",
             },
             Gateway: gatewayv1alpha1.ComponentSpec{
                 Image:          "gateway",
                 Port:           9201,
                 ManagementPort: &managementPort,
             },
+            Login: gatewayv1alpha1.ComponentSpec{Enabled: &disabled},
+            Room: gatewayv1alpha1.ComponentSpec{Enabled: &disabled},
+            Battle: gatewayv1alpha1.ComponentSpec{Enabled: &disabled},
             Match: gatewayv1alpha1.ComponentSpec{
                 Image:    "match",
                 Port:     9304,
                 Replicas: &matchReplicas,
             },
+            Leaderboard: gatewayv1alpha1.ComponentSpec{Enabled: &disabled},
         },
     }
 
@@ -111,6 +119,29 @@ func TestReconcileCreatesManagedResources(t *testing.T) {
     if tlsSecret.Type != corev1.SecretTypeTLS {
         t.Fatalf("unexpected secret type: %s", tlsSecret.Type)
     }
+    if tlsSecret.Annotations["gateway.boost.io/tls-mode"] != "cert-manager" {
+        t.Fatalf("unexpected tls mode: %q", tlsSecret.Annotations["gateway.boost.io/tls-mode"])
+    }
+    if tlsSecret.Annotations["cert-manager.io/cluster-issuer"] != "shared-ca" {
+        t.Fatalf("unexpected cert-manager issuer annotation: %q", tlsSecret.Annotations["cert-manager.io/cluster-issuer"])
+    }
+
+    cert := &unstructured.Unstructured{}
+    cert.SetAPIVersion("cert-manager.io/v1")
+    cert.SetKind("Certificate")
+    if err := client.Get(context.Background(), types.NamespacedName{
+        Namespace: "default",
+        Name:      "demo-tls",
+    }, cert); err != nil {
+        t.Fatalf("certificate missing: %v", err)
+    }
+    issuerRef, found, err := unstructured.NestedMap(cert.Object, "spec", "issuerRef")
+    if err != nil || !found {
+        t.Fatalf("certificate issuerRef missing: %v", err)
+    }
+    if issuerRef["name"] != "shared-ca" {
+        t.Fatalf("unexpected issuerRef name: %v", issuerRef["name"])
+    }
 
     var matchSet appsv1.StatefulSet
     if err := client.Get(context.Background(), types.NamespacedName{
@@ -143,6 +174,23 @@ func TestReconcileCreatesManagedResources(t *testing.T) {
     }
     if !matchService.Spec.PublishNotReadyAddresses {
         t.Fatalf("expected PublishNotReadyAddresses=true for match service")
+    }
+
+    var refreshed gatewayv1alpha1.BoostGatewayCluster
+    if err := client.Get(context.Background(), types.NamespacedName{
+        Namespace: "default",
+        Name:      "demo",
+    }, &refreshed); err != nil {
+        t.Fatalf("reload cluster: %v", err)
+    }
+    if refreshed.Status.DesiredReplicas != 4 {
+        t.Fatalf("unexpected desired replicas: %d", refreshed.Status.DesiredReplicas)
+    }
+    if refreshed.Status.Phase != "Progressing" {
+        t.Fatalf("unexpected phase: %q", refreshed.Status.Phase)
+    }
+    if len(refreshed.Status.Conditions) < 2 {
+        t.Fatalf("expected at least 2 status conditions, got %d", len(refreshed.Status.Conditions))
     }
 }
 

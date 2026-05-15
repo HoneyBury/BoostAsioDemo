@@ -16,8 +16,10 @@ type ComponentSpec struct {
 }
 
 type TLSConfig struct {
-    Enabled    bool   `json:"enabled,omitempty"`
-    SecretName string `json:"secretName,omitempty"`
+    Enabled          bool   `json:"enabled,omitempty"`
+    SecretName       string `json:"secretName,omitempty"`
+    CertManagerIssuer string `json:"certManagerIssuer,omitempty"`
+    ManagedByCertManager bool `json:"managedByCertManager,omitempty"`
 }
 
 type BoostGatewayClusterSpec struct {
@@ -36,6 +38,7 @@ type BoostGatewayClusterSpec struct {
 type BoostGatewayClusterStatus struct {
     Phase         string             `json:"phase,omitempty"`
     ReadyReplicas int32              `json:"readyReplicas,omitempty"`
+    DesiredReplicas int32            `json:"desiredReplicas,omitempty"`
     Conditions    []metav1.Condition `json:"conditions,omitempty"`
 }
 
@@ -127,4 +130,3 @@ func (in *BoostGatewayClusterList) DeepCopyObject() runtime.Object {
     in.DeepCopyInto(out)
     return out
 }
-

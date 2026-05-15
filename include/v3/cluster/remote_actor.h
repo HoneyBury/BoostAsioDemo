@@ -6,6 +6,7 @@
 #include "v2/actor/actor_ref.h"
 #include "v3/cluster/cluster_router.h"
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -148,14 +149,10 @@ inline bool RemoteActorTransport::route(
 
 inline std::string RemoteActorTransport::serialize(
     const v2::actor::Message& msg) {
-    // Simple binary format: kind(2) + trace_id(8) + request_id(4) + source(8) + target(8)
-    // + created_at(8) + payload_length(4) + payload_bytes(N)
-    // Full protobuf serialization planned for gRPC integration (Phase 12 D6)
+    // Envelope layout mirrors proto/v3/common.proto at the transport boundary:
+    // correlation_id|source_service|target_service|timeout_ms|error_code|trace_id|span_id|payload
+    // We still keep the implementation self-contained and dependency-free here.
     std::string result;
-    auto append_u16 = [&](std::uint16_t v) {
-        result.push_back(static_cast<char>(v >> 8));
-        result.push_back(static_cast<char>(v & 0xFF));
-    };
     auto append_u32 = [&](std::uint32_t v) {
         result.push_back(static_cast<char>(v >> 24));
         result.push_back(static_cast<char>((v >> 16) & 0xFF));
@@ -166,55 +163,81 @@ inline std::string RemoteActorTransport::serialize(
         for (int i = 7; i >= 0; --i)
             result.push_back(static_cast<char>((v >> (i * 8)) & 0xFF));
     };
+    auto append_string = [&](const std::string& value) {
+        append_u32(static_cast<std::uint32_t>(value.size()));
+        result += value;
+    };
 
-    append_u16(static_cast<std::uint16_t>(msg.header.kind));
+    append_u64(msg.header.request_id);  // correlation_id
+    append_string("actor");
+    append_string("actor");
+    append_u32(0);  // timeout_ms
+    append_u32(0);  // error_code
     append_u64(msg.header.trace_id);
-    append_u32(msg.header.request_id);
+    append_u64(msg.header.created_at);  // reuse created_at as span surrogate for now
+    append_u32(static_cast<std::uint32_t>(msg.header.kind));
     append_u64(msg.header.source_actor);
     append_u64(msg.header.target_actor);
     append_u64(msg.header.created_at);
 
-    // Payload: for now, use string representation (v2 bootstrap format)
-    std::string payload = "v3_actor_msg";  // placeholder for protobuf
-    append_u32(static_cast<std::uint32_t>(payload.size()));
-    result += payload;
+    std::string payload;
+    if (const auto* text = std::get_if<std::string>(&msg.payload)) {
+        payload = *text;
+    }
+    append_string(payload);
 
     return result;
 }
 
 inline std::optional<v2::actor::Message> RemoteActorTransport::deserialize(
     const std::string& data) {
-    if (data.size() < 38) return std::nullopt;  // minimum header size
+    if (data.size() < 64) return std::nullopt;
 
-    auto read_u16 = [&](std::size_t& pos) -> std::uint16_t {
-        auto v = (static_cast<std::uint16_t>(static_cast<unsigned char>(data[pos])) << 8) |
-                 static_cast<std::uint16_t>(static_cast<unsigned char>(data[pos + 1]));
-        pos += 2; return v;
-    };
     auto read_u32 = [&](std::size_t& pos) -> std::uint32_t {
+        if (pos + 4 > data.size()) return 0;
         std::uint32_t v = 0;
         for (int i = 0; i < 4; ++i)
             v = (v << 8) | static_cast<unsigned char>(data[pos + i]);
         pos += 4; return v;
     };
     auto read_u64 = [&](std::size_t& pos) -> std::uint64_t {
+        if (pos + 8 > data.size()) return 0;
         std::uint64_t v = 0;
         for (int i = 0; i < 8; ++i)
             v = (v << 8) | static_cast<unsigned char>(data[pos + i]);
         pos += 8; return v;
     };
+    auto read_string = [&](std::size_t& pos) -> std::optional<std::string> {
+        if (pos + 4 > data.size()) return std::nullopt;
+        auto len = read_u32(pos);
+        if (pos + len > data.size()) return std::nullopt;
+        std::string value = data.substr(pos, len);
+        pos += len;
+        return value;
+    };
 
     std::size_t pos = 0;
     v2::actor::Message msg;
-    msg.header.kind = static_cast<v2::actor::MessageKind>(read_u16(pos));
+    msg.header.request_id = static_cast<v2::actor::RequestId>(read_u64(pos));
+    auto source_service = read_string(pos);
+    auto target_service = read_string(pos);
+    if (!source_service.has_value() || !target_service.has_value()) {
+        return std::nullopt;
+    }
+    (void)read_u32(pos);  // timeout_ms
+    (void)read_u32(pos);  // error_code
     msg.header.trace_id = read_u64(pos);
-    msg.header.request_id = read_u32(pos);
+    (void)read_u64(pos);  // span_id
+    msg.header.kind = static_cast<v2::actor::MessageKind>(read_u32(pos));
     msg.header.source_actor = read_u64(pos);
     msg.header.target_actor = read_u64(pos);
     msg.header.created_at = read_u64(pos);
 
-    auto payload_len = read_u32(pos);
-    // msg.payload = ... (would be deserialized from protobuf)
+    auto payload = read_string(pos);
+    if (!payload.has_value()) {
+        return std::nullopt;
+    }
+    msg.payload = std::move(*payload);
 
     return msg;
 }

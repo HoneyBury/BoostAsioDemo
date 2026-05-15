@@ -7,6 +7,7 @@
 #include "v2/service/backend_server.h"
 #include "v3/cluster/raft.h"
 #include "v3/persistence/redis_leaderboard.h"
+#include "v3/proto/envelope_codec.h"
 
 #include <nlohmann/json.hpp>
 
@@ -250,7 +251,11 @@ private:
 
     v2::service::BackendEnvelope handle_submit(
         const v2::service::BackendEnvelope& req) {
-        auto doc = nlohmann::json::parse(req.payload, nullptr, false);
+        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto raw_payload = decoded_envelope.has_value()
+            ? decoded_envelope->payload.dump()
+            : req.payload;
+        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
         if (doc.is_discarded()) return make_error(-1004, "invalid_json");
 
         const std::string user_id = doc.value("user_id", "");
@@ -275,12 +280,19 @@ private:
         if (auto new_rank = rank_of(user_id); new_rank.has_value()) {
             body["rank"] = *new_rank;
         }
-        return make_response(body);
+        auto resp = make_response(body);
+        resp.payload = v3::proto::maybe_wrap_response(
+            decoded_envelope, "leaderboard", "submit_response", body);
+        return resp;
     }
 
     v2::service::BackendEnvelope handle_top(
         const v2::service::BackendEnvelope& req) {
-        auto doc = nlohmann::json::parse(req.payload, nullptr, false);
+        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto raw_payload = decoded_envelope.has_value()
+            ? decoded_envelope->payload.dump()
+            : req.payload;
+        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
         std::size_t k = doc.value("k", 10);
         if (k > 100) k = 100;  // cap
 
@@ -307,12 +319,20 @@ private:
                 });
             }
         }
-        return make_response({{"status", "ok"}, {"entries", std::move(arr)}});
+        auto body = nlohmann::json{{"status", "ok"}, {"entries", std::move(arr)}};
+        auto resp = make_response(body);
+        resp.payload = v3::proto::maybe_wrap_response(
+            decoded_envelope, "leaderboard", "top_response", body);
+        return resp;
     }
 
     v2::service::BackendEnvelope handle_rank(
         const v2::service::BackendEnvelope& req) {
-        auto doc = nlohmann::json::parse(req.payload, nullptr, false);
+        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto raw_payload = decoded_envelope.has_value()
+            ? decoded_envelope->payload.dump()
+            : req.payload;
+        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
         std::string user_id = doc.value("user_id", "");
         if (user_id.empty()) return make_error(-1004, "empty_user_id");
 
@@ -335,12 +355,16 @@ private:
         if (!entry.has_value()) {
             return make_error(-1, "user_not_found");
         }
-        return make_response({
+        auto body = nlohmann::json{
             {"status", "ok"},
             {"user_id", entry->user_id},
             {"rank", entry->rank},
             {"score", entry->score},
-        });
+        };
+        auto resp = make_response(body);
+        resp.payload = v3::proto::maybe_wrap_response(
+            decoded_envelope, "leaderboard", "rank_response", body);
+        return resp;
     }
 
     v2::service::BackendEnvelope handle_raft_request_vote(

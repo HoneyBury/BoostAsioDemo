@@ -21,6 +21,7 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -2415,6 +2416,315 @@ TEST(V2BackendRoutingTest, MatchmakingReplicatesExpiredQueuePurgeAcrossFollowers
     node1.stop();
     node2.stop();
     node3.stop();
+}
+
+TEST(V2BackendRoutingTest, LeaderboardRestoresCommittedScoresAfterRestart) {
+    app::logging::init("project_tests");
+
+    const auto storage_root =
+        std::filesystem::temp_directory_path() / "boost_lb_restart_test";
+    std::error_code ec;
+    std::filesystem::remove_all(storage_root, ec);
+    std::filesystem::create_directories(storage_root, ec);
+
+    auto make_cfg = [&](std::uint16_t port) {
+        v3::cluster::RaftConfig cfg;
+        cfg.node_id = "lb-restart";
+        cfg.peers = {{"lb-restart", "127.0.0.1", port}};
+        cfg.storage_dir = storage_root.string();
+        cfg.election_timeout_min = std::chrono::milliseconds(50);
+        cfg.election_timeout_max = std::chrono::milliseconds(100);
+        cfg.heartbeat_interval = std::chrono::milliseconds(20);
+        return cfg;
+    };
+
+    {
+        v2::leaderboard::LeaderboardService service(19471);
+        service.set_raft_config(make_cfg(19471));
+        service.start();
+
+        for (int i = 0; i < 40 && !service.is_raft_leader(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+        ASSERT_TRUE(service.is_raft_leader());
+
+        v2::service::BackendConnection conn({
+            .host = "127.0.0.1",
+            .port = 19471,
+        });
+        ASSERT_TRUE(conn.connect());
+
+        v2::service::BackendEnvelope submit_request;
+        submit_request.target_service = v2::service::ServiceId::kGateway;
+        submit_request.kind = v2::service::MessageKind::kRequest;
+        submit_request.message_type = "leaderboard_submit";
+        submit_request.payload =
+            R"({"user_id":"alice","display_name":"Alice","score":1700})";
+
+        auto submit_response = conn.send_request(submit_request);
+        ASSERT_TRUE(submit_response.has_value());
+        EXPECT_EQ(submit_response->kind, v2::service::MessageKind::kResponse);
+        conn.close();
+        service.stop();
+    }
+
+    {
+        v2::leaderboard::LeaderboardService recovered(19471);
+        recovered.set_raft_config(make_cfg(19471));
+        recovered.start();
+
+        v2::service::BackendConnection conn({
+            .host = "127.0.0.1",
+            .port = 19471,
+        });
+        ASSERT_TRUE(conn.connect());
+
+        v2::service::BackendEnvelope rank_request;
+        rank_request.target_service = v2::service::ServiceId::kGateway;
+        rank_request.kind = v2::service::MessageKind::kRequest;
+        rank_request.message_type = "leaderboard_rank";
+        rank_request.payload = R"({"user_id":"alice"})";
+
+        auto rank_response = conn.send_request(rank_request);
+        ASSERT_TRUE(rank_response.has_value());
+        EXPECT_EQ(rank_response->kind, v2::service::MessageKind::kResponse);
+        auto rank_doc = nlohmann::json::parse(rank_response->payload, nullptr, false);
+        ASSERT_FALSE(rank_doc.is_discarded());
+        EXPECT_EQ(rank_doc.value("user_id", std::string{}), "alice");
+        EXPECT_EQ(rank_doc.value("rank", 0), 1);
+        EXPECT_EQ(rank_doc.value("score", 0), 1700);
+
+        conn.close();
+        recovered.stop();
+    }
+
+    std::filesystem::remove_all(storage_root, ec);
+}
+
+TEST(V2BackendRoutingTest, MatchmakingRestoresCommittedMatchAfterRestart) {
+    app::logging::init("project_tests");
+
+    const auto storage_root =
+        std::filesystem::temp_directory_path() / "boost_match_restart_test";
+    std::error_code ec;
+    std::filesystem::remove_all(storage_root, ec);
+    std::filesystem::create_directories(storage_root, ec);
+
+    v2::match::MatchmakingConfig match_cfg;
+    match_cfg.match_check_interval_ms = 50;
+
+    auto make_cfg = [&](std::uint16_t port) {
+        v3::cluster::RaftConfig cfg;
+        cfg.node_id = "match-restart";
+        cfg.peers = {{"match-restart", "127.0.0.1", port}};
+        cfg.storage_dir = storage_root.string();
+        cfg.election_timeout_min = std::chrono::milliseconds(50);
+        cfg.election_timeout_max = std::chrono::milliseconds(100);
+        cfg.heartbeat_interval = std::chrono::milliseconds(20);
+        return cfg;
+    };
+
+    {
+        v2::match::MatchmakingService service(19481);
+        service.set_matchmaking_config(match_cfg);
+        service.set_raft_config(make_cfg(19481));
+        service.start();
+
+        for (int i = 0; i < 40 && !service.is_raft_leader(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+        ASSERT_TRUE(service.is_raft_leader());
+
+        v2::service::BackendConnection conn({
+            .host = "127.0.0.1",
+            .port = 19481,
+        });
+        ASSERT_TRUE(conn.connect());
+
+        auto send_join = [&](const std::string& user_id, int mmr) {
+            v2::service::BackendEnvelope request;
+            request.target_service = v2::service::ServiceId::kGateway;
+            request.kind = v2::service::MessageKind::kRequest;
+            request.message_type = "match_join";
+            request.payload = nlohmann::json{
+                {"user_id", user_id},
+                {"mmr", mmr},
+                {"mode", "1v1"},
+            }.dump();
+            return conn.send_request(request);
+        };
+
+        auto join_one = send_join("alice", 1000);
+        ASSERT_TRUE(join_one.has_value());
+        auto join_two = send_join("bob", 1010);
+        ASSERT_TRUE(join_two.has_value());
+
+        v2::service::BackendEnvelope status_request;
+        status_request.target_service = v2::service::ServiceId::kGateway;
+        status_request.kind = v2::service::MessageKind::kRequest;
+        status_request.message_type = "match_status";
+        status_request.payload = R"({"user_id":"alice","mode":"1v1"})";
+
+        for (int i = 0; i < 40; ++i) {
+            auto status = conn.send_request(status_request);
+            if (status.has_value() &&
+                status->kind == v2::service::MessageKind::kResponse) {
+                auto doc = nlohmann::json::parse(status->payload, nullptr, false);
+                if (!doc.is_discarded() && doc.value("matched", false)) {
+                    break;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+
+        conn.close();
+        service.stop();
+    }
+
+    {
+        v2::match::MatchmakingService recovered(19481);
+        recovered.set_matchmaking_config(match_cfg);
+        recovered.set_raft_config(make_cfg(19481));
+        recovered.start();
+
+        v2::service::BackendConnection conn({
+            .host = "127.0.0.1",
+            .port = 19481,
+        });
+        ASSERT_TRUE(conn.connect());
+
+        v2::service::BackendEnvelope status_request;
+        status_request.target_service = v2::service::ServiceId::kGateway;
+        status_request.kind = v2::service::MessageKind::kRequest;
+        status_request.message_type = "match_status";
+        status_request.payload = R"({"user_id":"alice","mode":"1v1"})";
+
+        auto status = conn.send_request(status_request);
+        ASSERT_TRUE(status.has_value());
+        EXPECT_EQ(status->kind, v2::service::MessageKind::kResponse);
+        auto doc = nlohmann::json::parse(status->payload, nullptr, false);
+        ASSERT_FALSE(doc.is_discarded());
+        EXPECT_TRUE(doc.value("matched", false));
+        EXPECT_EQ(doc.value("mode", std::string{}), "1v1");
+        EXPECT_GT(doc.value("match_id", std::string{}).size(), 0U);
+
+        conn.close();
+        recovered.stop();
+    }
+
+    std::filesystem::remove_all(storage_root, ec);
+}
+
+TEST(V2BackendRoutingTest, LeaderboardFollowerCatchesUpAfterLeaderRestart) {
+    app::logging::init("project_tests");
+
+    constexpr std::uint16_t kPort1 = 19491;
+    constexpr std::uint16_t kPort2 = 19492;
+    constexpr std::uint16_t kPort3 = 19493;
+
+    const std::vector<v3::cluster::RaftNodeId> peers = {
+        {"lb-roll-1", "127.0.0.1", kPort1},
+        {"lb-roll-2", "127.0.0.1", kPort2},
+        {"lb-roll-3", "127.0.0.1", kPort3},
+    };
+
+    auto make_cfg = [&](const std::string& node_id) {
+        v3::cluster::RaftConfig cfg;
+        cfg.node_id = node_id;
+        cfg.peers = peers;
+        cfg.election_timeout_min = std::chrono::milliseconds(150);
+        cfg.election_timeout_max = std::chrono::milliseconds(300);
+        cfg.heartbeat_interval = std::chrono::milliseconds(50);
+        return cfg;
+    };
+
+    v2::leaderboard::LeaderboardService node1(kPort1);
+    v2::leaderboard::LeaderboardService node2(kPort2);
+    v2::leaderboard::LeaderboardService node3(kPort3);
+    node1.set_raft_config(make_cfg("lb-roll-1"));
+    node2.set_raft_config(make_cfg("lb-roll-2"));
+    node3.set_raft_config(make_cfg("lb-roll-3"));
+    node1.start();
+    node2.start();
+    node3.start();
+
+    std::uint16_t leader_port = 0;
+    std::uint16_t follower_port = 0;
+    for (int i = 0; i < 80; ++i) {
+        if (node1.is_raft_leader()) {
+            leader_port = kPort1;
+            follower_port = kPort2;
+            break;
+        }
+        if (node2.is_raft_leader()) {
+            leader_port = kPort2;
+            follower_port = kPort1;
+            break;
+        }
+        if (node3.is_raft_leader()) {
+            leader_port = kPort3;
+            follower_port = kPort1;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    ASSERT_NE(leader_port, 0);
+
+    v2::service::BackendConnection leader_conn({
+        .host = "127.0.0.1",
+        .port = leader_port,
+    });
+    ASSERT_TRUE(leader_conn.connect());
+
+    v2::service::BackendEnvelope submit_request;
+    submit_request.target_service = v2::service::ServiceId::kGateway;
+    submit_request.kind = v2::service::MessageKind::kRequest;
+    submit_request.message_type = "leaderboard_submit";
+    submit_request.payload =
+        R"({"user_id":"eve","display_name":"Eve","score":1337})";
+    auto submit_response = leader_conn.send_request(submit_request);
+    ASSERT_TRUE(submit_response.has_value());
+    leader_conn.close();
+
+    if (leader_port == kPort1) node1.stop();
+    if (leader_port == kPort2) node2.stop();
+    if (leader_port == kPort3) node3.stop();
+
+    v2::service::BackendConnection follower_conn({
+        .host = "127.0.0.1",
+        .port = follower_port,
+    });
+    ASSERT_TRUE(follower_conn.connect());
+
+    v2::service::BackendEnvelope rank_request;
+    rank_request.target_service = v2::service::ServiceId::kGateway;
+    rank_request.kind = v2::service::MessageKind::kRequest;
+    rank_request.message_type = "leaderboard_rank";
+    rank_request.payload = R"({"user_id":"eve"})";
+
+    std::optional<v2::service::BackendEnvelope> rank_response;
+    for (int i = 0; i < 30; ++i) {
+        rank_response = follower_conn.send_request(rank_request);
+        if (rank_response.has_value() &&
+            rank_response->kind == v2::service::MessageKind::kResponse) {
+            auto doc = nlohmann::json::parse(rank_response->payload, nullptr, false);
+            if (!doc.is_discarded() && doc.value("score", 0) == 1337) {
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    ASSERT_TRUE(rank_response.has_value());
+    EXPECT_EQ(rank_response->kind, v2::service::MessageKind::kResponse);
+    auto rank_doc = nlohmann::json::parse(rank_response->payload, nullptr, false);
+    ASSERT_FALSE(rank_doc.is_discarded());
+    EXPECT_EQ(rank_doc.value("score", 0), 1337);
+
+    follower_conn.close();
+    if (leader_port != kPort1) node1.stop();
+    if (leader_port != kPort2) node2.stop();
+    if (leader_port != kPort3) node3.stop();
 }
 
 // ─── v3.0.0 B5: OpenTelemetry export integration tests ───────────────

@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "v3/proto/envelope_codec.h"
+
 namespace {
 
 #ifndef PROJECT_SOURCE_DIR
@@ -138,4 +140,33 @@ TEST(ProtoSchemaTest, AllProtosUseProto3) {
         EXPECT_NE(c.find("package boost.gateway.v3"), std::string::npos)
             << f << " missing package declaration";
     }
+}
+
+TEST(ProtoSchemaTest, EnvelopeCodecRoundTripsMatchPayload) {
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 7;
+    meta.source_service = "gateway";
+    meta.target_service = "match";
+    meta.timeout_ms = 500;
+    meta.trace_id = 1234;
+    meta.span_id = 5678;
+
+    const auto encoded = v3::proto::encode_envelope(
+        meta,
+        "match",
+        "match_join",
+        {{"user_id", "alice"}, {"mmr", 1000}, {"mode", "1v1"}});
+
+    const auto decoded = v3::proto::decode_envelope(encoded);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->meta.correlation_id, 7U);
+    EXPECT_EQ(decoded->domain, "match");
+    EXPECT_EQ(decoded->message_name, "match_join");
+    EXPECT_EQ(decoded->payload.value("user_id", ""), "alice");
+    EXPECT_EQ(decoded->payload.value("mmr", 0), 1000);
+}
+
+TEST(ProtoSchemaTest, EnvelopeCodecRejectsMalformedPayload) {
+    EXPECT_FALSE(v3::proto::decode_envelope("{bad json").has_value());
+    EXPECT_FALSE(v3::proto::decode_envelope(R"({"payload":{}})").has_value());
 }

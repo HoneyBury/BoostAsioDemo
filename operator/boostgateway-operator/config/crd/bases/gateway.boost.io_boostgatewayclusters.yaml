@@ -65,12 +65,18 @@ spec:
                       type: boolean
                     secretName:
                       type: string
+                    certManagerIssuer:
+                      type: string
+                    managedByCertManager:
+                      type: boolean
             status:
               type: object
               properties:
                 phase:
                   type: string
                 readyReplicas:
+                  type: integer
+                desiredReplicas:
                   type: integer
                 conditions:
                   type: array

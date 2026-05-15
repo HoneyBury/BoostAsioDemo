@@ -10,6 +10,7 @@ import (
     appsv1 "k8s.io/api/apps/v1"
     corev1 "k8s.io/api/core/v1"
     apierrors "k8s.io/apimachinery/pkg/api/errors"
+    unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/runtime"
     "k8s.io/apimachinery/pkg/types"
@@ -26,6 +27,8 @@ type BoostGatewayClusterReconciler struct {
     client.Client
     Scheme *runtime.Scheme
 }
+
+const certManagerIssuerAnnotation = "cert-manager.io/cluster-issuer"
 
 type managedComponent struct {
     Name string
@@ -54,6 +57,7 @@ func (r *BoostGatewayClusterReconciler) Reconcile(ctx context.Context, req ctrl.
     }
 
     var totalReady int32
+    var totalDesired int32
     if err := r.reconcileClusterTLSSecret(ctx, &cluster); err != nil {
         return ctrl.Result{}, err
     }
@@ -74,10 +78,12 @@ func (r *BoostGatewayClusterReconciler) Reconcile(ctx context.Context, req ctrl.
             if err := r.reconcileStatefulSet(ctx, &cluster, component); err != nil {
                 return ctrl.Result{}, err
             }
+            totalDesired += replicasOrDefault(component.Spec, 1)
         } else {
             if err := r.reconcileDeployment(ctx, &cluster, component); err != nil {
                 return ctrl.Result{}, err
             }
+            totalDesired += replicasOrDefault(component.Spec, 1)
         }
         if err := r.reconcileService(ctx, &cluster, component); err != nil {
             return ctrl.Result{}, err
@@ -106,15 +112,34 @@ func (r *BoostGatewayClusterReconciler) Reconcile(ctx context.Context, req ctrl.
         }
     }
 
+    readyStatus := metav1.ConditionFalse
+    phase := "Progressing"
+    readyReason := "WaitingForReplicas"
+    readyMessage := fmt.Sprintf("Ready replicas %d/%d", totalReady, totalDesired)
+    if totalDesired == 0 || totalReady >= totalDesired {
+        readyStatus = metav1.ConditionTrue
+        phase = "Running"
+        readyReason = "ComponentsReady"
+        readyMessage = "All enabled components are ready."
+    }
+
     desiredStatus := gatewayv1alpha1.BoostGatewayClusterStatus{
-        Phase:         "Running",
-        ReadyReplicas: totalReady,
+        Phase:           phase,
+        ReadyReplicas:   totalReady,
+        DesiredReplicas: totalDesired,
         Conditions: []metav1.Condition{
             {
                 Type:               "Ready",
-                Status:             metav1.ConditionTrue,
-                Reason:             "ComponentsReconciled",
-                Message:            "All enabled components have been reconciled.",
+                Status:             readyStatus,
+                Reason:             readyReason,
+                Message:            readyMessage,
+                LastTransitionTime: metav1.Now(),
+            },
+            {
+                Type:               "TLSReady",
+                Status:             tlsConditionStatus(cluster.Spec.TLS),
+                Reason:             tlsConditionReason(cluster.Spec.TLS),
+                Message:            tlsConditionMessage(cluster.Spec.TLS),
                 LastTransitionTime: metav1.Now(),
             },
         },
@@ -219,6 +244,12 @@ func (r *BoostGatewayClusterReconciler) reconcileClusterTLSSecret(
         return nil
     }
 
+    if cluster.Spec.TLS.ManagedByCertManager && cluster.Spec.TLS.CertManagerIssuer != "" {
+        if err := r.reconcileCertManagerCertificate(ctx, cluster); err != nil {
+            return err
+        }
+    }
+
     secret := &corev1.Secret{
         ObjectMeta: metav1.ObjectMeta{
             Name:      cluster.Spec.TLS.SecretName,
@@ -236,7 +267,13 @@ func (r *BoostGatewayClusterReconciler) reconcileClusterTLSSecret(
         if secret.Annotations == nil {
             secret.Annotations = map[string]string{}
         }
-        secret.Annotations["gateway.boost.io/tls-mode"] = "placeholder"
+        if cluster.Spec.TLS.ManagedByCertManager && cluster.Spec.TLS.CertManagerIssuer != "" {
+            secret.Annotations[certManagerIssuerAnnotation] = cluster.Spec.TLS.CertManagerIssuer
+            secret.Annotations["gateway.boost.io/tls-mode"] = "cert-manager"
+        } else {
+            delete(secret.Annotations, certManagerIssuerAnnotation)
+            secret.Annotations["gateway.boost.io/tls-mode"] = "placeholder"
+        }
         secret.Type = corev1.SecretTypeTLS
         if secret.Data == nil {
             secret.Data = map[string][]byte{}
@@ -248,6 +285,38 @@ func (r *BoostGatewayClusterReconciler) reconcileClusterTLSSecret(
             secret.Data["tls.key"] = []byte{}
         }
         return controllerutil.SetControllerReference(cluster, secret, r.Scheme)
+    })
+    return err
+}
+
+func (r *BoostGatewayClusterReconciler) reconcileCertManagerCertificate(
+    ctx context.Context,
+    cluster *gatewayv1alpha1.BoostGatewayCluster,
+) error {
+    cert := &unstructuredv1.Unstructured{}
+    cert.SetAPIVersion("cert-manager.io/v1")
+    cert.SetKind("Certificate")
+    cert.SetNamespace(cluster.Namespace)
+    cert.SetName(cluster.Spec.TLS.SecretName)
+
+    _, err := controllerutil.CreateOrUpdate(ctx, r.Client, cert, func() error {
+        cert.SetLabels(map[string]string{
+            "app.kubernetes.io/name":       "boost-gateway",
+            "app.kubernetes.io/part-of":    cluster.Name,
+            "gateway.boost.io/clusterName": cluster.Name,
+            "gateway.boost.io/managed":     "true",
+        })
+        cert.Object["spec"] = map[string]any{
+            "secretName": cluster.Spec.TLS.SecretName,
+            "issuerRef": map[string]any{
+                "kind": "ClusterIssuer",
+                "name": cluster.Spec.TLS.CertManagerIssuer,
+            },
+            "dnsNames": []any{
+                fmt.Sprintf("%s-gateway.%s.svc.cluster.local", cluster.Name, cluster.Namespace),
+            },
+        }
+        return nil
     })
     return err
 }
@@ -471,6 +540,33 @@ func pullPolicyOrDefault(policy corev1.PullPolicy) corev1.PullPolicy {
         return corev1.PullIfNotPresent
     }
     return policy
+}
+
+func tlsConditionStatus(tls gatewayv1alpha1.TLSConfig) metav1.ConditionStatus {
+    if !tls.Enabled {
+        return metav1.ConditionFalse
+    }
+    return metav1.ConditionTrue
+}
+
+func tlsConditionReason(tls gatewayv1alpha1.TLSConfig) string {
+    if !tls.Enabled {
+        return "TLSDisabled"
+    }
+    if tls.ManagedByCertManager && tls.CertManagerIssuer != "" {
+        return "CertManagerConfigured"
+    }
+    return "StaticSecretConfigured"
+}
+
+func tlsConditionMessage(tls gatewayv1alpha1.TLSConfig) string {
+    if !tls.Enabled {
+        return "TLS is disabled."
+    }
+    if tls.ManagedByCertManager && tls.CertManagerIssuer != "" {
+        return fmt.Sprintf("TLS secret is managed by cert-manager issuer %q.", tls.CertManagerIssuer)
+    }
+    return "TLS secret is reconciled as a placeholder/static secret."
 }
 
 func containerPorts(spec gatewayv1alpha1.ComponentSpec) []corev1.ContainerPort {

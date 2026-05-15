@@ -52,6 +52,12 @@ func TestEnvtestReconcileCreatesManagedResources(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: gatewayv1alpha1.BoostGatewayClusterSpec{
+			TLS: gatewayv1alpha1.TLSConfig{
+				Enabled:              true,
+				SecretName:           "demo-tls",
+				ManagedByCertManager: true,
+				CertManagerIssuer:    "shared-ca",
+			},
 			Gateway: gatewayv1alpha1.ComponentSpec{
 				Image: "gateway",
 				Port:  9201,
@@ -103,6 +109,17 @@ func TestEnvtestReconcileCreatesManagedResources(t *testing.T) {
 		t.Fatalf("expected headless match service, got %q", matchService.Spec.ClusterIP)
 	}
 
+	var tlsSecret corev1.Secret
+	if err := k8sClient.Get(context.Background(), types.NamespacedName{
+		Namespace: "default",
+		Name:      "demo-tls",
+	}, &tlsSecret); err != nil {
+		t.Fatalf("tls secret missing: %v", err)
+	}
+	if tlsSecret.Annotations["cert-manager.io/cluster-issuer"] != "shared-ca" {
+		t.Fatalf("unexpected cert-manager issuer annotation: %q", tlsSecret.Annotations["cert-manager.io/cluster-issuer"])
+	}
+
 	var refreshed gatewayv1alpha1.BoostGatewayCluster
 	if err := k8sClient.Get(context.Background(), types.NamespacedName{
 		Namespace: "default",
@@ -110,7 +127,10 @@ func TestEnvtestReconcileCreatesManagedResources(t *testing.T) {
 	}, &refreshed); err != nil {
 		t.Fatalf("reload cluster: %v", err)
 	}
-	if refreshed.Status.Phase != "Running" {
+	if refreshed.Status.Phase != "Progressing" {
 		t.Fatalf("unexpected status phase: %q", refreshed.Status.Phase)
+	}
+	if refreshed.Status.DesiredReplicas != 2 {
+		t.Fatalf("unexpected desired replicas: %d", refreshed.Status.DesiredReplicas)
 	}
 }

@@ -6,6 +6,7 @@
 #include "v2/service/backend_connection.h"
 #include "v2/service/backend_server.h"
 #include "v3/cluster/raft.h"
+#include "v3/proto/envelope_codec.h"
 
 #include <nlohmann/json.hpp>
 
@@ -475,7 +476,11 @@ private:
 
     v2::service::BackendEnvelope handle_match_join(
         const v2::service::BackendEnvelope& req) {
-        auto doc = nlohmann::json::parse(req.payload, nullptr, false);
+        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto raw_payload = decoded_envelope.has_value()
+            ? decoded_envelope->payload.dump()
+            : req.payload;
+        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
         if (doc.is_discarded()) return make_error(-1004, "invalid_json");
 
         const std::string user_id = doc.value("user_id", "");
@@ -502,12 +507,20 @@ private:
             apply_match_join(player);
         }
 
-        return make_ok({{"queued", true}, {"mode", mode_str}});
+        auto response_body = nlohmann::json{{"status", "ok"}, {"queued", true}, {"mode", mode_str}};
+        v2::service::BackendEnvelope resp = make_ok({{"queued", true}, {"mode", mode_str}});
+        resp.payload = v3::proto::maybe_wrap_response(
+            decoded_envelope, "match", "match_join_response", response_body);
+        return resp;
     }
 
     v2::service::BackendEnvelope handle_match_leave(
         const v2::service::BackendEnvelope& req) {
-        auto doc = nlohmann::json::parse(req.payload, nullptr, false);
+        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto raw_payload = decoded_envelope.has_value()
+            ? decoded_envelope->payload.dump()
+            : req.payload;
+        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
         if (doc.is_discarded()) return make_error(-1004, "invalid_json");
 
         const std::string user_id = doc.value("user_id", "");
@@ -524,12 +537,20 @@ private:
         } else {
             apply_match_leave(mode, user_id);
         }
-        return make_ok({{"left", true}});
+        auto response_body = nlohmann::json{{"status", "ok"}, {"left", true}};
+        v2::service::BackendEnvelope resp = make_ok({{"left", true}});
+        resp.payload = v3::proto::maybe_wrap_response(
+            decoded_envelope, "match", "match_leave_response", response_body);
+        return resp;
     }
 
     v2::service::BackendEnvelope handle_match_status(
         const v2::service::BackendEnvelope& req) {
-        auto doc = nlohmann::json::parse(req.payload, nullptr, false);
+        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto raw_payload = decoded_envelope.has_value()
+            ? decoded_envelope->payload.dump()
+            : req.payload;
+        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
         std::string user_id = doc.value("user_id", "");
         std::string mode_str = doc.value("mode", "1v1");
 
@@ -541,22 +562,30 @@ private:
             for (const auto& pid : it->second.player_ids) {
                 if (pid == user_id) {
                     const auto result = it->second;
-                    return make_ok({
+                    auto body = nlohmann::json{
                         {"matched", true},
                         {"match_id", result.match_id},
                         {"mode", to_string(result.mode)},
                         {"avg_mmr", result.avg_mmr},
-                    });
+                    };
+                    auto resp = make_ok(body);
+                    resp.payload = v3::proto::maybe_wrap_response(
+                        decoded_envelope, "match", "match_status_response", body);
+                    return resp;
                 }
             }
         }
 
         auto qsize = matchmaker_->queue_size(mode);
-        return make_ok({
+        auto body = nlohmann::json{
             {"matched", false},
             {"queue_size", qsize},
             {"mode", mode_str},
-        });
+        };
+        auto resp = make_ok(body);
+        resp.payload = v3::proto::maybe_wrap_response(
+            decoded_envelope, "match", "match_status_response", body);
+        return resp;
     }
 
     void apply_match_join(const MatchPlayer& player) {

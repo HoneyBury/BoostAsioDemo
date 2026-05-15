@@ -32,19 +32,20 @@ bool file_contains(const std::string& path, const std::string& text) {
 // ─── K8s Operator ────────────────────────────────────────────────────────
 
 TEST(K8sOperatorTest, CrdExistsAndValid) {
-    auto crd = read_file(path("env/k8s/operator/gameserver-crd.yaml"));
+    auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
     EXPECT_FALSE(crd.empty()) << "CRD file missing";
     EXPECT_NE(crd.find("CustomResourceDefinition"), std::string::npos);
-    EXPECT_NE(crd.find("gameservers.gateway.boost.io"), std::string::npos);
+    EXPECT_NE(crd.find("boostgatewayclusters.gateway.boost.io"), std::string::npos);
+    EXPECT_NE(crd.find("BoostGatewayCluster"), std::string::npos);
     EXPECT_NE(crd.find("openAPIV3Schema"), std::string::npos);
 }
 
 TEST(K8sOperatorTest, RbacExistsAndValid) {
-    auto rbac = read_file(path("env/k8s/operator/rbac.yaml"));
+    auto rbac = read_file(path("operator/boostgateway-operator/config/rbac/role.yaml"));
     EXPECT_FALSE(rbac.empty()) << "RBAC file missing";
     EXPECT_NE(rbac.find("ServiceAccount"), std::string::npos);
     EXPECT_NE(rbac.find("ClusterRole"), std::string::npos);
-    EXPECT_NE(rbac.find("gameservers"), std::string::npos);
+    EXPECT_NE(rbac.find("boostgatewayclusters"), std::string::npos);
 }
 
 TEST(K8sOperatorTest, HelmChartExists) {
@@ -58,6 +59,51 @@ TEST(K8sOperatorTest, HelmChartExists) {
     EXPECT_NE(values.find("login:"), std::string::npos);
     EXPECT_NE(values.find("battle:"), std::string::npos);
     EXPECT_NE(values.find("redis:"), std::string::npos);
+}
+
+TEST(K8sOperatorTest, OperatorScaffoldExists) {
+    auto go_mod = read_file(path("operator/boostgateway-operator/go.mod"));
+    EXPECT_FALSE(go_mod.empty()) << "operator go.mod missing";
+    EXPECT_NE(go_mod.find("controller-runtime"), std::string::npos);
+
+    auto main = read_file(path("operator/boostgateway-operator/main.go"));
+    EXPECT_FALSE(main.empty()) << "operator main.go missing";
+    EXPECT_NE(main.find("BoostGatewayClusterReconciler"), std::string::npos);
+
+    auto controller = read_file(
+        path("operator/boostgateway-operator/internal/controller/boostgatewaycluster_controller.go"));
+    EXPECT_FALSE(controller.empty()) << "operator controller missing";
+    EXPECT_NE(controller.find("Reconcile"), std::string::npos);
+    EXPECT_NE(controller.find("Deployment"), std::string::npos);
+    EXPECT_NE(controller.find("Service"), std::string::npos);
+    EXPECT_NE(controller.find("StatefulSet"), std::string::npos);
+    EXPECT_NE(controller.find("ConfigMap"), std::string::npos);
+    EXPECT_NE(controller.find("Secret"), std::string::npos);
+    EXPECT_NE(controller.find("RAFT_PEERS"), std::string::npos);
+    EXPECT_NE(controller.find("RAFT_NODE_ID"), std::string::npos);
+}
+
+TEST(K8sOperatorTest, OperatorControllerTestsExist) {
+    auto controller_test = read_file(
+        path("operator/boostgateway-operator/internal/controller/boostgatewaycluster_controller_test.go"));
+    EXPECT_FALSE(controller_test.empty()) << "operator controller test missing";
+    EXPECT_NE(controller_test.find("fake.NewClientBuilder"), std::string::npos);
+    EXPECT_NE(controller_test.find("Reconcile"), std::string::npos);
+    EXPECT_NE(controller_test.find("ConfigMap"), std::string::npos);
+    EXPECT_NE(controller_test.find("StatefulSet"), std::string::npos);
+    EXPECT_NE(controller_test.find("SecretTypeTLS"), std::string::npos);
+}
+
+TEST(K8sOperatorTest, KindAndSampleConfigExist) {
+    auto sample = read_file(
+        path("operator/boostgateway-operator/config/samples/gateway_v1alpha1_boostgatewaycluster.yaml"));
+    EXPECT_FALSE(sample.empty()) << "sample custom resource missing";
+    EXPECT_NE(sample.find("kind: BoostGatewayCluster"), std::string::npos);
+    EXPECT_NE(sample.find("gateway:"), std::string::npos);
+
+    auto kind_cfg = read_file(path("operator/boostgateway-operator/hack/kind-config.yaml"));
+    EXPECT_FALSE(kind_cfg.empty()) << "kind config missing";
+    EXPECT_NE(kind_cfg.find("kind: Cluster"), std::string::npos);
 }
 
 // ─── SDK Multi-language ──────────────────────────────────────────────────

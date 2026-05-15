@@ -1,0 +1,91 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: boostgatewayclusters.gateway.boost.io
+spec:
+  group: gateway.boost.io
+  names:
+    kind: BoostGatewayCluster
+    listKind: BoostGatewayClusterList
+    plural: boostgatewayclusters
+    singular: boostgatewaycluster
+    shortNames:
+      - bgc
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                imageRegistry:
+                  type: string
+                imageTag:
+                  type: string
+                pullPolicy:
+                  type: string
+                gateway:
+                  type: object
+                  properties: &componentProperties
+                    enabled:
+                      type: boolean
+                    replicas:
+                      type: integer
+                      minimum: 0
+                    image:
+                      type: string
+                    port:
+                      type: integer
+                    managementPort:
+                      type: integer
+                login:
+                  type: object
+                  properties: *componentProperties
+                room:
+                  type: object
+                  properties: *componentProperties
+                battle:
+                  type: object
+                  properties: *componentProperties
+                match:
+                  type: object
+                  properties: *componentProperties
+                leaderboard:
+                  type: object
+                  properties: *componentProperties
+                tls:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    secretName:
+                      type: string
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                readyReplicas:
+                  type: integer
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Ready
+          type: integer
+          jsonPath: .status.readyReplicas
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

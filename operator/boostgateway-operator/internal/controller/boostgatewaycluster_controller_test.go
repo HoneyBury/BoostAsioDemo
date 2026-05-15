@@ -1,0 +1,255 @@
+package controller
+
+import (
+    "context"
+    "testing"
+
+    appsv1 "k8s.io/api/apps/v1"
+    corev1 "k8s.io/api/core/v1"
+    apierrors "k8s.io/apimachinery/pkg/api/errors"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/apimachinery/pkg/runtime"
+    "k8s.io/apimachinery/pkg/types"
+    ctrl "sigs.k8s.io/controller-runtime"
+    "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+    gatewayv1alpha1 "github.com/honeybury/boostasiodemo/operator/boostgateway-operator/api/v1alpha1"
+)
+
+func TestReconcileCreatesManagedResources(t *testing.T) {
+    scheme := newTestScheme(t)
+    managementPort := int32(18080)
+    matchReplicas := int32(3)
+
+    cluster := &gatewayv1alpha1.BoostGatewayCluster{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      "demo",
+            Namespace: "default",
+        },
+        Spec: gatewayv1alpha1.BoostGatewayClusterSpec{
+            PullPolicy: corev1.PullIfNotPresent,
+            TLS: gatewayv1alpha1.TLSConfig{
+                Enabled:    true,
+                SecretName: "demo-tls",
+            },
+            Gateway: gatewayv1alpha1.ComponentSpec{
+                Image:          "gateway",
+                Port:           9201,
+                ManagementPort: &managementPort,
+            },
+            Match: gatewayv1alpha1.ComponentSpec{
+                Image:    "match",
+                Port:     9304,
+                Replicas: &matchReplicas,
+            },
+        },
+    }
+
+    client := fake.NewClientBuilder().
+        WithScheme(scheme).
+        WithStatusSubresource(&gatewayv1alpha1.BoostGatewayCluster{}).
+        WithObjects(cluster).
+        Build()
+
+    reconciler := &BoostGatewayClusterReconciler{
+        Client: client,
+        Scheme: scheme,
+    }
+
+    _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+        NamespacedName: types.NamespacedName{Name: cluster.Name, Namespace: cluster.Namespace},
+    })
+    if err != nil {
+        t.Fatalf("reconcile failed: %v", err)
+    }
+
+    var gatewayDeployment appsv1.Deployment
+    if err := client.Get(context.Background(), types.NamespacedName{
+        Namespace: "default",
+        Name:      "demo-gateway",
+    }, &gatewayDeployment); err != nil {
+        t.Fatalf("gateway deployment missing: %v", err)
+    }
+    if len(gatewayDeployment.Spec.Template.Spec.Containers) != 1 {
+        t.Fatalf("expected 1 container, got %d", len(gatewayDeployment.Spec.Template.Spec.Containers))
+    }
+    gatewayContainer := gatewayDeployment.Spec.Template.Spec.Containers[0]
+    if len(gatewayContainer.EnvFrom) != 1 || gatewayContainer.EnvFrom[0].ConfigMapRef == nil {
+        t.Fatalf("gateway container missing ConfigMap env")
+    }
+    if gatewayContainer.EnvFrom[0].ConfigMapRef.Name != "demo-gateway-config" {
+        t.Fatalf("unexpected gateway configmap ref: %s", gatewayContainer.EnvFrom[0].ConfigMapRef.Name)
+    }
+    if len(gatewayContainer.VolumeMounts) != 1 || gatewayContainer.VolumeMounts[0].Name != "tls" {
+        t.Fatalf("gateway container missing tls mount")
+    }
+
+    var gatewayConfig corev1.ConfigMap
+    if err := client.Get(context.Background(), types.NamespacedName{
+        Namespace: "default",
+        Name:      "demo-gateway-config",
+    }, &gatewayConfig); err != nil {
+        t.Fatalf("gateway configmap missing: %v", err)
+    }
+    if gatewayConfig.Data["SERVICE_PORT"] != "9201" {
+        t.Fatalf("unexpected gateway SERVICE_PORT: %s", gatewayConfig.Data["SERVICE_PORT"])
+    }
+    if gatewayConfig.Data["MANAGEMENT_PORT"] != "18080" {
+        t.Fatalf("unexpected gateway MANAGEMENT_PORT: %s", gatewayConfig.Data["MANAGEMENT_PORT"])
+    }
+    if gatewayConfig.Data["TLS_SECRET_NAME"] != "demo-tls" {
+        t.Fatalf("unexpected gateway TLS secret: %s", gatewayConfig.Data["TLS_SECRET_NAME"])
+    }
+
+    var tlsSecret corev1.Secret
+    if err := client.Get(context.Background(), types.NamespacedName{
+        Namespace: "default",
+        Name:      "demo-tls",
+    }, &tlsSecret); err != nil {
+        t.Fatalf("tls secret missing: %v", err)
+    }
+    if tlsSecret.Type != corev1.SecretTypeTLS {
+        t.Fatalf("unexpected secret type: %s", tlsSecret.Type)
+    }
+
+    var matchSet appsv1.StatefulSet
+    if err := client.Get(context.Background(), types.NamespacedName{
+        Namespace: "default",
+        Name:      "demo-match",
+    }, &matchSet); err != nil {
+        t.Fatalf("match statefulset missing: %v", err)
+    }
+    if matchSet.Spec.ServiceName != "demo-match" {
+        t.Fatalf("unexpected service name: %s", matchSet.Spec.ServiceName)
+    }
+    if matchSet.Spec.Replicas == nil || *matchSet.Spec.Replicas != 3 {
+        t.Fatalf("unexpected match replicas: %v", matchSet.Spec.Replicas)
+    }
+    matchContainer := matchSet.Spec.Template.Spec.Containers[0]
+    assertEnvPresent(t, matchContainer.Env, "RAFT_NODE_ID")
+    assertEnvValue(t, matchContainer.Env, "RAFT_SERVICE_NAME", "demo-match")
+    assertEnvValue(t, matchContainer.Env, "RAFT_REPLICAS", "3")
+    assertEnvValue(t, matchContainer.Env, "BOOST_COMPONENT_NAME", "match")
+
+    var matchService corev1.Service
+    if err := client.Get(context.Background(), types.NamespacedName{
+        Namespace: "default",
+        Name:      "demo-match",
+    }, &matchService); err != nil {
+        t.Fatalf("match service missing: %v", err)
+    }
+    if matchService.Spec.ClusterIP != corev1.ClusterIPNone {
+        t.Fatalf("expected headless match service, got %q", matchService.Spec.ClusterIP)
+    }
+    if !matchService.Spec.PublishNotReadyAddresses {
+        t.Fatalf("expected PublishNotReadyAddresses=true for match service")
+    }
+}
+
+func TestReconcileDeletesDisabledComponentResources(t *testing.T) {
+    scheme := newTestScheme(t)
+    enabled := false
+
+    cluster := &gatewayv1alpha1.BoostGatewayCluster{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      "demo",
+            Namespace: "default",
+        },
+        Spec: gatewayv1alpha1.BoostGatewayClusterSpec{
+            Login: gatewayv1alpha1.ComponentSpec{
+                Enabled: &enabled,
+                Image:   "login",
+                Port:    9202,
+            },
+        },
+    }
+
+    deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+        Name:      "demo-login",
+        Namespace: "default",
+    }}
+    service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{
+        Name:      "demo-login",
+        Namespace: "default",
+    }}
+    configMap := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+        Name:      "demo-login-config",
+        Namespace: "default",
+    }}
+
+    client := fake.NewClientBuilder().
+        WithScheme(scheme).
+        WithStatusSubresource(&gatewayv1alpha1.BoostGatewayCluster{}).
+        WithObjects(cluster, deployment, service, configMap).
+        Build()
+
+    reconciler := &BoostGatewayClusterReconciler{
+        Client: client,
+        Scheme: scheme,
+    }
+
+    _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+        NamespacedName: types.NamespacedName{Name: cluster.Name, Namespace: cluster.Namespace},
+    })
+    if err != nil {
+        t.Fatalf("reconcile failed: %v", err)
+    }
+
+    if err := client.Get(context.Background(), types.NamespacedName{
+        Namespace: "default",
+        Name:      "demo-login",
+    }, &appsv1.Deployment{}); !apierrors.IsNotFound(err) {
+        t.Fatalf("expected login deployment deleted, got err=%v", err)
+    }
+    if err := client.Get(context.Background(), types.NamespacedName{
+        Namespace: "default",
+        Name:      "demo-login",
+    }, &corev1.Service{}); !apierrors.IsNotFound(err) {
+        t.Fatalf("expected login service deleted, got err=%v", err)
+    }
+    if err := client.Get(context.Background(), types.NamespacedName{
+        Namespace: "default",
+        Name:      "demo-login-config",
+    }, &corev1.ConfigMap{}); !apierrors.IsNotFound(err) {
+        t.Fatalf("expected login configmap deleted, got err=%v", err)
+    }
+}
+
+func newTestScheme(t *testing.T) *runtime.Scheme {
+    t.Helper()
+
+    scheme := runtime.NewScheme()
+    if err := corev1.AddToScheme(scheme); err != nil {
+        t.Fatalf("add core scheme: %v", err)
+    }
+    if err := appsv1.AddToScheme(scheme); err != nil {
+        t.Fatalf("add apps scheme: %v", err)
+    }
+    if err := gatewayv1alpha1.AddToScheme(scheme); err != nil {
+        t.Fatalf("add gateway scheme: %v", err)
+    }
+    return scheme
+}
+
+func assertEnvPresent(t *testing.T, env []corev1.EnvVar, name string) {
+    t.Helper()
+    for _, item := range env {
+        if item.Name == name {
+            return
+        }
+    }
+    t.Fatalf("missing env %s", name)
+}
+
+func assertEnvValue(t *testing.T, env []corev1.EnvVar, name string, expected string) {
+    t.Helper()
+    for _, item := range env {
+        if item.Name == name {
+            if item.Value != expected {
+                t.Fatalf("env %s mismatch: got %q want %q", name, item.Value, expected)
+            }
+            return
+        }
+    }
+    t.Fatalf("missing env %s", name)
+}

@@ -34,6 +34,28 @@ protoc --cpp_out=../src/v3/proto \
        proto/v3/*.proto
 ```
 
+仓库当前还提供了一个**不依赖 generated stub 的 typed helper 过渡层**：
+
+- `include/v3/proto/envelope_codec.h`
+
+它的定位是：
+
+1. 在未接入正式 `protoc` / gRPC 构建链前，先把 `ServiceEnvelope` 的消息 kind、domain 和 payload 契约收口
+2. 允许 `login/room/battle/match/leaderboard` 后端同时兼容 legacy raw JSON 与 wrapped envelope payload
+3. 为后续 generated protobuf/gRPC 接入提供调用形状上的过渡
+
+当前仓库内 proto 生成入口：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/generate_proto_cpp.ps1
+```
+
+对应的 CMake helper target：
+
+```bash
+cmake --build <build-dir> --target generate_v3_proto_cpp
+```
+
 ## 消息流
 
 ```
@@ -47,3 +69,9 @@ Gateway ──ServiceEnvelope──▶ Login Backend
 ## 与 v2.x JSON 兼容
 
 v3.0.0 初期同时支持 Protobuf 和 JSON 序列化，通过 FeatureFlag `v3_protobuf_enabled` 灰度切换。
+
+当前主线的实际状态是：
+
+- `match` / `leaderboard` 已切到 typed helper 驱动
+- `login` / `room` / `battle` 已具备 typed envelope message kind 支持
+- 真正的 generated protobuf/gRPC 仍是后续收口目标，而不是当前主线唯一传输路径

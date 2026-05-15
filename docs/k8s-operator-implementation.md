@@ -51,7 +51,8 @@ Current scaffold behavior:
 - Reconciles a `cert-manager.io/v1 Certificate` when
   `.spec.tls.managedByCertManager=true` and `.spec.tls.certManagerIssuer` is set
 - Writes `.status.phase`, `.status.readyReplicas`, `.status.desiredReplicas`,
-  and `Ready` / `TLSReady` conditions
+  `.status.components[]`, and `Ready` / `Progressing` / `Degraded` / `TLSReady`
+  conditions
 - Uses HTTP readiness/liveness probes when `managementPort` is configured
 
 ## Production Shape
@@ -132,12 +133,11 @@ Why:
 
 1. Keep both fake-client and `envtest` reconcile tests:
    fake-client stays as the fast edit loop, `envtest` becomes the API-accurate gate.
-2. Add cert-manager integration for TLS secrets.
+2. Extend `Degraded` from replica-count heuristics to richer rollout and dependency signals.
 3. Inject Raft peer membership into `match` and `leaderboard` pods from stable DNS.
 4. Rework Helm so Helm installs the operator and a sample `BoostGatewayCluster`,
    instead of trying to template every runtime object directly.
-5. Add a CI `kind` smoke test that runs `make install`, `make install-sample`,
-   and validates generated Deployments / StatefulSets.
+5. Expand CI `kind` smoke to assert `status.components[]` and all expected conditions.
 
 ## Notes About Existing Assets
 

@@ -168,7 +168,7 @@ SDK 封装     全量测试     文档+环境     分布式运行时
 | 编号 | 条目 | 说明 |
 |---|---|---|
 | D1 | Cluster Router | ✅ 跨节点服务发现和路由 |
-| D2 | Remote Actor Transport | ✅ 跨进程 `actor::tell()`，透明序列化 |
+| D2 | Remote Actor Transport | ✅ 跨进程 `actor::tell()`，当前为轻量 typed envelope 编码 |
 | D3 | 一致性哈希分片 | ✅ 按 room_id/battle_id 分配 |
 | D4 | 领导者选举 | ✅ Raft 基础实现 |
 | D5 | K8s Operator | ✅ 基础框架 (k8s_operator_test.cpp) |
@@ -205,6 +205,17 @@ SDK 封装     全量测试     文档+环境     分布式运行时
 | P2 | SchemaValidator 接入 | ✅ Runtime 6 条桥接路径 JSON Schema 校验 |
 | P3 | InputValidator 接入 | ✅ BattleActor 输入校验，静默拒绝 |
 
+### 2.10 v3.3.x — 验证与控制面收口（持续中）
+
+| 条目 | 当前状态 | 说明 |
+|---|---|---|
+| V1 | Typed ServiceEnvelope helper | ✅ | `include/v3/proto/envelope_codec.h` 已从轻量 wrapper 演进到 typed kind helper |
+| V2 | Backend envelope兼容 | ✅ | `login/room/battle/match/leaderboard` 后端均接受 wrapped payload |
+| V3 | 恢复/追平验证 | ✅ | 已补重启恢复与 follower catch-up 验证 |
+| V4 | Operator TLS/cert-manager | ✅ | `Secret` + `Certificate` reconcile |
+| V5 | Operator rollout-aware status | ✅ | `desiredReplicas`、`components[]`、`Ready/Progressing/Degraded/TLSReady` |
+| V6 | Proto generation入口 | ✅ | `scripts/generate_proto_cpp.ps1` + `generate_v3_proto_cpp` helper target |
+
 ---
 
 ## 3. 文档产出计划
@@ -238,6 +249,7 @@ v3.0.0  ████████████████████████
 v3.1.0  ████████████████████████████████████ 已完成 (2026-05-14, 751 tests)
 v3.2.0  ████████████████████████████████████ 已完成 (2026-05-14, 780 tests)
 v3.3.0  ████████████████████████████████████ 已完成 (2026-05-14, 780 tests, P0-P3 13模块集成)
+v3.3.x  ████████████████████░░░░░░░░░░░░░░░ 持续收口 (typed envelope / operator status / validation)
 ```
 
 ---
@@ -246,10 +258,10 @@ v3.3.0  ████████████████████████
 
 v2.0.0 已具备发布基础（`cmake --install`、Docker 镜像、systemd 部署、473 测试）。
 
-建议立即启动的优先级：
+当前建议优先级：
 
-1. **v2.0.1 H1-H2**（配置热加载 + 断路器）— 直接提升生产安全性
-2. **v2.0.2 B1-B2**（性能基准测试）— 建立数字基线，指导后续优化
-3. **v2.1.0 E1-E2**（多进程集成测试）— 验证架构正确性
+1. **收口 CI / 平台差异测试问题** — 先恢复主线稳定回归能力
+2. **继续推进 generated protobuf/gRPC** — 将 typed helper 升级为正式生成代码链
+3. **扩大多节点故障注入矩阵** — leader 切换、follower 追平、重启顺序扰动
 
-> **核心原则**：先加固（不丢数据、不炸服务），再测量（知道上限），最后扩展（更多功能）。
+> **当前核心原则**：先收口验证链，再推进正式传输层，最后扩展平台控制面能力。

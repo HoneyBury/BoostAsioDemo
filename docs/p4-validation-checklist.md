@@ -54,12 +54,13 @@ Expected:
 ## Proto / transport
 
 - `project_v2_unit_tests --gtest_filter="ProtoSchemaTest.*"`
-- `project_v2_integration_tests --gtest_filter="ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughMatchBackend:ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughLeaderboardBackend"`
+- `project_v2_integration_tests --gtest_filter="ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughLoginBackend:ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughRoomBackend:ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughBattleBackend:ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughMatchBackend:ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughLeaderboardBackend"`
 
 Expected:
 
 - `ServiceEnvelope`-style payloads can be encoded/decoded locally without generated gRPC stubs
-- `match` and `leaderboard` backends accept both legacy raw JSON and wrapped envelope payloads
+- `login/room/battle/match/leaderboard` 后端都接受 legacy raw JSON 与 wrapped envelope payload
+- `TypedEnvelope` helper 已覆盖 login / room / battle / match / leaderboard 的消息 kind
 
 ## Gateway bridge / readiness
 
@@ -95,6 +96,8 @@ Expected:
 
 - `tests/v2` GoogleTest discovery now uses `PRE_TEST` for `project_v2_integration_tests`
   to avoid Visual Studio post-build discovery failures in local Windows builds.
+- Redis live/integration tests may be reported as `Skipped` in CI when no Redis
+  service is provisioned; this is expected and not treated as a regression by itself.
 
 ## Dependency governance
 

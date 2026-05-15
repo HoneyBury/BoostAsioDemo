@@ -67,4 +67,13 @@
 3. **日常开发**：按《工程开发规范》执行。
 4. 每次较大迭代结束后更新《开发日志模板与阶段记录》和 `CHANGELOG.md`。
 5. 所有分支流转、提交信息和合并动作遵循《Git 工作流与提交规范》。
-6. v2.0.0 七大模块（M1-M7）已于 2026-05-12 全部落地，当前 `develop` 分支已进入 v2 实作阶段。详见《v2.0.0 启动清单》§7.5 和《开发优先级看板》§5。
+6. v2.0.0 七大模块（M1-M7）已于 2026-05-12 全部落地，当前主线已进入 **v3.3.x 收口阶段**：
+   - typed `ServiceEnvelope` helper 已接入 `login/room/battle/match/leaderboard`
+   - Operator 已具备 `Certificate` reconcile 与 rollout-aware `status.conditions`
+   - 恢复/追平验证与 P4 验证脚本已持续补强
+7. 对当前主线最有参考价值的文档是：
+   - `README.md`
+   - `docs/development-log.md`
+   - `docs/v2-enterprise-roadmap.md`
+   - `docs/p4-validation-checklist.md`
+   - `docs/k8s-operator-implementation.md`

@@ -59,6 +59,7 @@ def evaluate_gates(report: dict[str, Any]) -> dict[str, Any]:
         ("bump_arena_alloc", "p99_us", 10.0),
         ("object_pool_acquire_release", "p99_us", 50.0),
         ("spsc_queue_enqueue_dequeue", "p99_us", 10.0),
+        ("battle_world_tick_100_entities", "p99_us", 5000.0),
     ]
 
     gate_results: list[dict[str, Any]] = []

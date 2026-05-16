@@ -1,4 +1,5 @@
 #include "v2/actor/actor.h"
+#include "v2/battle/runtime_world.h"
 #include "v2/io/io_engine.h"
 #include "v2/io/mailbox.h"
 #include "v2/memory/arena.h"
@@ -264,6 +265,37 @@ LatencyStats run_spsc_queue_roundtrip_latency(std::size_t iterations) {
     return make_stats(std::move(samples), elapsed, iterations);
 }
 
+LatencyStats run_battle_world_tick_latency(std::size_t iterations) {
+    std::vector<std::string> player_ids;
+    player_ids.reserve(100);
+    for (std::size_t i = 0; i < 100; ++i) {
+        player_ids.push_back("player_" + std::to_string(i));
+    }
+
+    auto world = v2::battle::create_battle_world("bench_battle", "bench_room", player_ids, 0);
+    std::vector<double> samples;
+    samples.reserve(iterations);
+
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < iterations; ++i) {
+        const auto frame = static_cast<std::uint32_t>(i + 1);
+        if ((i % 10) == 0) {
+            (void)v2::battle::battle_world_process_input(
+                *world,
+                player_ids[i % player_ids.size()],
+                "move:1,1",
+                1,
+                frame);
+        }
+
+        const auto op_begin = now_ns();
+        (void)v2::battle::battle_world_advance_frame(*world, frame, "bench_tick");
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, iterations);
+}
+
 Options parse_args(int argc, char** argv) {
     Options options;
     for (int i = 1; i < argc; ++i) {
@@ -311,7 +343,8 @@ std::string build_json(const Options& options,
                        const LatencyStats& shutdown,
                        const LatencyStats& bump_arena_alloc,
                        const LatencyStats& object_pool_cycle,
-                       const LatencyStats& spsc_queue_roundtrip) {
+                       const LatencyStats& spsc_queue_roundtrip,
+                       const LatencyStats& battle_world_tick) {
     std::ostringstream out;
     out << "{\n"
         << "  \"tool\": \"v2_arch_benchmark\",\n"
@@ -324,7 +357,8 @@ std::string build_json(const Options& options,
     append_stats_json(out, "actor_shutdown_per_actor", shutdown, false);
     append_stats_json(out, "bump_arena_alloc", bump_arena_alloc, false);
     append_stats_json(out, "object_pool_acquire_release", object_pool_cycle, false);
-    append_stats_json(out, "spsc_queue_enqueue_dequeue", spsc_queue_roundtrip, true);
+    append_stats_json(out, "spsc_queue_enqueue_dequeue", spsc_queue_roundtrip, false);
+    append_stats_json(out, "battle_world_tick_100_entities", battle_world_tick, true);
     out << "  ]\n"
         << "}\n";
     return out.str();
@@ -342,6 +376,7 @@ int main(int argc, char** argv) {
         const auto bump_arena_alloc = run_bump_arena_alloc_latency(options.iterations);
         const auto object_pool_cycle = run_object_pool_cycle_latency(options.iterations);
         const auto spsc_queue_roundtrip = run_spsc_queue_roundtrip_latency(options.iterations);
+        const auto battle_world_tick = run_battle_world_tick_latency(options.iterations);
         const auto json = build_json(options,
                                      local_tell,
                                      cross_core_tell,
@@ -349,7 +384,8 @@ int main(int argc, char** argv) {
                                      shutdown,
                                      bump_arena_alloc,
                                      object_pool_cycle,
-                                     spsc_queue_roundtrip);
+                                     spsc_queue_roundtrip,
+                                     battle_world_tick);
 
         if (!options.output_path.empty()) {
             std::ofstream output(options.output_path, std::ios::binary);

@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | R4 快速契约 | `python scripts/verify_r4_contract.py --build-dir build/windows-msvc-debug --configuration Debug` | proto contract、聚焦单测、聚合集成测试、短性能基线全部通过，并写出 `runtime/validation/r4-contract-summary.json` |
 | CI 快速契约 | `python scripts/verify_r4_contract.py --build-dir <build-dir> --skip-build --skip-arch-baseline` | 不重编译、不跑性能基线，验证 schema 与 R4 聚焦测试；失败时 summary 标出 `failed_category` 和 `failed_step` |
+| 稳定性短 soak | `python scripts/verify_stability_soak.py --build-dir build/windows-msvc-debug --configuration Debug --skip-build` | I/O accept 策略、WriteBehind drain/failure、backend timeout/recovery、短架构基线全部通过，并写出 `runtime/validation/stability-soak-summary.json` |
 | Proto schema | `cmake --build <build-dir> --target check_v3_proto_schema` | v3 proto 文件、包名、核心 message 存在 |
 | Transport contract | `cmake --build <build-dir> --target check_v3_proto_transport_contract` | `ServiceEnvelope` 与各 domain oneof 字段覆盖生成传输实验所需字段 |
 
@@ -21,15 +22,16 @@
 | proto round-trip | 五个业务后端已有 typed envelope 往返测试 | `ServiceBusIntegrity.ProtoEnvelopeRoundTripsThrough*Backend` |
 | 连接恢复 | backend config 更新后可恢复路由，超时后旧连接关闭且可恢复 | `ServiceBusIntegrity.GatewayBridgeRecoversAfterBackendConfigUpdate`、`ServiceBusIntegrity.GatewayBridgeTimeoutClosesStaleConnectionAndRecovers` |
 | 熔断恢复 | 连续失败后打开 circuit breaker，等待窗口后半开探测成功并闭合 | `ServiceBusIntegrity.GatewayBridgeCircuitBreakerHalfOpenProbeRecovers` |
+| WriteBehind drain | flush/destructor 可排空队列，delegate 写失败会进入 failure 统计而不是卡住 | `V2WriteBehindStoreTest.WriteBehindFlushReportsDelegateFailures`、`V2WriteBehindStoreTest.WriteBehindDestructorDrainsLargePendingQueue` |
 
 ## 3. 性能基线
 
-短基线由 `scripts/collect_v2_arch_baseline.py` 采集，输出到 `runtime/perf/v2-arch-baseline/summary.json`。当前 R4 门禁默认使用较小参数，目标是证明基线链路和退化 gate 可运行；正式发布前应在固定机器上使用 Release 构建重复采集。
+短基线由 `scripts/collect_v2_arch_baseline.py` 采集，输出到 `runtime/perf/v2-arch-baseline/summary.json`。退化阈值在 `config/perf/v2_arch_baseline_gates.json` 中按 `debug` / `release` profile 管理。当前 R4 门禁默认使用较小参数，目标是证明基线链路和退化 gate 可运行；正式发布前应在固定机器上使用 Release 构建重复采集。
 
 推荐发布前命令：
 
 ```powershell
-python scripts/verify_r4_contract.py --build-dir build/windows-ninja-release --configuration Release
+python scripts/verify_r4_contract.py --build-dir build/windows-ninja-release --configuration Release --baseline-profile release
 ```
 
 如果只想验证契约而不更新性能数据：

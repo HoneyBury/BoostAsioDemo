@@ -14,6 +14,7 @@
 | trace/error 传播 | raw BackendEnvelope 与 typed envelope 桥接路径均有 trace/span/error 验证 | `ServiceBusIntegrity.GatewayBridgeRoutePropagatesTraceAndErrorCode`、`ServiceBusIntegrity.GatewayBridgeTypedEnvelopePreservesTraceAndError` |
 | 恢复路径 | backend 配置更新后路由可恢复，超时后旧连接关闭，circuit breaker 半开探测可恢复，heartbeat 可恢复 readiness | `ServiceBusIntegrity.GatewayBridgeRecoversAfterBackendConfigUpdate`、`ServiceBusIntegrity.GatewayBridgeTimeoutClosesStaleConnectionAndRecovers`、`ServiceBusIntegrity.GatewayBridgeCircuitBreakerHalfOpenProbeRecovers`、`HealthCheckTest.BackendHeartbeatRestoresReadinessAfterUnhealthyMark` |
 | proto transport 实验 | `check_v3_proto_schema` 校验基础 schema，`check_v3_proto_transport_contract` 校验生成传输实验所需 oneof contract | `scripts/check_v3_proto_schema.py`、`src/v3/CMakeLists.txt` |
+| P2-P5 稳定性收束 | 稳定性短 soak 覆盖 I/O accept 策略、backend 恢复、WriteBehind drain/failure 与短架构基线 | `scripts/verify_stability_soak.py`、`runtime/validation/stability-soak-summary.json` |
 
 ## 1. Actor 模型
 

@@ -17,6 +17,14 @@ namespace v2::data {
 
 class WriteBehindDataStore final : public v2::gateway::BattleArchiveSink {
 public:
+    struct Stats {
+        std::uint64_t enqueued = 0;
+        std::uint64_t flushed = 0;
+        std::uint64_t failed = 0;
+        std::size_t pending = 0;
+        bool worker_idle = true;
+    };
+
     explicit WriteBehindDataStore(
         std::shared_ptr<v2::gateway::BattleArchiveSink> delegate);
     ~WriteBehindDataStore() override;
@@ -40,6 +48,7 @@ public:
 
     // Blocks until all pending writes are flushed to the delegate.
     void flush();
+    [[nodiscard]] Stats stats() const;
 
 private:
     struct WriteCommand {
@@ -58,6 +67,9 @@ private:
     std::condition_variable cv_;
     std::thread worker_;
     std::atomic<bool> running_{true};
+    std::uint64_t enqueued_count_ = 0;
+    std::uint64_t flushed_count_ = 0;
+    std::uint64_t failed_count_ = 0;
     bool worker_idle_ = true;
 };
 

@@ -68,6 +68,37 @@ public:
     std::unordered_map<std::string, std::string> snapshots;
 };
 
+class FailingStore final : public v2::gateway::BattleArchiveSink {
+public:
+    bool persist(const v2::gateway::Runtime::BattleArchive&) override {
+        return false;
+    }
+
+    bool save_replay(const std::string&, std::string_view) override {
+        return false;
+    }
+
+    std::optional<std::string> load_replay(const std::string&) override {
+        return std::nullopt;
+    }
+
+    bool save_result(const std::string&, std::string_view) override {
+        return false;
+    }
+
+    std::optional<std::string> load_result(const std::string&) override {
+        return std::nullopt;
+    }
+
+    bool save_snapshot(const std::string&, std::string_view) override {
+        return false;
+    }
+
+    std::optional<std::string> load_snapshot(const std::string&) override {
+        return std::nullopt;
+    }
+};
+
 }  // namespace
 
 // ─── Tests ───────────────────────────────────────────────────────
@@ -173,4 +204,39 @@ TEST(V2WriteBehindStoreTest, WriteBehindDestructorFlushesRemaining) {
     EXPECT_EQ(delegate->results["battle_020"], R"({"destructed":"result"})");
     ASSERT_TRUE(delegate->snapshots.contains("battle_020"));
     EXPECT_EQ(delegate->snapshots["battle_020"], R"({"destructed":"snapshot"})");
+}
+
+TEST(V2WriteBehindStoreTest, WriteBehindFlushReportsDelegateFailures) {
+    auto delegate = std::make_shared<FailingStore>();
+    v2::data::WriteBehindDataStore store(std::move(delegate));
+
+    store.save_replay("battle_fail", R"({"replay":true})");
+    store.save_result("battle_fail", R"({"result":true})");
+    store.save_snapshot("battle_fail", R"({"snapshot":true})");
+    store.flush();
+
+    const auto stats = store.stats();
+    EXPECT_EQ(stats.enqueued, 3U);
+    EXPECT_EQ(stats.flushed, 0U);
+    EXPECT_EQ(stats.failed, 3U);
+    EXPECT_EQ(stats.pending, 0U);
+    EXPECT_TRUE(stats.worker_idle);
+}
+
+TEST(V2WriteBehindStoreTest, WriteBehindDestructorDrainsLargePendingQueue) {
+    auto delegate = std::make_shared<InMemoryStore>();
+
+    {
+        v2::data::WriteBehindDataStore store(delegate);
+        for (int i = 0; i < 200; ++i) {
+            const auto id = "battle_drain_" + std::to_string(i);
+            store.save_replay(id, R"({"drain":true})");
+        }
+        const auto before_flush = store.stats();
+        EXPECT_EQ(before_flush.enqueued, 200U);
+    }
+
+    EXPECT_EQ(delegate->replays.size(), 200U);
+    EXPECT_TRUE(delegate->replays.contains("battle_drain_0"));
+    EXPECT_TRUE(delegate->replays.contains("battle_drain_199"));
 }

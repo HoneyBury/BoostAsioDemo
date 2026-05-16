@@ -141,6 +141,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--baseline-actors", type=int, default=2000)
     parser.add_argument("--baseline-actor-limit", type=int, default=10000)
     parser.add_argument("--baseline-battles", type=int, default=100)
+    parser.add_argument("--baseline-profile", choices=["debug", "release"], default="debug")
     parser.add_argument(
         "--summary-path",
         type=Path,
@@ -162,6 +163,7 @@ def main() -> int:
         "configuration": args.configuration,
         "skip_build": args.skip_build,
         "skip_arch_baseline": args.skip_arch_baseline,
+        "baseline_profile": args.baseline_profile,
         "passed": False,
         "failed_category": "",
         "failed_step": "",
@@ -238,6 +240,8 @@ def main() -> int:
                     str(args.baseline_battles),
                     "--timeout-seconds",
                     str(args.baseline_timeout_seconds),
+                    "--gate-profile",
+                    args.baseline_profile,
                 ],
                 root,
                 args.baseline_timeout_seconds + 10,

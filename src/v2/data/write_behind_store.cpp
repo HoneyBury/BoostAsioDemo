@@ -48,6 +48,7 @@ bool WriteBehindDataStore::save_replay(const std::string& battle_id,
         .battle_id = battle_id,
         .json = std::string(replay_json),
     });
+    ++enqueued_count_;
     cv_.notify_one();
     return true;
 }
@@ -60,6 +61,7 @@ bool WriteBehindDataStore::save_result(const std::string& battle_id,
         .battle_id = battle_id,
         .json = std::string(result_json),
     });
+    ++enqueued_count_;
     cv_.notify_one();
     return true;
 }
@@ -72,6 +74,7 @@ bool WriteBehindDataStore::save_snapshot(const std::string& battle_id,
         .battle_id = battle_id,
         .json = std::string(snapshot_json),
     });
+    ++enqueued_count_;
     cv_.notify_one();
     return true;
 }
@@ -85,6 +88,7 @@ bool WriteBehindDataStore::persist(
         .json = {},
         .archive = archive,
     });
+    ++enqueued_count_;
     cv_.notify_one();
     return true;
 }
@@ -94,6 +98,17 @@ bool WriteBehindDataStore::persist(
 void WriteBehindDataStore::flush() {
     std::unique_lock lock(mutex_);
     cv_.wait(lock, [this] { return queue_.empty() && worker_idle_; });
+}
+
+WriteBehindDataStore::Stats WriteBehindDataStore::stats() const {
+    std::lock_guard lock(mutex_);
+    return Stats{
+        .enqueued = enqueued_count_,
+        .flushed = flushed_count_,
+        .failed = failed_count_,
+        .pending = queue_.size(),
+        .worker_idle = worker_idle_,
+    };
 }
 
 // ─── Worker ──────────────────────────────────────────────────────
@@ -114,15 +129,16 @@ void WriteBehindDataStore::worker_loop() {
             queue_.pop_front();
         }
 
+        bool ok = false;
         switch (cmd.kind) {
             case WriteCommand::Kind::kReplay:
-                delegate_->save_replay(cmd.battle_id, cmd.json);
+                ok = delegate_->save_replay(cmd.battle_id, cmd.json);
                 break;
             case WriteCommand::Kind::kResult:
-                delegate_->save_result(cmd.battle_id, cmd.json);
+                ok = delegate_->save_result(cmd.battle_id, cmd.json);
                 break;
             case WriteCommand::Kind::kSnapshot:
-                delegate_->save_snapshot(cmd.battle_id, cmd.json);
+                ok = delegate_->save_snapshot(cmd.battle_id, cmd.json);
                 break;
             case WriteCommand::Kind::kPersist: {
                 const auto& archive = cmd.archive;
@@ -148,15 +164,21 @@ void WriteBehindDataStore::worker_loop() {
                     {"scores", std::move(scores)},
                 };
 
-                delegate_->save_result(archive.battle_id, report.dump(2));
-                delegate_->save_replay(archive.battle_id,
-                                       archive.replay_payload);
+                const bool result_ok = delegate_->save_result(archive.battle_id, report.dump(2));
+                const bool replay_ok = delegate_->save_replay(archive.battle_id,
+                                                              archive.replay_payload);
+                ok = result_ok && replay_ok;
                 break;
             }
         }
 
         {
             std::lock_guard lock(mutex_);
+            if (ok) {
+                ++flushed_count_;
+            } else {
+                ++failed_count_;
+            }
             worker_idle_ = true;
         }
         cv_.notify_all();

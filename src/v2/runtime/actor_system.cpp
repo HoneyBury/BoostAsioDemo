@@ -224,9 +224,18 @@ bool ActorSystem::cancel_schedule(ScheduleId schedule_id) noexcept {
 }
 
 std::size_t ActorSystem::dispatch_all() {
+    return dispatch_ready(io_engine_ ? io_engine_->current_core_id() : std::nullopt);
+}
+
+std::size_t ActorSystem::dispatch_ready(std::optional<std::uint32_t> owner_core) {
+    if (shutting_down_) {
+        dispatch_owner_core_.reset();
+        return 0;
+    }
+
     std::size_t dispatched = 0;
     const auto previous_owner_core = dispatch_owner_core_;
-    dispatch_owner_core_ = io_engine_ ? io_engine_->current_core_id() : std::nullopt;
+    dispatch_owner_core_ = owner_core;
     promote_scheduled_messages();
     while (!ready_actors_.empty()) {
         const auto actor_id = ready_actors_.front();
@@ -249,6 +258,10 @@ std::size_t ActorSystem::dispatch_all() {
                 SPDLOG_ERROR("Actor {} threw unknown exception in on_message", actor_id);
             }
             ++dispatched;
+            if (shutting_down_) {
+                dispatch_owner_core_ = previous_owner_core;
+                return dispatched;
+            }
         }
     }
     ++dispatch_round_;
@@ -274,7 +287,7 @@ std::size_t ActorSystem::drain_mailbox_and_dispatch(std::uint32_t core_id) {
         enqueue_ready_actor(msg.header.target_actor, *cell);
     }
 
-    return dispatch_all();
+    return dispatch_ready(core_id);
 }
 
 std::optional<std::uint32_t> ActorSystem::dispatch_owner_core() const noexcept {
@@ -286,6 +299,7 @@ void ActorSystem::shutdown() {
         return;
     }
     shutting_down_ = true;
+    dispatch_owner_core_.reset();
     ready_actors_.clear();
     scheduled_messages_.clear();
 

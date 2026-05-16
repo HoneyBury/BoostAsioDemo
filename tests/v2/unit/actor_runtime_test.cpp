@@ -123,11 +123,51 @@ public:
     void unregister_session(std::uint32_t) override {}
     [[nodiscard]] std::uint32_t session_count(std::uint32_t) const noexcept override { return 0; }
     [[nodiscard]] std::uint32_t total_session_count() const noexcept override { return 0; }
-    bool post_mailbox(std::uint32_t, v2::actor::Message) override { return true; }
-    [[nodiscard]] std::vector<v2::actor::Message> drain_mailbox(std::uint32_t) override { return {}; }
+    bool post_mailbox(std::uint32_t core_id, v2::actor::Message message) override {
+        if (core_id >= mailboxes_.size()) {
+            return false;
+        }
+        mailboxes_[core_id].push_back(std::move(message));
+        return true;
+    }
+    [[nodiscard]] std::vector<v2::actor::Message> drain_mailbox(std::uint32_t core_id) override {
+        if (core_id >= mailboxes_.size()) {
+            return {};
+        }
+        auto drained = std::move(mailboxes_[core_id]);
+        mailboxes_[core_id].clear();
+        return drained;
+    }
     void set_actor_system(v2::runtime::ActorSystem*) override {}
 
     std::optional<std::uint32_t> current_core_id_;
+    std::vector<std::vector<v2::actor::Message>> mailboxes_{2};
+};
+
+class OwnerInspectingActor final : public v2::actor::Actor {
+public:
+    OwnerInspectingActor(v2::runtime::ActorSystem& system, std::vector<std::string>& observed)
+        : system_(system), observed_(observed) {}
+
+    void on_message(v2::actor::Message&&) override {
+        const auto core = system_.dispatch_owner_core();
+        observed_.push_back(core.has_value() ? std::to_string(*core) : "none");
+    }
+
+private:
+    v2::runtime::ActorSystem& system_;
+    std::vector<std::string>& observed_;
+};
+
+class ShutdownOnMessageActor final : public v2::actor::Actor {
+public:
+    explicit ShutdownOnMessageActor(v2::runtime::ActorSystem& system)
+        : system_(system) {}
+
+    void on_message(v2::actor::Message&&) override { system_.shutdown(); }
+
+private:
+    v2::runtime::ActorSystem& system_;
 };
 
 }  // namespace
@@ -617,21 +657,6 @@ TEST(V2ActorRuntimeTest, DispatchOwnerCoreReflectsCurrentIoCoreDuringDispatch) {
     actor_system.set_io_engine(&io_engine);
 
     std::vector<std::string> observed;
-    class OwnerInspectingActor final : public v2::actor::Actor {
-    public:
-        OwnerInspectingActor(v2::runtime::ActorSystem& system, std::vector<std::string>& observed)
-            : system_(system), observed_(observed) {}
-
-        void on_message(v2::actor::Message&&) override {
-            const auto core = system_.dispatch_owner_core();
-            observed_.push_back(core.has_value() ? std::to_string(*core) : "none");
-        }
-
-    private:
-        v2::runtime::ActorSystem& system_;
-        std::vector<std::string>& observed_;
-    };
-
     auto actor = actor_system.create_actor(std::make_unique<OwnerInspectingActor>(actor_system, observed));
     v2::actor::Message message;
     message.header.kind = v2::actor::MessageKind::kUser;
@@ -642,4 +667,50 @@ TEST(V2ActorRuntimeTest, DispatchOwnerCoreReflectsCurrentIoCoreDuringDispatch) {
     ASSERT_EQ(observed.size(), 1U);
     EXPECT_EQ(observed.front(), "1");
     EXPECT_EQ(actor_system.dispatch_owner_core(), std::nullopt);
+}
+
+TEST(V2ActorRuntimeTest, DrainMailboxDispatchUsesDrainedCoreAsOwner) {
+    v2::runtime::ActorSystem actor_system;
+    InspectingIoEngine io_engine;
+    io_engine.current_core_id_ = 0U;
+    actor_system.set_io_engine(&io_engine);
+
+    std::vector<std::string> observed;
+    auto actor = actor_system.create_actor(
+        std::make_unique<OwnerInspectingActor>(actor_system, observed),
+        {},
+        1U);
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.payload = std::string("cross-core-owner");
+    actor.tell(std::move(message));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+    EXPECT_TRUE(io_engine.drain_mailbox(0).empty());
+
+    EXPECT_EQ(actor_system.drain_mailbox_and_dispatch(1), 1U);
+    ASSERT_EQ(observed.size(), 1U);
+    EXPECT_EQ(observed.front(), "1");
+    EXPECT_EQ(actor_system.dispatch_owner_core(), std::nullopt);
+}
+
+TEST(V2ActorRuntimeTest, ShutdownDuringDispatchStopsWithoutDeliveringQueuedTail) {
+    v2::runtime::ActorSystem actor_system;
+    auto shutdown_actor = actor_system.create_actor(
+        std::make_unique<ShutdownOnMessageActor>(actor_system));
+
+    v2::actor::Message first;
+    first.header.kind = v2::actor::MessageKind::kUser;
+    first.payload = std::string("first");
+    shutdown_actor.tell(std::move(first));
+
+    v2::actor::Message second;
+    second.header.kind = v2::actor::MessageKind::kUser;
+    second.payload = std::string("second");
+    shutdown_actor.tell(std::move(second));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    EXPECT_EQ(actor_system.dispatch_owner_core(), std::nullopt);
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
 }

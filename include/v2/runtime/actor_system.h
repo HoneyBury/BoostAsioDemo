@@ -70,6 +70,7 @@ private:
     ActorCell* find_cell(v2::actor::ActorId actor_id) noexcept;
     void enqueue_ready_actor(v2::actor::ActorId actor_id, ActorCell& cell);
     void promote_scheduled_messages();
+    std::size_t dispatch_ready(std::optional<std::uint32_t> owner_core);
 
     struct ScheduledMessage {
         ScheduleId schedule_id = 0;

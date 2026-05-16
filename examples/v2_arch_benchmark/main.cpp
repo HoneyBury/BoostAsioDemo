@@ -1,5 +1,8 @@
 #include "v2/actor/actor.h"
 #include "v2/io/io_engine.h"
+#include "v2/io/mailbox.h"
+#include "v2/memory/arena.h"
+#include "v2/memory/object_pool.h"
 #include "v2/runtime/actor_system.h"
 
 #include <algorithm>
@@ -102,6 +105,11 @@ public:
     void on_message(v2::actor::Message&&) override {}
 };
 
+struct PoolItem {
+    std::uint64_t a = 0;
+    std::uint64_t b = 0;
+};
+
 LatencyStats make_stats(std::vector<double> samples, double elapsed_seconds, std::size_t operations) {
     LatencyStats stats;
     stats.samples = samples.size();
@@ -199,6 +207,63 @@ LatencyStats run_shutdown_latency(std::size_t actors) {
     return make_stats(std::move(samples), elapsed, actors);
 }
 
+LatencyStats run_bump_arena_alloc_latency(std::size_t iterations) {
+    v2::memory::BumpArena arena(iterations * 64 + 4096);
+    std::vector<double> samples;
+    samples.reserve(iterations);
+
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < iterations; ++i) {
+        const auto op_begin = now_ns();
+        auto* ptr = arena.alloc(32);
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+        if (ptr == nullptr) {
+            break;
+        }
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, iterations);
+}
+
+LatencyStats run_object_pool_cycle_latency(std::size_t iterations) {
+    v2::memory::ObjectPool<PoolItem, 1024> pool;
+    pool.prefill(iterations);
+    std::vector<double> samples;
+    samples.reserve(iterations);
+
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < iterations; ++i) {
+        const auto op_begin = now_ns();
+        auto* item = pool.acquire();
+        if (item != nullptr) {
+            item->a = i;
+            pool.release(item);
+        }
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, iterations);
+}
+
+LatencyStats run_spsc_queue_roundtrip_latency(std::size_t iterations) {
+    v2::io::SpscQueue<std::uint64_t> queue(iterations + 1);
+    std::vector<double> samples;
+    samples.reserve(iterations);
+
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < iterations; ++i) {
+        const auto op_begin = now_ns();
+        const auto enqueued = queue.try_enqueue(static_cast<std::uint64_t>(i));
+        auto dequeued = queue.try_dequeue();
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+        if (!enqueued || !dequeued.has_value()) {
+            break;
+        }
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, iterations);
+}
+
 Options parse_args(int argc, char** argv) {
     Options options;
     for (int i = 1; i < argc; ++i) {
@@ -243,7 +308,10 @@ std::string build_json(const Options& options,
                        const LatencyStats& local_tell,
                        const LatencyStats& cross_core_tell,
                        const LatencyStats& actor_create,
-                       const LatencyStats& shutdown) {
+                       const LatencyStats& shutdown,
+                       const LatencyStats& bump_arena_alloc,
+                       const LatencyStats& object_pool_cycle,
+                       const LatencyStats& spsc_queue_roundtrip) {
     std::ostringstream out;
     out << "{\n"
         << "  \"tool\": \"v2_arch_benchmark\",\n"
@@ -253,7 +321,10 @@ std::string build_json(const Options& options,
     append_stats_json(out, "actor_local_tell_dispatch", local_tell, false);
     append_stats_json(out, "actor_cross_core_tell_drain_dispatch", cross_core_tell, false);
     append_stats_json(out, "actor_create", actor_create, false);
-    append_stats_json(out, "actor_shutdown_per_actor", shutdown, true);
+    append_stats_json(out, "actor_shutdown_per_actor", shutdown, false);
+    append_stats_json(out, "bump_arena_alloc", bump_arena_alloc, false);
+    append_stats_json(out, "object_pool_acquire_release", object_pool_cycle, false);
+    append_stats_json(out, "spsc_queue_enqueue_dequeue", spsc_queue_roundtrip, true);
     out << "  ]\n"
         << "}\n";
     return out.str();
@@ -268,7 +339,17 @@ int main(int argc, char** argv) {
         const auto cross_core_tell = run_cross_core_tell_latency(options.iterations);
         const auto actor_create = run_actor_create_latency(options.actors);
         const auto shutdown = run_shutdown_latency(options.actors);
-        const auto json = build_json(options, local_tell, cross_core_tell, actor_create, shutdown);
+        const auto bump_arena_alloc = run_bump_arena_alloc_latency(options.iterations);
+        const auto object_pool_cycle = run_object_pool_cycle_latency(options.iterations);
+        const auto spsc_queue_roundtrip = run_spsc_queue_roundtrip_latency(options.iterations);
+        const auto json = build_json(options,
+                                     local_tell,
+                                     cross_core_tell,
+                                     actor_create,
+                                     shutdown,
+                                     bump_arena_alloc,
+                                     object_pool_cycle,
+                                     spsc_queue_roundtrip);
 
         if (!options.output_path.empty()) {
             std::ofstream output(options.output_path, std::ios::binary);

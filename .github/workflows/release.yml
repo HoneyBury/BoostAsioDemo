@@ -69,6 +69,9 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.test_preset }} --timeout 300
 
+      - name: R4 release contract gate
+        run: python scripts/verify_r4_contract.py --build-dir build/${{ matrix.configure_preset }} --skip-build --skip-arch-baseline --configuration Release
+
       - name: Install
         shell: bash
         run: |

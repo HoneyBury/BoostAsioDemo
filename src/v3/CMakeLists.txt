@@ -28,5 +28,13 @@ add_custom_target(check_v3_proto_schema
     COMMENT "Validate v3 proto schema without requiring protoc"
 )
 
+add_custom_target(check_v3_proto_transport_contract
+    COMMAND python "${CMAKE_SOURCE_DIR}/scripts/check_v3_proto_schema.py"
+            --proto-dir "${CMAKE_SOURCE_DIR}/proto/v3"
+            --require-transport-contract
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Validate v3 experimental generated-transport contract"
+)
+
 add_subdirectory(cluster)
 add_subdirectory(persistence)

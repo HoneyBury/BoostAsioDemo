@@ -532,6 +532,100 @@ TEST(ServiceBusIntegrity, GatewayBridgeRoutePropagatesTraceAndErrorCode) {
     EXPECT_EQ(observed_request.correlation_id, result.correlation_id);
 }
 
+TEST(ServiceBusIntegrity, GatewayBridgeTypedEnvelopePreservesTraceAndError) {
+    constexpr std::uint64_t kTraceId = 0x2233445566778899ULL;
+    constexpr std::uint64_t kSpanId = 0xAABBCCDDEEFF0011ULL;
+    constexpr auto kErrorCode = static_cast<std::int32_t>(
+        v2::service::ServiceErrorCode::kInvalidRequest);
+
+    std::mutex observed_mutex;
+    v2::service::BackendEnvelope observed_request;
+    std::optional<v3::proto::TypedEnvelope> observed_typed_request;
+    std::optional<v3::proto::TypedEnvelope> observed_typed_response;
+
+    v2::service::BackendServer::HandlerMap handlers;
+    handlers["login_request"] = [&](const v2::service::BackendEnvelope& req) {
+        auto typed = v3::proto::decode_typed_envelope(req.payload);
+
+        v3::proto::EnvelopeMeta response_meta;
+        response_meta.correlation_id = req.correlation_id;
+        response_meta.source_service = "login";
+        response_meta.target_service = "gateway";
+        response_meta.error_code = kErrorCode;
+        response_meta.trace_id = req.trace_id;
+        response_meta.span_id = req.span_id;
+        const auto typed_response_payload = v3::proto::encode_typed_envelope(
+            response_meta,
+            v3::proto::EnvelopeMessageKind::kLoginResponse,
+            {{"error", "invalid_request"}});
+
+        {
+            std::lock_guard lock(observed_mutex);
+            observed_request = req;
+            observed_typed_request = typed;
+            observed_typed_response = v3::proto::decode_typed_envelope(typed_response_payload);
+        }
+
+        v2::service::BackendEnvelope resp;
+        resp.kind = v2::service::MessageKind::kError;
+        resp.error_code = kErrorCode;
+        resp.payload = typed_response_payload;
+        resp.trace_id = req.trace_id;
+        resp.span_id = req.span_id;
+        return resp;
+    };
+
+    v2::service::BackendServer server(0, std::move(handlers));
+    server.start();
+
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = server.local_port(),
+        });
+    bridge.set_trace_context(kTraceId, kSpanId);
+
+    v3::proto::EnvelopeMeta meta;
+    meta.source_service = "gateway";
+    meta.target_service = "login";
+    meta.trace_id = kTraceId;
+    meta.span_id = kSpanId;
+    const auto payload = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kLoginRequest,
+        {{"user_id", "bad"}, {"token", ""}});
+
+    const auto result = bridge.route(
+        v2::service::ServiceId::kLogin,
+        "login_request",
+        payload);
+
+    bridge.shutdown();
+    server.stop();
+
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.error, v2::service::ServiceErrorCode::kInvalidRequest);
+    EXPECT_NE(result.correlation_id, 0U);
+
+    std::lock_guard lock(observed_mutex);
+    EXPECT_EQ(observed_request.message_type, "login_request");
+    EXPECT_EQ(observed_request.trace_id, kTraceId);
+    EXPECT_EQ(observed_request.span_id, kSpanId);
+    EXPECT_EQ(observed_request.correlation_id, result.correlation_id);
+
+    ASSERT_TRUE(observed_typed_request.has_value());
+    EXPECT_EQ(observed_typed_request->message_kind, v3::proto::EnvelopeMessageKind::kLoginRequest);
+    EXPECT_EQ(observed_typed_request->meta.trace_id, kTraceId);
+    EXPECT_EQ(observed_typed_request->meta.span_id, kSpanId);
+
+    ASSERT_TRUE(observed_typed_response.has_value());
+    EXPECT_EQ(observed_typed_response->message_kind, v3::proto::EnvelopeMessageKind::kLoginResponse);
+    EXPECT_EQ(observed_typed_response->meta.correlation_id, result.correlation_id);
+    EXPECT_EQ(observed_typed_response->meta.trace_id, kTraceId);
+    EXPECT_EQ(observed_typed_response->meta.span_id, kSpanId);
+    EXPECT_EQ(observed_typed_response->meta.error_code, kErrorCode);
+}
+
 TEST(ServiceBusIntegrity, GatewayBridgeRecoversAfterBackendConfigUpdate) {
     v2::gateway::GatewayServiceBridge bridge(
         v2::gateway::GatewayServiceBridge::BackendConfig{

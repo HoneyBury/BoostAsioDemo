@@ -3,6 +3,18 @@
 > 本文档定义 BoostAsioDemo 作为高性能游戏服务器框架在各架构维度的量化验收标准。
 > 当前 R2 实测数据来源：`docs/architecture-baseline-r2.md` 与 `runtime/perf/v2-arch-baseline/summary.json`。
 
+## 0. 2026-05-16 实测回填
+
+| 领域 | 当前事实 | 验收证据 |
+| --- | --- | --- |
+| R1/R2 性能基线 | `v2_arch_benchmark` 与 `scripts/collect_v2_arch_baseline.py` 已形成短运行采集闭环，`summary.json` 输出 release gate | `docs/architecture-baseline-r2.md`、`runtime/perf/v2-arch-baseline/summary.json` |
+| Actor 调度公平性 | `ActorSystem::dispatch_ready()` 已按 ready actor 轮转，每个 actor 每轮最多处理一条消息 | `V2ActorRuntimeTest.DispatchAllInterleavesReadyActorsFairly` |
+| Actor shutdown 竞态 | dispatch 中触发 shutdown 后不会继续投递其他 ready actor | `V2ActorRuntimeTest.ShutdownDuringFairDispatchStopsOtherReadyActors` |
+| R4 typed envelope | login/room/battle/match/leaderboard 主 handler 已经通过统一 adapter 解析 typed envelope，并保留 legacy raw JSON 兼容 | `V2ServiceBoundaryTest.*Envelope*`、`ServiceBusIntegrity.ProtoEnvelopeRoundTripsThrough*Backend` |
+| trace/error 传播 | raw BackendEnvelope 与 typed envelope 桥接路径均有 trace/span/error 验证 | `ServiceBusIntegrity.GatewayBridgeRoutePropagatesTraceAndErrorCode`、`ServiceBusIntegrity.GatewayBridgeTypedEnvelopePreservesTraceAndError` |
+| 恢复路径 | backend 配置更新后路由可恢复，heartbeat 可恢复 readiness | `ServiceBusIntegrity.GatewayBridgeRecoversAfterBackendConfigUpdate`、`HealthCheckTest.BackendHeartbeatRestoresReadinessAfterUnhealthyMark` |
+| proto transport 实验 | `check_v3_proto_schema` 校验基础 schema，`check_v3_proto_transport_contract` 校验生成传输实验所需 oneof contract | `scripts/check_v3_proto_schema.py`、`src/v3/CMakeLists.txt` |
+
 ## 1. Actor 模型
 
 ### 1.1 消息投递

@@ -379,7 +379,9 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
 
     const auto send_start = std::chrono::steady_clock::now();
     auto response = conn->send_request(request);
-    if (!response) {
+    const auto failure_stage = conn->last_failure_stage();
+    if (!response &&
+        failure_stage != v2::service::BackendConnection::FailureStage::kRead) {
         conn->close();
         conn = ensure_connection(target, shard_key);
         if (conn) {

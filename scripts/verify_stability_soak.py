@@ -76,7 +76,16 @@ def find_executable(build_dir: Path, base_name: str) -> Path:
     return matches[0]
 
 
-def tail(text: str, max_chars: int = 4000) -> str:
+def normalize_output(text: str | bytes | None) -> str:
+    if text is None:
+        return ""
+    if isinstance(text, bytes):
+        return text.decode("utf-8", errors="replace")
+    return text
+
+
+def tail(text: str | bytes | None, max_chars: int = 4000) -> str:
+    text = normalize_output(text)
     return text if len(text) <= max_chars else text[-max_chars:]
 
 
@@ -88,6 +97,8 @@ def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_second
             cmd,
             cwd=cwd,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout_seconds,
@@ -106,10 +117,12 @@ def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_second
             "stderr_tail": tail(exc.stderr or ""),
         }
 
-    if completed.stdout:
-        print(completed.stdout, end="")
-    if completed.stderr:
-        print(completed.stderr, end="", file=sys.stderr)
+    stdout = normalize_output(completed.stdout)
+    stderr = normalize_output(completed.stderr)
+    if stdout:
+        print(stdout, end="")
+    if stderr:
+        print(stderr, end="", file=sys.stderr)
     return {
         "name": name,
         "category": category,
@@ -119,8 +132,8 @@ def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_second
         "status": "passed" if completed.returncode == 0 else "failed",
         "returncode": completed.returncode,
         "duration_seconds": round(time.monotonic() - started, 3),
-        "stdout_tail": tail(completed.stdout),
-        "stderr_tail": tail(completed.stderr),
+        "stdout_tail": tail(stdout),
+        "stderr_tail": tail(stderr),
     }
 
 

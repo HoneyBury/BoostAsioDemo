@@ -27,6 +27,13 @@ struct BackendConnectionOptions {
 
 class BackendConnection {
 public:
+    enum class FailureStage {
+        kNone,
+        kNotConnected,
+        kWrite,
+        kRead,
+    };
+
     explicit BackendConnection(BackendConnectionOptions options);
     ~BackendConnection();
 
@@ -43,6 +50,7 @@ public:
     void close();
 
     [[nodiscard]] bool is_connected() const;
+    [[nodiscard]] FailureStage last_failure_stage() const noexcept { return last_failure_stage_; }
 
     /// Returns true if the connection is secured with TLS.
     [[nodiscard]] bool is_tls_enabled() const { return options_.tls_config.has_value(); }
@@ -55,6 +63,7 @@ private:
     std::unique_ptr<boost::asio::ip::tcp::socket> socket_;
     std::unique_ptr<boost::asio::ssl::context> ssl_context_;
     std::unique_ptr<boost::asio::ssl::stream<boost::asio::ip::tcp::socket&>> ssl_stream_;
+    FailureStage last_failure_stage_ = FailureStage::kNone;
 };
 
 }  // namespace v2::service

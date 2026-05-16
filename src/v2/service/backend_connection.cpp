@@ -118,7 +118,11 @@ bool BackendConnection::tls_handshake() {
 
 std::optional<BackendEnvelope> BackendConnection::send_request(
     BackendEnvelope request) {
-    if (!socket_ || !socket_->is_open()) return std::nullopt;
+    last_failure_stage_ = FailureStage::kNone;
+    if (!socket_ || !socket_->is_open()) {
+        last_failure_stage_ = FailureStage::kNotConnected;
+        return std::nullopt;
+    }
 
     if (request.correlation_id == 0) {
         request.correlation_id = generate_correlation_id();
@@ -127,11 +131,13 @@ std::optional<BackendEnvelope> BackendConnection::send_request(
 
     if (ssl_stream_) {
         if (!write_frame(*ssl_stream_, request)) {
+            last_failure_stage_ = FailureStage::kWrite;
             close();
             return std::nullopt;
         }
         auto response = read_frame(*ssl_stream_, options_.timeout);
         if (!response) {
+            last_failure_stage_ = FailureStage::kRead;
             close();
             return std::nullopt;
         }
@@ -139,12 +145,14 @@ std::optional<BackendEnvelope> BackendConnection::send_request(
     }
 
     if (!write_frame(*socket_, request)) {
+        last_failure_stage_ = FailureStage::kWrite;
         close();
         return std::nullopt;
     }
 
     auto response = read_frame(*socket_, options_.timeout);
     if (!response) {
+        last_failure_stage_ = FailureStage::kRead;
         close();
         return std::nullopt;
     }

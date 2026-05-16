@@ -1,6 +1,6 @@
 # 当前项目事实源
 
-更新时间：2026-05-16
+更新时间：2026-05-17
 
 本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `BoostAsioDemo VERSION 3.3.2` 为准；提交状态以 `git HEAD` 为准。
 
@@ -10,6 +10,7 @@
 - v2.x：当前主线。`ActorSystem`、gateway-only ingress、五个后端服务、`BackendEnvelope`、typed envelope adapter、服务健康检查、TTL/readiness、WriteBehind drain 统计与失败上报已经进入可验收状态。
 - R4 契约门禁：`scripts/verify_r4_contract.py` 覆盖通信契约、后端恢复、typed envelope、proto schema、gateway-only ingress 和短架构基线入口。
 - 稳定性门禁：`scripts/verify_stability_soak.py` 覆盖 I/O accept policy、WriteBehind drain/failure、backend timeout/recovery 和短架构基线，提供 `smoke`、`short`、`medium` soak profile。
+- Windows 后端稳定性：`BackendServer` 已支持多会话跟踪与关闭收口；plain TCP `read_frame()` 不再依赖平台 `select()`，改为 Boost.Asio non-blocking bounded read，降低 Windows/MSVC 下 stale backend 与多客户端 smoke 的挂起风险。
 - RC 总门禁：`scripts/verify_release_candidate.py` 汇总可靠性矩阵、R4 契约、稳定性 soak 和可选 Release baseline，并输出结构化 summary。
 
 ## 增量能力

@@ -4,12 +4,15 @@
 
 #include <boost/asio.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 namespace v2::service {
 
@@ -40,8 +43,10 @@ private:
     HandlerMap handlers_;
     boost::asio::io_context io_context_;
     std::unique_ptr<boost::asio::ip::tcp::acceptor> acceptor_;
-    std::shared_ptr<boost::asio::ip::tcp::socket> session_socket_;
+    std::mutex session_mutex_;
+    std::vector<std::shared_ptr<boost::asio::ip::tcp::socket>> session_sockets_;
     std::thread thread_;
+    std::vector<std::thread> session_threads_;
     std::atomic<bool> running_{false};
 };
 

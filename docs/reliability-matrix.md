@@ -1,12 +1,14 @@
 # 可靠性矩阵
 
-更新时间：2026-05-16
+更新时间：2026-05-17
 
 本矩阵只记录已经具备本地证据的可靠性场景。每个场景必须绑定测试、脚本或文档证据；`scripts/check_reliability_matrix.py` 会校验必需场景和证据路径。
 
 | 场景 ID | 状态 | 风险/故障模型 | 证据 |
 | --- | --- | --- | --- |
 | `backend_timeout_recovery` | stable | 后端请求超时后必须关闭陈旧连接并恢复后续请求 | `tests/v2/integration/service_bus_integrity_test.cpp`, `scripts/verify_r4_contract.py`, `scripts/verify_stability_soak.py` |
+| `backend_multisession_shutdown` | stable | 后端测试服务器必须同时跟踪多个 TCP 会话，stop 时关闭所有活动 socket 并等待会话线程退出，避免 Windows smoke/soak 悬挂 | `include/v2/service/backend_server.h`, `src/v2/service/backend_server.cpp`, `tests/v2/integration/service_bus_integrity_test.cpp`, `scripts/verify_stability_soak.py` |
+| `backend_plain_tcp_bounded_read` | stable | plain TCP 后端帧读取必须在无完整 header/payload 时按 timeout 返回，不依赖 Unix-only `select()` 路径 | `src/v2/service/backend_frame_codec.cpp`, `tests/v2/integration/service_bus_integrity_test.cpp`, `scripts/verify_stability_soak.py` |
 | `circuit_breaker_half_open` | stable | 熔断后必须允许 half-open 探测并恢复健康后端 | `tests/v2/integration/service_bus_integrity_test.cpp`, `scripts/verify_r4_contract.py`, `scripts/verify_stability_soak.py` |
 | `readiness_heartbeat_recovery` | stable | 服务 heartbeat/TTL/readiness 状态变化必须可观测并可恢复 | `tests/v2/unit/health_check_test.cpp`, `docs/architecture-acceptance-criteria.md`, `scripts/verify_r4_contract.py` |
 | `writebehind_drain_failure` | stable | 写后端队列析构 drain 和 delegate failure 必须有统计与测试覆盖 | `tests/v2/unit/write_behind_store_test.cpp`, `include/v2/data/write_behind_store.h`, `src/v2/data/write_behind_store.cpp`, `scripts/verify_stability_soak.py` |

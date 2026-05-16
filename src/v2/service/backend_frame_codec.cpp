@@ -6,10 +6,7 @@
 #include <array>
 #include <chrono>
 #include <cstring>
-
-#ifdef __APPLE__
-#include <sys/select.h>
-#endif
+#include <thread>
 
 namespace v2::service {
 
@@ -33,19 +30,43 @@ std::uint32_t decode_length(const std::array<std::byte, kFrameLengthHeaderSize>&
            (static_cast<std::uint32_t>(header[3]) << 24);
 }
 
-bool wait_for_data(int fd, std::chrono::milliseconds timeout) {
-    fd_set read_fds;
-    FD_ZERO(&read_fds);
-    FD_SET(fd, &read_fds);
+bool read_exactly_with_timeout(asio::ip::tcp::socket& socket,
+                               void* data,
+                               std::size_t length,
+                               std::chrono::milliseconds timeout) {
+    boost::system::error_code ec;
+    socket.non_blocking(true, ec);
+    if (ec) {
+        return false;
+    }
 
-    const auto secs = std::chrono::duration_cast<std::chrono::seconds>(timeout);
-    const auto usecs = std::chrono::duration_cast<std::chrono::microseconds>(timeout - secs);
+    std::size_t total = 0;
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    auto* out = static_cast<char*>(data);
+    while (total < length) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline || !socket.is_open()) {
+            socket.non_blocking(false, ec);
+            return false;
+        }
 
-    struct timeval tv{};
-    tv.tv_sec = static_cast<long>(secs.count());
-    tv.tv_usec = static_cast<long>(usecs.count());
+        const auto remaining = length - total;
+        const auto read = socket.read_some(asio::buffer(out + total, remaining), ec);
+        if (!ec) {
+            total += read;
+            continue;
+        }
+        if (ec == asio::error::would_block || ec == asio::error::try_again) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
 
-    return ::select(fd + 1, &read_fds, nullptr, nullptr, &tv) > 0;
+        socket.non_blocking(false, ec);
+        return false;
+    }
+
+    socket.non_blocking(false, ec);
+    return true;
 }
 
 }  // namespace
@@ -68,26 +89,18 @@ std::optional<BackendEnvelope> decode_frame(std::string_view json_bytes) {
 
 std::optional<BackendEnvelope> read_frame(asio::ip::tcp::socket& socket,
                                           std::chrono::milliseconds timeout) {
-    const int fd = socket.native_handle();
-
-    if (!wait_for_data(fd, timeout)) return std::nullopt;
-
-    boost::system::error_code ec;
-
     std::array<std::byte, kFrameLengthHeaderSize> header{};
-    asio::read(socket, asio::buffer(header.data(), kFrameLengthHeaderSize),
-               asio::transfer_exactly(kFrameLengthHeaderSize), ec);
-    if (ec) return std::nullopt;
+    if (!read_exactly_with_timeout(socket, header.data(), kFrameLengthHeaderSize, timeout)) {
+        return std::nullopt;
+    }
 
     const auto payload_length = decode_length(header);
     if (payload_length == 0 || payload_length > 1024 * 1024) return std::nullopt;
 
-    if (!wait_for_data(fd, timeout)) return std::nullopt;
-
     std::string json_bytes(payload_length, '\0');
-    asio::read(socket, asio::buffer(json_bytes.data(), payload_length),
-               asio::transfer_exactly(payload_length), ec);
-    if (ec) return std::nullopt;
+    if (!read_exactly_with_timeout(socket, json_bytes.data(), payload_length, timeout)) {
+        return std::nullopt;
+    }
 
     return from_json(json_bytes);
 }
@@ -105,13 +118,8 @@ bool write_frame(asio::ip::tcp::socket& socket, const BackendEnvelope& envelope)
 std::optional<BackendEnvelope> read_frame(
     asio::ssl::stream<asio::ip::tcp::socket&>& stream,
     std::chrono::milliseconds timeout) {
-    auto& socket = stream.next_layer();
-    const int fd = socket.native_handle();
-
-    if (!wait_for_data(fd, timeout)) return std::nullopt;
-
+    (void)timeout;
     boost::system::error_code ec;
-
     std::array<std::byte, kFrameLengthHeaderSize> header{};
     asio::read(stream, asio::buffer(header.data(), kFrameLengthHeaderSize),
                asio::transfer_exactly(kFrameLengthHeaderSize), ec);
@@ -119,8 +127,6 @@ std::optional<BackendEnvelope> read_frame(
 
     const auto payload_length = decode_length(header);
     if (payload_length == 0 || payload_length > 1024 * 1024) return std::nullopt;
-
-    if (!wait_for_data(fd, timeout)) return std::nullopt;
 
     std::string json_bytes(payload_length, '\0');
     asio::read(stream, asio::buffer(json_bytes.data(), payload_length),

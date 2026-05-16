@@ -5,6 +5,8 @@
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/strand.hpp>
 
+#include <algorithm>
+
 namespace v2::service {
 
 namespace asio = boost::asio;
@@ -33,13 +35,32 @@ void BackendServer::stop() {
         boost::system::error_code ec;
         acceptor_->close(ec);
     }
-    if (session_socket_) {
+    std::vector<std::shared_ptr<tcp::socket>> sessions;
+    {
+        std::scoped_lock lock(session_mutex_);
+        sessions = session_sockets_;
+    }
+    for (auto& session : sessions) {
+        if (!session) {
+            continue;
+        }
         boost::system::error_code ec;
-        session_socket_->close(ec);
+        session->close(ec);
     }
     io_context_.stop();
     if (thread_.joinable()) {
         thread_.join();
+    }
+
+    std::vector<std::thread> session_threads;
+    {
+        std::scoped_lock lock(session_mutex_);
+        session_threads.swap(session_threads_);
+    }
+    for (auto& session_thread : session_threads) {
+        if (session_thread.joinable()) {
+            session_thread.join();
+        }
     }
 }
 
@@ -54,14 +75,23 @@ void BackendServer::do_accept() {
     auto socket = std::make_shared<tcp::socket>(io_context_);
     acceptor_->async_accept(*socket, [this, socket](boost::system::error_code ec) {
         if (!ec && running_) {
-            handle_session(std::move(socket));
+            std::scoped_lock lock(session_mutex_);
+            if (!running_) {
+                return;
+            }
+            session_threads_.emplace_back([this, socket] {
+                handle_session(socket);
+            });
         }
         do_accept();
     });
 }
 
 void BackendServer::handle_session(std::shared_ptr<tcp::socket> socket) {
-    session_socket_ = socket;
+    {
+        std::scoped_lock lock(session_mutex_);
+        session_sockets_.push_back(socket);
+    }
     while (running_ && socket->is_open()) {
         auto request = read_frame(*socket, std::chrono::milliseconds(7000));
         if (!request) break;
@@ -96,7 +126,12 @@ void BackendServer::handle_session(std::shared_ptr<tcp::socket> socket) {
 
         write_frame(*socket, response);
     }
-    session_socket_.reset();
+    {
+        std::scoped_lock lock(session_mutex_);
+        session_sockets_.erase(
+            std::remove(session_sockets_.begin(), session_sockets_.end(), socket),
+            session_sockets_.end());
+    }
 }
 
 }  // namespace v2::service

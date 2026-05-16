@@ -67,6 +67,7 @@ install(TARGETS
     v2_match_backend
     v2_leaderboard_backend
     v2_gateway_pressure
+    v2_arch_benchmark
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
@@ -98,6 +99,7 @@ install(FILES
     docs/v2-service-split-plan.md
     docs/v2-enterprise-roadmap.md
     docs/architecture-acceptance-criteria.md
+    docs/architecture-baseline-r2.md
     docs/performance-baseline.md
     docs/v3-production-readiness-plan.md
     docs/v3-release-checklist.md

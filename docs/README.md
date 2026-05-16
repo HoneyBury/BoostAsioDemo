@@ -53,6 +53,7 @@
 
 - [性能基线报告](./performance-baseline.md) — 吞吐/延迟/资源基线测量方法、SLO/SLI 定义、容量规划公式与扩容推荐
 - [Windows R1 基线结果](./performance-baseline-windows-r1.md) — `2026-05-16` 首轮 Windows baseline 实测、聚合结果与 gate 判定
+- [R2 架构微基准闭环](./architecture-baseline-r2.md) — Actor runtime 本地投递、跨 core mailbox、创建与 shutdown 微基准入口
 - [v2.x 企业级迭代路线](./v2-enterprise-roadmap.md) §2.2 — B1-B6 六项性能基线验收记录
 
 ### v2.x 企业级迭代

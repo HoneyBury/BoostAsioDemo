@@ -26,6 +26,8 @@
 6. `GatewayServiceBridge::route()` 已有 integration 测试覆盖 trace/span 写入 backend request，并验证 backend error code 与 correlation id 返回到 routing result。
 7. login/room/battle/match/leaderboard 主业务 handler 已复用 `v2::service::decode_handler_payload()` 与 `wrap_typed_response_if_needed()`，typed envelope 与 legacy raw JSON 的边界处理集中到 adapter。
 8. legacy raw JSON 路径已有集中 deprecation 标记：`legacy_raw_json_deprecation_notice()`；handler 仍保持兼容，但 adapter 会标识 `HandlerPayloadEncoding::kLegacyRawJson`。
+9. `GatewayServiceBridge` 已有恢复验证：backend 初始不可用时返回 unavailable，更新 backend config 指向可用实例后可恢复路由。
+10. `/ready` 所依赖的 `HealthCheck` 已验证 registry unhealthy 后通过 heartbeat 恢复到 pass。
 
 ## 3. 性能基线
 

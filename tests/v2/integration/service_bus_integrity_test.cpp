@@ -532,6 +532,50 @@ TEST(ServiceBusIntegrity, GatewayBridgeRoutePropagatesTraceAndErrorCode) {
     EXPECT_EQ(observed_request.correlation_id, result.correlation_id);
 }
 
+TEST(ServiceBusIntegrity, GatewayBridgeRecoversAfterBackendConfigUpdate) {
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = 1,
+        });
+
+    const auto unavailable = bridge.route(
+        v2::service::ServiceId::kLogin,
+        "login_request",
+        R"({"user_id":"alice","token":"token:alice"})");
+    EXPECT_FALSE(unavailable.success);
+    EXPECT_EQ(unavailable.error, v2::service::ServiceErrorCode::kUnavailable);
+
+    v2::service::BackendServer::HandlerMap handlers;
+    handlers["login_request"] = [](const v2::service::BackendEnvelope&) {
+        v2::service::BackendEnvelope resp;
+        resp.kind = v2::service::MessageKind::kResponse;
+        resp.payload = R"({"status":"ok","user_id":"alice"})";
+        return resp;
+    };
+    v2::service::BackendServer server(0, std::move(handlers));
+    server.start();
+
+    bridge.update_backend_config(
+        v2::service::ServiceId::kLogin,
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = server.local_port(),
+        });
+
+    const auto recovered = bridge.route(
+        v2::service::ServiceId::kLogin,
+        "login_request",
+        R"({"user_id":"alice","token":"token:alice"})");
+
+    bridge.shutdown();
+    server.stop();
+
+    EXPECT_TRUE(recovered.success);
+    EXPECT_EQ(recovered.error, v2::service::ServiceErrorCode::kOk);
+    EXPECT_NE(recovered.response_payload.find("\"status\":\"ok\""), std::string::npos);
+}
+
 TEST(ServiceBusIntegrity, ServiceErrorCodeClientMapping) {
     using v2::service::ServiceErrorCode;
     // Verify all service error codes have defined to_client_error mappings

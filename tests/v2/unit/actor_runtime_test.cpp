@@ -42,6 +42,22 @@ private:
     std::vector<std::string>& received_;
 };
 
+class SequencingActor final : public v2::actor::Actor {
+public:
+    SequencingActor(std::string name, std::vector<std::string>& sequence)
+        : name_(std::move(name)), sequence_(sequence) {}
+
+    void on_message(v2::actor::Message&& message) override {
+        if (const auto* text = std::get_if<std::string>(&message.payload)) {
+            sequence_.push_back(name_ + ":" + *text);
+        }
+    }
+
+private:
+    std::string name_;
+    std::vector<std::string>& sequence_;
+};
+
 class ForwardingActor final : public v2::actor::Actor {
 public:
     explicit ForwardingActor(v2::actor::ActorRef target)
@@ -723,6 +739,59 @@ TEST(V2ActorRuntimeTest, ShutdownDuringDispatchStopsWithoutDeliveringQueuedTail)
 
     EXPECT_EQ(actor_system.dispatch_all(), 1U);
     EXPECT_EQ(actor_system.dispatch_owner_core(), std::nullopt);
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+}
+
+TEST(V2ActorRuntimeTest, DispatchAllInterleavesReadyActorsFairly) {
+    std::vector<std::string> sequence;
+
+    v2::runtime::ActorSystem actor_system;
+    auto first = actor_system.create_actor(
+        std::make_unique<SequencingActor>("first", sequence));
+    auto second = actor_system.create_actor(
+        std::make_unique<SequencingActor>("second", sequence));
+
+    for (int i = 0; i < 3; ++i) {
+        v2::actor::Message message;
+        message.header.kind = v2::actor::MessageKind::kUser;
+        message.payload = std::string("first-") + std::to_string(i);
+        first.tell(std::move(message));
+    }
+
+    v2::actor::Message second_message;
+    second_message.header.kind = v2::actor::MessageKind::kUser;
+    second_message.payload = std::string("second");
+    second.tell(std::move(second_message));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 4U);
+    ASSERT_EQ(sequence.size(), 4U);
+    EXPECT_EQ(sequence[0], "first:first-0");
+    EXPECT_EQ(sequence[1], "second:second");
+    EXPECT_EQ(sequence[2], "first:first-1");
+    EXPECT_EQ(sequence[3], "first:first-2");
+}
+
+TEST(V2ActorRuntimeTest, ShutdownDuringFairDispatchStopsOtherReadyActors) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto shutdown_actor = actor_system.create_actor(
+        std::make_unique<ShutdownOnMessageActor>(actor_system));
+    auto recording_actor = actor_system.create_actor(
+        std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message shutdown_message;
+    shutdown_message.header.kind = v2::actor::MessageKind::kUser;
+    shutdown_message.payload = std::string("shutdown");
+    shutdown_actor.tell(std::move(shutdown_message));
+
+    v2::actor::Message recording_message;
+    recording_message.header.kind = v2::actor::MessageKind::kUser;
+    recording_message.payload = std::string("should-not-deliver");
+    recording_actor.tell(std::move(recording_message));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    EXPECT_TRUE(received.empty());
     EXPECT_EQ(actor_system.dispatch_all(), 0U);
 }
 

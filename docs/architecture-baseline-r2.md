@@ -87,7 +87,18 @@ python scripts\collect_v2_arch_baseline.py --build-dir build\windows-msvc-debug 
 | `actor_100k_create_smoke` | 单进程创建 100K actor 的容量 smoke |
 | `multi_battle_tick_100_entities` | 500 场 battle、每场 100 participant 的单帧 tick 成本 |
 
-## 5. 后续扩展
+## 5. Actor 调度公平性与 shutdown 验证
+
+`ActorSystem::dispatch_ready()` 当前采用 ready actor 轮转策略：每次从一个 ready actor 取一条消息处理，若该 actor mailbox 仍有消息则重新入队。这避免单个热 actor 在一次 dispatch 中持续 drain mailbox，从而饿住其他 ready actor。
+
+新增验证：
+
+| 测试 | 覆盖 |
+|---|---|
+| `V2ActorRuntimeTest.DispatchAllInterleavesReadyActorsFairly` | 多 actor 同时 ready 时按 actor 粒度交错处理 |
+| `V2ActorRuntimeTest.ShutdownDuringFairDispatchStopsOtherReadyActors` | dispatch 中触发 shutdown 后不继续投递其他 ready actor |
+
+## 6. 后续扩展
 
 下一批 R2 建议继续补齐：
 

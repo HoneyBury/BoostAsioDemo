@@ -247,21 +247,26 @@ std::size_t ActorSystem::dispatch_ready(std::optional<std::uint32_t> owner_core)
         }
         cell->queued = false;
 
-        while (!cell->mailbox.empty()) {
-            auto message = std::move(cell->mailbox.front());
-            cell->mailbox.pop_front();
-            try {
-                cell->actor->on_message(std::move(message));
-            } catch (const std::exception& e) {
-                SPDLOG_ERROR("Actor {} threw in on_message: {}", actor_id, e.what());
-            } catch (...) {
-                SPDLOG_ERROR("Actor {} threw unknown exception in on_message", actor_id);
-            }
-            ++dispatched;
-            if (shutting_down_) {
-                dispatch_owner_core_ = previous_owner_core;
-                return dispatched;
-            }
+        if (cell->mailbox.empty()) {
+            continue;
+        }
+
+        auto message = std::move(cell->mailbox.front());
+        cell->mailbox.pop_front();
+        try {
+            cell->actor->on_message(std::move(message));
+        } catch (const std::exception& e) {
+            SPDLOG_ERROR("Actor {} threw in on_message: {}", actor_id, e.what());
+        } catch (...) {
+            SPDLOG_ERROR("Actor {} threw unknown exception in on_message", actor_id);
+        }
+        ++dispatched;
+        if (shutting_down_) {
+            dispatch_owner_core_ = previous_owner_core;
+            return dispatched;
+        }
+        if (!cell->mailbox.empty()) {
+            enqueue_ready_actor(actor_id, *cell);
         }
     }
     ++dispatch_round_;

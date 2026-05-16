@@ -74,6 +74,36 @@ TEST(HealthCheckTest, FailWhenBackendHasNoHealthyInstances) {
 
 // ── Test 3: Warn when no backends are registered ──
 
+TEST(HealthCheckTest, BackendHeartbeatRestoresReadinessAfterUnhealthyMark) {
+    auto metrics = std::make_shared<BackendMetrics>();
+    auto registry = std::make_shared<ServiceRegistry>(
+        std::chrono::milliseconds(100));
+
+    registry->register_instance(ServiceId::kLogin, "127.0.0.1", 9001);
+    registry->mark_unhealthy(ServiceId::kLogin, "127.0.0.1", 9001);
+
+    HealthCheck hc;
+    hc.set_backend_metrics(metrics);
+    hc.set_service_registry(registry);
+
+    auto failed = hc.check();
+    EXPECT_EQ(failed.status, "fail");
+
+    registry->heartbeat(ServiceId::kLogin, "127.0.0.1", 9001);
+
+    auto recovered = hc.check();
+    bool found_login = false;
+    for (const auto& c : recovered.checks) {
+        if (c.name == "backend:login") {
+            found_login = true;
+            EXPECT_EQ(c.status, "pass");
+            EXPECT_NE(c.message.find("healthy instance"), std::string::npos);
+            break;
+        }
+    }
+    EXPECT_TRUE(found_login);
+}
+
 TEST(HealthCheckTest, WarnWhenNoBackendRegistered) {
     auto metrics = std::make_shared<BackendMetrics>();
     auto registry = std::make_shared<ServiceRegistry>(

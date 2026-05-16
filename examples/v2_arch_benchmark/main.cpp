@@ -5,6 +5,9 @@
 #include "v2/memory/arena.h"
 #include "v2/memory/object_pool.h"
 #include "v2/runtime/actor_system.h"
+#include "v2/service/backend_envelope.h"
+#include "v2/service/envelope_adapter.h"
+#include "v3/proto/envelope_codec.h"
 
 #include <algorithm>
 #include <chrono>
@@ -18,6 +21,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 namespace {
 
@@ -374,6 +379,100 @@ LatencyStats run_multi_battle_tick_latency(std::size_t battle_count) {
     return make_stats(std::move(samples), elapsed, worlds.size());
 }
 
+v2::service::BackendEnvelope make_contract_backend_envelope() {
+    return v2::service::BackendEnvelope{
+        .correlation_id = 9001,
+        .source_service = v2::service::ServiceId::kGateway,
+        .target_service = v2::service::ServiceId::kMatchmaking,
+        .kind = v2::service::MessageKind::kRequest,
+        .timeout_ms = 250,
+        .error_code = 0,
+        .payload = R"({"user_id":"bench_user","mmr":1350,"mode":"1v1"})",
+        .message_type = "match_join",
+        .trace_id = 9002,
+        .span_id = 9003,
+    };
+}
+
+v3::proto::TypedEnvelope make_contract_typed_envelope() {
+    return v3::proto::TypedEnvelope{
+        .meta = {
+            .correlation_id = 9001,
+            .source_service = "gateway",
+            .target_service = "match",
+            .timeout_ms = 250,
+            .error_code = 0,
+            .trace_id = 9002,
+            .span_id = 9003,
+        },
+        .message_kind = v3::proto::EnvelopeMessageKind::kMatchJoinRequest,
+        .payload = {{"user_id", "bench_user"}, {"mmr", 1350}, {"mode", "1v1"}},
+    };
+}
+
+LatencyStats run_backend_envelope_json_roundtrip_latency(std::size_t iterations) {
+    const auto envelope = make_contract_backend_envelope();
+    std::vector<double> samples;
+    samples.reserve(iterations);
+
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < iterations; ++i) {
+        const auto op_begin = now_ns();
+        const auto encoded = v2::service::to_json(envelope);
+        const auto decoded = v2::service::from_json(encoded);
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+        if (!decoded.has_value()) {
+            break;
+        }
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, samples.size());
+}
+
+LatencyStats run_typed_envelope_json_roundtrip_latency(std::size_t iterations) {
+    const auto envelope = make_contract_typed_envelope();
+    std::vector<double> samples;
+    samples.reserve(iterations);
+
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < iterations; ++i) {
+        const auto op_begin = now_ns();
+        const auto encoded = v3::proto::encode_typed_envelope(
+            envelope.meta,
+            envelope.message_kind,
+            envelope.payload);
+        const auto decoded = v3::proto::decode_typed_envelope(encoded);
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+        if (!decoded.has_value()) {
+            break;
+        }
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, samples.size());
+}
+
+LatencyStats run_backend_typed_adapter_roundtrip_latency(std::size_t iterations) {
+    const auto backend = make_contract_backend_envelope();
+    std::vector<double> samples;
+    samples.reserve(iterations);
+
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < iterations; ++i) {
+        const auto op_begin = now_ns();
+        const auto typed = v2::service::to_typed_envelope(backend);
+        if (!typed.has_value()) {
+            break;
+        }
+        const auto converted = v2::service::to_backend_envelope(*typed);
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+        if (converted.message_type.empty()) {
+            break;
+        }
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, samples.size());
+}
+
 Options parse_args(int argc, char** argv) {
     Options options;
     for (int i = 1; i < argc; ++i) {
@@ -430,7 +529,10 @@ std::string build_json(const Options& options,
                        const LatencyStats& battle_world_tick,
                        const LatencyStats& actor_fan_in,
                        const LatencyStats& actor_limit_smoke,
-                       const LatencyStats& multi_battle_tick) {
+                       const LatencyStats& multi_battle_tick,
+                       const LatencyStats& backend_envelope_roundtrip,
+                       const LatencyStats& typed_envelope_roundtrip,
+                       const LatencyStats& backend_typed_adapter_roundtrip) {
     std::ostringstream out;
     out << "{\n"
         << "  \"tool\": \"v2_arch_benchmark\",\n"
@@ -449,7 +551,10 @@ std::string build_json(const Options& options,
     append_stats_json(out, "battle_world_tick_100_entities", battle_world_tick, false);
     append_stats_json(out, "actor_fan_in_throughput", actor_fan_in, false);
     append_stats_json(out, "actor_100k_create_smoke", actor_limit_smoke, false);
-    append_stats_json(out, "multi_battle_tick_100_entities", multi_battle_tick, true);
+    append_stats_json(out, "multi_battle_tick_100_entities", multi_battle_tick, false);
+    append_stats_json(out, "backend_envelope_json_roundtrip", backend_envelope_roundtrip, false);
+    append_stats_json(out, "typed_envelope_json_roundtrip", typed_envelope_roundtrip, false);
+    append_stats_json(out, "backend_typed_adapter_roundtrip", backend_typed_adapter_roundtrip, true);
     out << "  ]\n"
         << "}\n";
     return out.str();
@@ -471,6 +576,12 @@ int main(int argc, char** argv) {
         const auto actor_fan_in = run_actor_fan_in_throughput(options.iterations);
         const auto actor_limit_smoke = run_actor_limit_smoke(options.actor_limit);
         const auto multi_battle_tick = run_multi_battle_tick_latency(options.battles);
+        const auto backend_envelope_roundtrip =
+            run_backend_envelope_json_roundtrip_latency(options.iterations);
+        const auto typed_envelope_roundtrip =
+            run_typed_envelope_json_roundtrip_latency(options.iterations);
+        const auto backend_typed_adapter_roundtrip =
+            run_backend_typed_adapter_roundtrip_latency(options.iterations);
         const auto json = build_json(options,
                                      local_tell,
                                      cross_core_tell,
@@ -482,7 +593,10 @@ int main(int argc, char** argv) {
                                      battle_world_tick,
                                      actor_fan_in,
                                      actor_limit_smoke,
-                                     multi_battle_tick);
+                                     multi_battle_tick,
+                                     backend_envelope_roundtrip,
+                                     typed_envelope_roundtrip,
+                                     backend_typed_adapter_roundtrip);
 
         if (!options.output_path.empty()) {
             std::ofstream output(options.output_path, std::ios::binary);

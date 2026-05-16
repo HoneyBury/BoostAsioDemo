@@ -10,6 +10,16 @@ namespace {
 
 std::atomic<std::uint64_t> g_next_correlation_id{1};
 
+std::optional<ServiceId> parse_service_id(const std::string& value) {
+    if (value == "gateway") return ServiceId::kGateway;
+    if (value == "login") return ServiceId::kLogin;
+    if (value == "room") return ServiceId::kRoom;
+    if (value == "battle") return ServiceId::kBattle;
+    if (value == "match" || value == "matchmaking") return ServiceId::kMatchmaking;
+    if (value == "leaderboard") return ServiceId::kLeaderboard;
+    return std::nullopt;
+}
+
 }  // namespace
 
 std::string to_json(const BackendEnvelope& envelope) {
@@ -49,31 +59,13 @@ std::optional<BackendEnvelope> from_json(std::string_view json) {
     const auto target_str = doc["target_service"].get<std::string>();
     const auto kind_str = doc["kind"].get<std::string>();
 
-    // Parse source service
-    if (source_str == "gateway") {
-        envelope.source_service = ServiceId::kGateway;
-    } else if (source_str == "login") {
-        envelope.source_service = ServiceId::kLogin;
-    } else if (source_str == "room") {
-        envelope.source_service = ServiceId::kRoom;
-    } else if (source_str == "battle") {
-        envelope.source_service = ServiceId::kBattle;
-    } else {
+    const auto source_service = parse_service_id(source_str);
+    const auto target_service = parse_service_id(target_str);
+    if (!source_service.has_value() || !target_service.has_value()) {
         return std::nullopt;
     }
-
-    // Parse target service
-    if (target_str == "gateway") {
-        envelope.target_service = ServiceId::kGateway;
-    } else if (target_str == "login") {
-        envelope.target_service = ServiceId::kLogin;
-    } else if (target_str == "room") {
-        envelope.target_service = ServiceId::kRoom;
-    } else if (target_str == "battle") {
-        envelope.target_service = ServiceId::kBattle;
-    } else {
-        return std::nullopt;
-    }
+    envelope.source_service = *source_service;
+    envelope.target_service = *target_service;
 
     // Parse message kind
     if (kind_str == "request") {

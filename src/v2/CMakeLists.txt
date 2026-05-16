@@ -16,6 +16,7 @@ add_library(project_v2 STATIC
     ecs/world.cpp
     gateway/battle_data_store.cpp
     service/backend_envelope.cpp
+    service/envelope_adapter.cpp
     service/backend_connection.cpp
     service/circuit_breaker.cpp
     service/backend_frame_codec.cpp

@@ -62,6 +62,9 @@ def evaluate_gates(report: dict[str, Any], expected_actor_limit: int) -> dict[st
         ("battle_world_tick_100_entities", "p99_us", 5000.0, "max"),
         ("actor_fan_in_throughput", "throughput_ops_per_sec", 300_000.0, "min"),
         ("multi_battle_tick_100_entities", "p99_us", 5000.0, "max"),
+        ("backend_envelope_json_roundtrip", "p99_us", 1000.0, "max"),
+        ("typed_envelope_json_roundtrip", "p99_us", 1000.0, "max"),
+        ("backend_typed_adapter_roundtrip", "p99_us", 1000.0, "max"),
     ]
 
     gate_results: list[dict[str, Any]] = []

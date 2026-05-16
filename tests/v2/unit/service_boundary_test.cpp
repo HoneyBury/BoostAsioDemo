@@ -3,9 +3,11 @@
 #include <nlohmann/json.hpp>
 
 #include "v2/service/backend_envelope.h"
+#include "v2/service/envelope_adapter.h"
 #include "v2/service/error_codes.h"
 #include "v2/service/service_id.h"
 #include "v2/service/service_manifest.h"
+#include "v3/proto/envelope_codec.h"
 
 // ─── ServiceId ─────────────────────────────────────────────────
 
@@ -95,6 +97,25 @@ TEST(V2ServiceBoundaryTest, BackendEnvelopeResponseRoundTrip) {
     EXPECT_EQ(parsed->target_service, v2::service::ServiceId::kGateway);
 }
 
+TEST(V2ServiceBoundaryTest, BackendEnvelopeSupportsMatchmakingAndLeaderboardServices) {
+    v2::service::BackendEnvelope original{
+        .correlation_id = 101,
+        .source_service = v2::service::ServiceId::kMatchmaking,
+        .target_service = v2::service::ServiceId::kLeaderboard,
+        .kind = v2::service::MessageKind::kRequest,
+        .payload = R"({"user_id":"alice"})",
+        .message_type = "leaderboard_rank",
+    };
+
+    const auto json = v2::service::to_json(original);
+    const auto parsed = v2::service::from_json(json);
+
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->source_service, v2::service::ServiceId::kMatchmaking);
+    EXPECT_EQ(parsed->target_service, v2::service::ServiceId::kLeaderboard);
+    EXPECT_EQ(parsed->message_type, "leaderboard_rank");
+}
+
 TEST(V2ServiceBoundaryTest, BackendEnvelopeErrorRoundTrip) {
     v2::service::BackendEnvelope original{
         .correlation_id = 77,
@@ -131,6 +152,92 @@ TEST(V2ServiceBoundaryTest, BackendEnvelopePushRoundTrip) {
 }
 
 // ─── BackendEnvelope: Validation ────────────────────────────────
+
+TEST(V2ServiceBoundaryTest, BackendEnvelopeToTypedEnvelopeCopiesMetaPayloadAndKind) {
+    v2::service::BackendEnvelope backend{
+        .correlation_id = 123,
+        .source_service = v2::service::ServiceId::kGateway,
+        .target_service = v2::service::ServiceId::kMatchmaking,
+        .kind = v2::service::MessageKind::kRequest,
+        .timeout_ms = 250,
+        .error_code = 0,
+        .payload = R"({"user_id":"alice","mmr":1200,"mode":"1v1"})",
+        .message_type = "match_join",
+        .trace_id = 456,
+        .span_id = 789,
+    };
+
+    const auto typed = v2::service::to_typed_envelope(backend);
+
+    ASSERT_TRUE(typed.has_value());
+    EXPECT_EQ(typed->meta.correlation_id, 123U);
+    EXPECT_EQ(typed->meta.source_service, "gateway");
+    EXPECT_EQ(typed->meta.target_service, "matchmaking");
+    EXPECT_EQ(typed->meta.timeout_ms, 250U);
+    EXPECT_EQ(typed->meta.trace_id, 456U);
+    EXPECT_EQ(typed->meta.span_id, 789U);
+    EXPECT_EQ(typed->message_kind, v3::proto::EnvelopeMessageKind::kMatchJoinRequest);
+    EXPECT_EQ(typed->payload.value("user_id", std::string{}), "alice");
+}
+
+TEST(V2ServiceBoundaryTest, TypedEnvelopeToBackendEnvelopePreservesMetaAndPayload) {
+    v3::proto::TypedEnvelope typed{
+        .meta = {
+            .correlation_id = 321,
+            .source_service = "leaderboard",
+            .target_service = "gateway",
+            .timeout_ms = 0,
+            .error_code = -2004,
+            .trace_id = 654,
+            .span_id = 987,
+        },
+        .message_kind = v3::proto::EnvelopeMessageKind::kLeaderboardRankResponse,
+        .payload = {{"rank", 7}, {"user_id", "bob"}},
+    };
+
+    const auto backend = v2::service::to_backend_envelope(
+        typed,
+        v2::service::MessageKind::kError);
+
+    EXPECT_EQ(backend.correlation_id, 321U);
+    EXPECT_EQ(backend.source_service, v2::service::ServiceId::kLeaderboard);
+    EXPECT_EQ(backend.target_service, v2::service::ServiceId::kGateway);
+    EXPECT_EQ(backend.kind, v2::service::MessageKind::kError);
+    EXPECT_EQ(backend.error_code, -2004);
+    EXPECT_EQ(backend.message_type, "leaderboard_rank_response");
+    EXPECT_EQ(backend.trace_id, 654U);
+    EXPECT_EQ(backend.span_id, 987U);
+
+    const auto payload = nlohmann::json::parse(backend.payload);
+    EXPECT_EQ(payload.value("rank", 0), 7);
+    EXPECT_EQ(payload.value("user_id", std::string{}), "bob");
+}
+
+TEST(V2ServiceBoundaryTest, EnvelopeAdapterRejectsUnknownMessageType) {
+    v2::service::BackendEnvelope backend{
+        .correlation_id = 1,
+        .source_service = v2::service::ServiceId::kGateway,
+        .target_service = v2::service::ServiceId::kLogin,
+        .kind = v2::service::MessageKind::kRequest,
+        .payload = "{}",
+        .message_type = "token_validate",
+    };
+
+    EXPECT_FALSE(v2::service::to_typed_envelope(backend).has_value());
+}
+
+TEST(V2ServiceBoundaryTest, EnvelopeAdapterRejectsMalformedJsonPayload) {
+    v2::service::BackendEnvelope backend{
+        .correlation_id = 1,
+        .source_service = v2::service::ServiceId::kGateway,
+        .target_service = v2::service::ServiceId::kLogin,
+        .kind = v2::service::MessageKind::kRequest,
+        .payload = "{bad json",
+        .message_type = "login_request",
+    };
+
+    EXPECT_FALSE(v2::service::to_typed_envelope(backend).has_value());
+}
 
 TEST(V2ServiceBoundaryTest, IsValidRejectsZeroCorrelationId) {
     v2::service::BackendEnvelope envelope{

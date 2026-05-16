@@ -200,3 +200,73 @@ TEST(ProtoSchemaTest, EnvelopeCodecSupportsLoginRoomAndBattleKinds) {
     EXPECT_EQ(room_decoded->message_kind, v3::proto::EnvelopeMessageKind::kRoomCreateRequest);
     EXPECT_EQ(battle_decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleInputRequest);
 }
+
+TEST(ProtoSchemaTest, EveryTypedKindMapsToConcreteDomain) {
+    const std::vector<v3::proto::EnvelopeMessageKind> kinds = {
+        v3::proto::EnvelopeMessageKind::kLoginRequest,
+        v3::proto::EnvelopeMessageKind::kLoginResponse,
+        v3::proto::EnvelopeMessageKind::kRoomCreateRequest,
+        v3::proto::EnvelopeMessageKind::kRoomCreateResponse,
+        v3::proto::EnvelopeMessageKind::kRoomJoinRequest,
+        v3::proto::EnvelopeMessageKind::kRoomJoinResponse,
+        v3::proto::EnvelopeMessageKind::kRoomReadyRequest,
+        v3::proto::EnvelopeMessageKind::kRoomReadyResponse,
+        v3::proto::EnvelopeMessageKind::kBattleInputRequest,
+        v3::proto::EnvelopeMessageKind::kBattleInputResponse,
+        v3::proto::EnvelopeMessageKind::kMatchJoinRequest,
+        v3::proto::EnvelopeMessageKind::kMatchJoinResponse,
+        v3::proto::EnvelopeMessageKind::kMatchLeaveRequest,
+        v3::proto::EnvelopeMessageKind::kMatchLeaveResponse,
+        v3::proto::EnvelopeMessageKind::kMatchStatusRequest,
+        v3::proto::EnvelopeMessageKind::kMatchStatusResponse,
+        v3::proto::EnvelopeMessageKind::kLeaderboardSubmitRequest,
+        v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse,
+        v3::proto::EnvelopeMessageKind::kLeaderboardTopRequest,
+        v3::proto::EnvelopeMessageKind::kLeaderboardTopResponse,
+        v3::proto::EnvelopeMessageKind::kLeaderboardRankRequest,
+        v3::proto::EnvelopeMessageKind::kLeaderboardRankResponse,
+    };
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 11;
+    for (const auto kind : kinds) {
+        const auto encoded = v3::proto::encode_typed_envelope(meta, kind, {{"ok", true}});
+        ASSERT_FALSE(encoded.empty()) << "kind did not encode: " << static_cast<int>(kind);
+        const auto decoded = v3::proto::decode_typed_envelope(encoded);
+        ASSERT_TRUE(decoded.has_value()) << encoded;
+        EXPECT_EQ(decoded->message_kind, kind);
+    }
+}
+
+TEST(ProtoSchemaTest, MaybeWrapTypedResponsePreservesLegacyRawJsonCompatibility) {
+    const nlohmann::json payload{{"status", "ok"}};
+
+    const auto legacy = v3::proto::maybe_wrap_typed_response(
+        std::nullopt,
+        v3::proto::EnvelopeMessageKind::kLoginResponse,
+        payload);
+    EXPECT_EQ(nlohmann::json::parse(legacy).value("status", ""), "ok");
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 22;
+    meta.trace_id = 33;
+    const auto request = v3::proto::decode_typed_envelope(
+        v3::proto::encode_typed_envelope(
+            meta,
+            v3::proto::EnvelopeMessageKind::kLoginRequest,
+            {{"user_id", "alice"}}));
+    ASSERT_TRUE(request.has_value());
+
+    const auto wrapped = v3::proto::maybe_wrap_typed_response(
+        request,
+        v3::proto::EnvelopeMessageKind::kLoginResponse,
+        payload,
+        1001);
+    const auto decoded = v3::proto::decode_typed_envelope(wrapped);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->meta.correlation_id, 22U);
+    EXPECT_EQ(decoded->meta.trace_id, 33U);
+    EXPECT_EQ(decoded->meta.error_code, 1001);
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kLoginResponse);
+    EXPECT_EQ(decoded->payload.value("status", ""), "ok");
+}

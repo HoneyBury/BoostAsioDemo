@@ -49,34 +49,54 @@ def result_by_name(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {str(item.get("name")): item for item in report.get("results", [])}
 
 
-def evaluate_gates(report: dict[str, Any]) -> dict[str, Any]:
+def evaluate_gates(report: dict[str, Any], expected_actor_limit: int) -> dict[str, Any]:
     results = result_by_name(report)
     checks = [
-        ("actor_local_tell_dispatch", "p99_us", 1000.0),
-        ("actor_cross_core_tell_drain_dispatch", "p99_us", 10000.0),
-        ("actor_create", "p99_us", 10000.0),
-        ("actor_shutdown_per_actor", "p99_us", 5000.0),
-        ("bump_arena_alloc", "p99_us", 10.0),
-        ("object_pool_acquire_release", "p99_us", 50.0),
-        ("spsc_queue_enqueue_dequeue", "p99_us", 10.0),
-        ("battle_world_tick_100_entities", "p99_us", 5000.0),
+        ("actor_local_tell_dispatch", "p99_us", 1000.0, "max"),
+        ("actor_cross_core_tell_drain_dispatch", "p99_us", 10000.0, "max"),
+        ("actor_create", "p99_us", 10000.0, "max"),
+        ("actor_shutdown_per_actor", "p99_us", 5000.0, "max"),
+        ("bump_arena_alloc", "p99_us", 10.0, "max"),
+        ("object_pool_acquire_release", "p99_us", 50.0, "max"),
+        ("spsc_queue_enqueue_dequeue", "p99_us", 10.0, "max"),
+        ("battle_world_tick_100_entities", "p99_us", 5000.0, "max"),
+        ("actor_fan_in_throughput", "throughput_ops_per_sec", 300_000.0, "min"),
+        ("multi_battle_tick_100_entities", "p99_us", 5000.0, "max"),
     ]
 
     gate_results: list[dict[str, Any]] = []
     passed = True
-    for name, metric, threshold in checks:
+    for name, metric, threshold, direction in checks:
         value = float(results.get(name, {}).get(metric, 0.0))
         samples = int(results.get(name, {}).get("samples", 0))
-        ok = samples > 0 and value <= threshold
+        if direction == "min":
+            ok = samples > 0 and value >= threshold
+        else:
+            ok = samples > 0 and value <= threshold
         passed = passed and ok
         gate_results.append({
             "name": name,
             "metric": metric,
             "value": value,
             "threshold": threshold,
+            "direction": direction,
             "samples": samples,
             "passed": ok,
         })
+
+    actor_limit = results.get("actor_100k_create_smoke", {})
+    actor_limit_samples = int(actor_limit.get("samples", 0))
+    actor_limit_ok = actor_limit_samples >= expected_actor_limit
+    passed = passed and actor_limit_ok
+    gate_results.append({
+        "name": "actor_100k_create_smoke",
+        "metric": "samples",
+        "value": actor_limit_samples,
+        "threshold": expected_actor_limit,
+        "direction": "min",
+        "samples": actor_limit_samples,
+        "passed": actor_limit_ok,
+    })
 
     return {
         "passed": passed,
@@ -90,6 +110,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=Path("runtime/perf/v2-arch-baseline"))
     parser.add_argument("--iterations", type=int, default=10000)
     parser.add_argument("--actors", type=int, default=10000)
+    parser.add_argument("--actor-limit", type=int, default=100000)
+    parser.add_argument("--battles", type=int, default=500)
     parser.add_argument("--timeout-seconds", type=int, default=30)
     return parser.parse_args()
 
@@ -105,6 +127,8 @@ def main() -> int:
         str(benchmark),
         "--iterations", str(args.iterations),
         "--actors", str(args.actors),
+        "--actor-limit", str(args.actor_limit),
+        "--battles", str(args.battles),
         "--output", str(raw_path),
     ]
     completed = subprocess.run(
@@ -132,8 +156,10 @@ def main() -> int:
         "benchmark": str(benchmark),
         "iterations": args.iterations,
         "actors": args.actors,
+        "actor_limit": args.actor_limit,
+        "battles": args.battles,
         "raw_result": str(raw_path),
-        "release_gates": evaluate_gates(report),
+        "release_gates": evaluate_gates(report, args.actor_limit),
         "results": report.get("results", []),
     }
     summary_path = output_root / "summary.json"

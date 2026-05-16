@@ -100,6 +100,8 @@ install(FILES
     docs/v2-enterprise-roadmap.md
     docs/architecture-acceptance-criteria.md
     docs/architecture-baseline-r2.md
+    docs/actor-concurrency-model-r3.md
+    docs/communication-contract-r4.md
     docs/performance-baseline.md
     docs/v3-production-readiness-plan.md
     docs/v3-release-checklist.md

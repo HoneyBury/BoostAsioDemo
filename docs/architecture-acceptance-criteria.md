@@ -1,7 +1,7 @@
 # 架构验收标准
 
-> 本文档定义 BoostAsioDemo 作为"企业级高性能游戏服务器框架"在各架构维度的量化验收标准。
-> 每个标准的格式为：**当前状态 → 目标状态**，以及对应的测试/验证方法。
+> 本文档定义 BoostAsioDemo 作为高性能游戏服务器框架在各架构维度的量化验收标准。
+> 当前 R2 实测数据来源：`docs/architecture-baseline-r2.md` 与 `runtime/perf/v2-arch-baseline/summary.json`。
 
 ## 1. Actor 模型
 
@@ -9,28 +9,26 @@
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| 本地 tell() 延迟 | 未测定 | P99 ≤ 1µs | 微基准测试 |
-| 跨核 tell() 延迟 | 未测定 | P99 ≤ 10µs | SPSC mailbox 基准测试 |
-| 消息吞吐 | 未测定 | ≥ 1M msg/s per core | actor_runtime_test 扩展 |
-| 消息丢失率 | 0（已验证） | 0 | 现有测试已覆盖 |
+| 本地 `tell()` 延迟 | Debug P99 `2.2us` | Release P99 `<= 1us` | `v2_arch_benchmark` |
+| 跨核 `tell()` 延迟 | Debug P99 `3.3us` | P99 `<= 10us` | `v2_arch_benchmark` + mailbox drain |
+| 单 core 消息吞吐 | Debug fan-in `511962 msg/s` | Release `>= 1M msg/s` | `v2_arch_benchmark` |
+| 消息丢失率 | 已有单测覆盖，目标 actor 缺失时安全失败 | `0` | `actor_runtime_test` / `io_engine_test` |
 
 ### 1.2 Actor 生命周期
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| 创建延迟 | 未测定 | ≤ 10µs | 微基准测试 |
-| 停止延迟 | 未测定 | ≤ 5µs | 微基准测试 |
-| 并发 actor 上限 | 未测定 | ≥ 100K | 压力测试 |
-| 调度公平性 | round-robin 单线程 | 确认无饥饿 | multi-actor 延迟分布测试 |
+| 创建延迟 | Debug P99 `1.1us`（10K actor） | P99 `<= 10us` | `v2_arch_benchmark` |
+| 停止延迟 | Debug `0.36455us/actor`（10K actor） | P99 `<= 5us` | `v2_arch_benchmark` |
+| 并发 actor 上限 | Debug 100K actor smoke 通过 | `>= 100K actor` | `v2_arch_benchmark` |
+| 调度公平性 | 单线程 ready queue，待补多 actor 分布数据 | 无饥饿 | multi-actor latency benchmark |
 
 ### 1.3 监督与容错
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| 未处理异常 | actor 停止 | 可配置策略（stop/restart/escalate） | 故障注入测试 |
-| 监督树 | 未实现 | v2.3.0 | — |
-
----
+| 未处理异常 | actor 异常被捕获并记录，当前策略为继续运行调度循环 | 可配置 stop/restart/escalate | fault injection test |
+| 监督树 | 未实现 | v2.3+ 后续目标 | 后续设计 |
 
 ## 2. I/O 引擎
 
@@ -38,20 +36,17 @@
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| SO_REUSEPORT | 已实现（MultiIoAcceptor） | 确认 n 核 accept 均匀分布 | io_engine_test |
-| Accept 策略 | RoundRobin/LeastLoaded/Fixed | 确认 LeastLoaded 在负载不均时生效 | 负载偏差测试 |
-| 连接建立延迟 | 未测定 | P99 ≤ 1ms | 连接压力测试 |
+| SO_REUSEPORT / 多 listener | 已实现 `MultiIoAcceptor` | n 核 accept 分布可量化 | `io_engine_test` + 后续压力 |
+| Accept 策略 | `RoundRobin` / `LeastLoaded` / `Fixed` | 负载不均时 `LeastLoaded` 生效 | `io_engine_test` |
+| 连接建立延迟 | R1 未覆盖 | P99 `<= 1ms` | connect storm benchmark |
 
 ### 2.2 网络吞吐
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| 单连接吞吐 | 未测定 | ≥ 100K msg/s | 压力测试 |
-| 10K 连接吞吐 | 未测定 | ≥ 1M msg/s 总吞吐 | 压力测试 |
-| 背压阈值 | max_pending_write_bytes=256KB | 可配置 + 超阈值回压 | 背压测试 |
-| 零拷贝路径 | BufferPool 读路径 | 读写全路径零拷贝 | 代码审计 |
-
----
+| 1K echo | Windows Debug median `12270 msg/s`（1000 clients） | Release gate 持续收紧 | `collect_v2_perf_baseline.py` |
+| 10K 连接吞吐 | 待测 | `>= 1M msg/s` 总吞吐目标线 | R1/R2 后续压力 |
+| 背压阈值 | `max_pending_write_bytes=256KB` | 可配置 + 超阈值回压 | backpressure test |
 
 ## 3. 内存架构
 
@@ -59,19 +54,18 @@
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| BumpArena 分配 | O(1) pointer bump | P99 ≤ 10ns | arena_test 基准 |
-| ObjectPool 获取/归还 | O(1) free list | P99 ≤ 50ns | object_pool_test 基准 |
-| 内存碎片率 | 未测定 | ≤ 10% (arena), ≤ 5% (pool) | 浸泡测试后统计 |
+| `BumpArena` 分配 | Debug P99 `0.1us` | Release P99 `<= 10ns` | `v2_arch_benchmark` |
+| `ObjectPool` acquire/release | Debug P99 `0.1us` | Release P99 `<= 50ns` | `v2_arch_benchmark` |
+| SPSC enqueue/dequeue | Debug P99 `0.1us` | Release P99 `<= 10us` | `v2_arch_benchmark` |
+| 内存碎片率 | 待测 | arena `<= 10%`，pool `<= 5%` | soak + allocation stats |
 
 ### 3.2 缓存效率
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| CacheLine 对齐 | kCacheLineSize=64 | 热数据无伪共享 | cache_line_test |
-| HotCold 分离 | 已实现 | 冷数据不污染 L1/L2 | perf stat 验证 |
-| 缓存命中率 | 未测定 | L1 ≥ 95%, L2 ≥ 90% | perf 热点分析 |
-
----
+| CacheLine 对齐 | `kCacheLineSize=64`，已有单测 | 热数据避免伪共享 | `cache_line_test` |
+| Hot/Cold 分离 | 已实现 | 冷数据不污染 L1/L2 | perf stat / hotspot analysis |
+| 缓存命中率 | 待测 | L1 `>= 95%`，L2 `>= 90%` | perf 工具 |
 
 ## 4. 服务拆分与通信
 
@@ -79,178 +73,92 @@
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| 连接建立 | 懒加载（首次路由时连接） | 首次延迟 ≤ 10ms | backend_routing_test |
-| 连接复用 | 每后端一个 TCP 连接 | 连接池 ≥ 4 连接 | 连接池测试 |
-| 连接恢复 | 无自动恢复 | 自动重连 + 指数退避 | 故障注入测试 |
-| 断路器 | 未实现 | ≥ 3 次连续失败 → 熔断 30s | 断路器测试 |
+| 连接建立 | 懒加载，首次路由时连接 | 首次延迟 `<= 10ms` | `backend_routing_test` |
+| 连接复用 | 每后端单 TCP 连接 | 连接池 `>= 4` 可配置 | connection pool test |
+| 连接恢复 | 基础错误返回，自动恢复仍需补强 | 自动重连 + 指数退避 | fault injection test |
+| 熔断器 | 已有 `CircuitBreaker` 单测 | 连续失败后熔断并半开探测 | `circuit_breaker_test` |
 
 ### 4.2 服务发现
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| TTL 过期 | 已实现 | 过期实例 ≤ 5s 摘除 | service_registry_test |
-| 心跳恢复 | 已实现 | 恢复实例 ≤ 5s 上线 | service_registry_test |
-| 负载均衡 | 未实现 | 最少连接 / 轮询 | 负载均衡测试 |
+| TTL 过期 | 已实现 | 过期实例 `<= 5s` 摘除 | `service_registry_test` |
+| 心跳恢复 | 已实现 | 恢复实例 `<= 5s` 上线 | `service_registry_test` |
+| 负载均衡 | 基础路由，策略待扩展 | 最少连接 / 轮询 | routing benchmark |
 
 ### 4.3 API 契约
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| BackendEnvelope 格式 | 已冻结（M4 S0） | 向后兼容升级 | service_boundary_test |
-| 错误传播 | 基础 error_code | 全链路错误码透传 | E2E 测试 |
-| 超时传播 | 未实现 | gateway 超时 → 取消后端请求 | 超时测试 |
-
----
+| `BackendEnvelope` 格式 | 已冻结 JSON envelope | 向后兼容升级 | `service_boundary_test` |
+| typed envelope | login/room/battle/match/leaderboard 已有 helper | generated proto/gRPC 路线明确 | R4 契约文档 + 测试 |
+| 错误传播 | 基础 `error_code` 透传 | gateway/backend/SDK 一致 | E2E / compatibility test |
+| 超时传播 | 部分路径已有超时，取消语义待补 | gateway 超时后不泄漏 pending request | timeout test |
 
 ## 5. 数据层
 
-### 5.1 缓存
-
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| LRU 淘汰 | O(1) | 确认逐出策略正确 | lru_cache_test |
-| 缓存命中率 | 无数据 | ≥ 80%（读多写少场景） | 业务模拟测试 |
-| 缓存一致性 | WriteBehind 最终一致 | 写入延迟 ≤ 写入间隔 | data_layer_test |
-
-### 5.2 持久化
-
-| 标准 | 当前 | 目标 | 验证方法 |
-|---|---|---|---|
-| 战斗结算落盘 | 同步写 JSON | ≥ 99.99% 成功率 | 浸泡测试 |
-| WriteBehind flush 间隔 | 可配置 | ≤ 写入间隔 × 2（P99） | write_behind_test |
-| 回放完整性 | deterministic replay | replay 重放结果与原始一致 | battle_determinism_test |
-| 数据格式版本化 | magic+version+length | 格式向前兼容 | data_layer_test |
-
----
+| LRU 淘汰 | O(1)，已有单测 | 淘汰策略正确 | `lru_cache_test` |
+| 缓存命中率 | 待测 | 读多写少场景 `>= 80%` | business simulation |
+| WriteBehind flush | 可配置 interval | P99 `<= interval * 2` | `write_behind_store_test` |
+| replay/result/snapshot 格式 | magic + version + length | 向前兼容 | `data_layer_test` |
 
 ## 6. ECS Battle World
 
-### 6.1 模拟正确性
+### 6.1 正确性
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| 确定性重放 | 已实现（7-system pipeline） | 相同输入 → 相同输出，跨平台 | battle_determinism_test |
-| 权威模拟 | 服务端为唯一事实源 | 客户端输入校验不通过 → 拒绝 | battle_authoritative_test |
-| 帧同步延迟 | 未测定 | P99 ≤ 100ms 输入到广播 | 帧同步基准测试 |
+| 确定性重放 | 已实现 | 相同输入得到相同输出 | `battle_determinism_test` |
+| 权威模拟 | 服务端为唯一事实源 | 客户端非法输入被拒绝 | `battle_authoritative_test` |
+| 输入到广播延迟 | R1 battle-100 P99 `100ms`，贴近 gate | P99 `<= 100ms` | `collect_v2_perf_baseline.py` |
 
 ### 6.2 性能
 
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| 单场战斗 tick | 未测定 | ≤ 5ms per tick (100 entities) | battle_runtime_world_test 基准 |
-| 并发战斗数 | 未测定 | ≥ 500 场并发 | 压力测试 |
-| 内存占用 | 未测定 | ≤ 1MB per battle (100 entities) | 内存统计 |
-
----
+| 单场 battle tick | Debug P99 `269.7us`（100 entities） | `<= 5ms/tick` | `v2_arch_benchmark` |
+| 并发战斗数 | Debug 500 场 tick P99 `484.5us` | `>= 500` 场并发 | `v2_arch_benchmark` |
+| 每场战斗内存 | 待测 | `<= 1MB/battle`（100 entities） | memory snapshot |
 
 ## 7. 运维成熟度
 
-### 7.1 健康检查
-
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| /health 返回 | DemoServer 已实现 | 4 个服务全部支持 | HTTP 测试 |
-| /ready 返回 | 未实现 | 依赖检查（后端可达性） | v2.2.0 |
-| 健康状态 JSON 格式 | diagnostics_json() | 标准化格式 | health_check_test |
-
-### 7.2 特性开关
-
-| 标准 | 当前 | 目标 | 验证方法 |
-|---|---|---|---|
-| 用户级灰度 | hash(user_id)%100 | 确认分布均匀 | feature_flags_test |
-| 运行时切换 | shared_mutex 保护 | 确认热切换无锁竞争 | feature_flags_test |
-| 默认安全 | 新 flag 默认关闭 | 确认 | 现有测试 |
-
-### 7.3 追踪
-
-| 标准 | 当前 | 目标 | 验证方法 |
-|---|---|---|---|
-| Trace 生成 | 自建 TraceContext | W3C TraceContext 兼容格式 | trace_context_test |
-| 跨服务传播 | 未实现 | gateway → backend trace_id 透传 | v2.2.0 |
-| 外部导出 | 未实现 | OpenTelemetry OTLP | v2.2.0 |
-
----
+| `/health` | DemoServer 已支持 | 核心服务全部支持 | HTTP smoke |
+| `/ready` | 待补依赖检查 | 依赖可达性明确 | readiness test |
+| 诊断 JSON | `diagnostics_json()` 已存在 | 标准化字段 | `health_check_test` |
+| Trace | 自建 TraceContext | W3C TraceContext 兼容 | `trace_context_test` |
+| OTel 导出 | JSON/OTLP 兼容基础 | exporter 不阻塞主链 | `otel_persistence_test` |
 
 ## 8. 安全
 
-### 8.1 认证
-
 | 标准 | 当前 | 目标 | 验证方法 |
 |---|---|---|---|
-| Token 校验 | dev provider（token:user_id） | JWT RS256 | v2.2.0 |
-| Token 过期 | 无 | 可配置 TTL + refresh | v2.2.0 |
-| 顶号处理 | 已实现 | 确认旧连接正确关闭 | player_actor_test |
+| Token 校验 | dev provider + JWT validator | 生产模式禁用 dev token 或明确不可达 | `jwt_validator_test` |
+| Rate limit | global/IP/user/message-type/login bucket | 突发容忍和稳定速率可量化 | `rate_limiter_test` + pressure |
+| 输入校验 | 基础 JSON parse + schema validator | JSON schema 覆盖主链 | `schema_validator_test` |
+| 反外挂 | 基础 validator | 移动/距离/冷却规则完善 | `anti_cheat_test` |
 
-### 8.2 速率限制
+## 9. 测试与发布门槛
 
-| 标准 | 当前 | 目标 | 验证方法 |
-|---|---|---|---|
-| 全局限频 | 已实现 | per-IP + per-user + per-message-type 三级 | v2.2.0 |
-| 令牌桶精度 | — | 突发容忍 ≤ 2x 稳态速率 | 限频测试 |
-
-### 8.3 输入校验
-
-| 标准 | 当前 | 目标 | 验证方法 |
-|---|---|---|---|
-| 消息格式校验 | 基础 JSON parse | JSON Schema 校验 | v2.3.0 |
-| 反外挂 | 未实现 | 移动速度/距离/冷却时间校验 | v2.3.0 |
-
----
-
-## 9. 测试覆盖
-
-### 9.1 测试金字塔
-
-| 层级 | 当前 | 目标（v2.3.0） |
+| 维度 | 当前 | 目标 |
 |---|---|---|
-| 单元测试 | 473（含 v2） | ≥ 500 |
-| 集成测试 | 30+（含 v2） | ≥ 60 |
-| E2E 测试 | 0 | ≥ 15 场景 |
-| 性能基准 | 0 | ≥ 20 场景 |
-| 故障注入 | 0 | ≥ 10 场景 |
+| 单元测试 | v2 单测 575 个，Redis live 依赖缺失时跳过 | 持续增长并覆盖关键路径 |
+| 集成测试 | 多进程与 backend routing 已有 | 核心链路 E2E 自动化 |
+| 性能基准 | R1 + R2 已有短运行 collector | CI 阻断明显退化 |
+| 故障注入 | 基础 fault injector | R4/R5 建立矩阵 |
 
-### 9.2 覆盖率
+## 10. 当前总体判断
 
-| 指标 | 当前 | 目标 |
+| 维度 | 当前评级 | 下一步 |
 |---|---|---|
-| 行覆盖率 | 未测定 | ≥ 80% |
-| 分支覆盖率 | 未测定 | ≥ 70% |
-| 关键路径覆盖率 | 未测定 | ≥ 95%（login/room/battle 主链） |
-
----
-
-## 10. 文档完整性
-
-| 文档类型 | 当前 | 目标 |
-|---|---|---|
-| 架构设计文档 | v2-design.md, v2-roadmap.md | + 本文档 |
-| API/协议规范 | 部分（v2-protocol-bridge.md） | v2-protocol-spec.md |
-| 部署手册 | deploy/README.md | + K8s Helm values 文档 |
-| 性能报告 | 无 | performance-baseline.md |
-| 安全模型 | 无 | security-model.md |
-| 运维手册 | deploy/README.md | observability-guide.md |
-| 客户端集成指南 | 无 | 参考客户端 + 集成文档 |
-
----
-
-## 当前状态总览
-
-```
-维度           当前评级      目标评级
-─────────────────────────────────────
-Actor 模型     ████░░░░ 可用   ████████ 生产
-I/O 引擎       █████░░░ 高级   ████████ 生产
-内存架构       █████░░░ 高级   ████████ 生产
-服务拆分       █████░░░ 高级   ████████ 生产
-数据层         █████░░░ 高级   ████████ 生产
-ECS World      █████░░░ 高级   ████████ 生产
-运维成熟度     ████░░░░ 可用   ████████ 企业
-安全性         ███░░░░░ 基础   ████████ 企业
-测试覆盖       █████░░░ 高级   ████████ 企业
-文档完整性     ████░░░░ 可用   ████████ 企业
-```
-
-> 图例：`基础(33%) → 可用(50%) → 高级(67%) → 生产(83%) → 企业(100%)`
-
-当前 v2.0.0 整体处于 **"高级"阶段**（核心能力完整，生产加固待完成）。
-v2.3.0 目标是达到 **"企业"阶段**（全部维度达到生产/企业级标准）。
+| Actor 模型 | 高级 | 补 ping-pong 分布、R3 线程契约 |
+| I/O 引擎 | 高级 | 补 connect storm、10K 连接数据 |
+| 内存架构 | 高级 | 补碎片率/soak |
+| 服务拆分 | 高级 | 补连接恢复与故障注入 |
+| 数据层 | 高级 | 补 WriteBehind/Redis 恢复验收 |
+| ECS World | 高级 | 补 battle 内存占用和更长 soak |
+| 运维成熟度 | 可用 | 补 readiness、Operator e2e |
+| 安全 | 基础 | 补生产模式 auth 边界 |

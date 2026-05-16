@@ -31,6 +31,8 @@ std::uint64_t now_ns() {
 struct Options {
     std::size_t iterations = 10000;
     std::size_t actors = 10000;
+    std::size_t actor_limit = 100000;
+    std::size_t battles = 500;
     std::string output_path;
 };
 
@@ -104,6 +106,17 @@ private:
 class NoopActor final : public v2::actor::Actor {
 public:
     void on_message(v2::actor::Message&&) override {}
+};
+
+class CountingActor final : public v2::actor::Actor {
+public:
+    explicit CountingActor(std::size_t& count)
+        : count_(count) {}
+
+    void on_message(v2::actor::Message&&) override { ++count_; }
+
+private:
+    std::size_t& count_;
 };
 
 struct PoolItem {
@@ -191,6 +204,42 @@ LatencyStats run_actor_create_latency(std::size_t actors) {
     }
     const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
     return make_stats(std::move(samples), elapsed, actors);
+}
+
+LatencyStats run_actor_fan_in_throughput(std::size_t iterations) {
+    v2::runtime::ActorSystem system;
+    std::size_t received = 0;
+    auto actor = system.create_actor(std::make_unique<CountingActor>(received));
+    std::vector<double> samples;
+    samples.reserve(iterations);
+
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < iterations; ++i) {
+        const auto op_begin = now_ns();
+        actor.tell(make_message(actor.actor_id()));
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+    }
+    (void)system.dispatch_all();
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, received);
+}
+
+LatencyStats run_actor_limit_smoke(std::size_t actor_count) {
+    v2::runtime::ActorSystem system;
+    std::vector<double> samples;
+    samples.reserve(actor_count);
+
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < actor_count; ++i) {
+        const auto op_begin = now_ns();
+        auto actor = system.create_actor(std::make_unique<NoopActor>());
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+        if (!actor.is_valid()) {
+            break;
+        }
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, samples.size());
 }
 
 LatencyStats run_shutdown_latency(std::size_t actors) {
@@ -296,6 +345,35 @@ LatencyStats run_battle_world_tick_latency(std::size_t iterations) {
     return make_stats(std::move(samples), elapsed, iterations);
 }
 
+LatencyStats run_multi_battle_tick_latency(std::size_t battle_count) {
+    std::vector<std::string> player_ids;
+    player_ids.reserve(100);
+    for (std::size_t i = 0; i < 100; ++i) {
+        player_ids.push_back("player_" + std::to_string(i));
+    }
+
+    std::vector<std::unique_ptr<v2::ecs::World>> worlds;
+    worlds.reserve(battle_count);
+    for (std::size_t i = 0; i < battle_count; ++i) {
+        worlds.push_back(v2::battle::create_battle_world(
+            "bench_battle_" + std::to_string(i),
+            "bench_room_" + std::to_string(i),
+            player_ids,
+            0));
+    }
+
+    std::vector<double> samples;
+    samples.reserve(worlds.size());
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < worlds.size(); ++i) {
+        const auto op_begin = now_ns();
+        (void)v2::battle::battle_world_advance_frame(*worlds[i], 1U, "multi_battle_tick");
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, worlds.size());
+}
+
 Options parse_args(int argc, char** argv) {
     Options options;
     for (int i = 1; i < argc; ++i) {
@@ -311,10 +389,15 @@ Options parse_args(int argc, char** argv) {
             options.iterations = static_cast<std::size_t>(std::stoull(require_value("--iterations")));
         } else if (arg == "--actors") {
             options.actors = static_cast<std::size_t>(std::stoull(require_value("--actors")));
+        } else if (arg == "--actor-limit") {
+            options.actor_limit = static_cast<std::size_t>(std::stoull(require_value("--actor-limit")));
+        } else if (arg == "--battles") {
+            options.battles = static_cast<std::size_t>(std::stoull(require_value("--battles")));
         } else if (arg == "--output") {
             options.output_path = require_value("--output");
         } else if (arg == "--help") {
-            std::cout << "Usage: v2_arch_benchmark [--iterations N] [--actors N] [--output path]\n";
+            std::cout << "Usage: v2_arch_benchmark [--iterations N] [--actors N] "
+                         "[--actor-limit N] [--battles N] [--output path]\n";
             std::exit(0);
         } else {
             throw std::runtime_error("unknown argument: " + arg);
@@ -344,12 +427,17 @@ std::string build_json(const Options& options,
                        const LatencyStats& bump_arena_alloc,
                        const LatencyStats& object_pool_cycle,
                        const LatencyStats& spsc_queue_roundtrip,
-                       const LatencyStats& battle_world_tick) {
+                       const LatencyStats& battle_world_tick,
+                       const LatencyStats& actor_fan_in,
+                       const LatencyStats& actor_limit_smoke,
+                       const LatencyStats& multi_battle_tick) {
     std::ostringstream out;
     out << "{\n"
         << "  \"tool\": \"v2_arch_benchmark\",\n"
         << "  \"iterations\": " << options.iterations << ",\n"
         << "  \"actors\": " << options.actors << ",\n"
+        << "  \"actor_limit\": " << options.actor_limit << ",\n"
+        << "  \"battles\": " << options.battles << ",\n"
         << "  \"results\": [\n";
     append_stats_json(out, "actor_local_tell_dispatch", local_tell, false);
     append_stats_json(out, "actor_cross_core_tell_drain_dispatch", cross_core_tell, false);
@@ -358,7 +446,10 @@ std::string build_json(const Options& options,
     append_stats_json(out, "bump_arena_alloc", bump_arena_alloc, false);
     append_stats_json(out, "object_pool_acquire_release", object_pool_cycle, false);
     append_stats_json(out, "spsc_queue_enqueue_dequeue", spsc_queue_roundtrip, false);
-    append_stats_json(out, "battle_world_tick_100_entities", battle_world_tick, true);
+    append_stats_json(out, "battle_world_tick_100_entities", battle_world_tick, false);
+    append_stats_json(out, "actor_fan_in_throughput", actor_fan_in, false);
+    append_stats_json(out, "actor_100k_create_smoke", actor_limit_smoke, false);
+    append_stats_json(out, "multi_battle_tick_100_entities", multi_battle_tick, true);
     out << "  ]\n"
         << "}\n";
     return out.str();
@@ -377,6 +468,9 @@ int main(int argc, char** argv) {
         const auto object_pool_cycle = run_object_pool_cycle_latency(options.iterations);
         const auto spsc_queue_roundtrip = run_spsc_queue_roundtrip_latency(options.iterations);
         const auto battle_world_tick = run_battle_world_tick_latency(options.iterations);
+        const auto actor_fan_in = run_actor_fan_in_throughput(options.iterations);
+        const auto actor_limit_smoke = run_actor_limit_smoke(options.actor_limit);
+        const auto multi_battle_tick = run_multi_battle_tick_latency(options.battles);
         const auto json = build_json(options,
                                      local_tell,
                                      cross_core_tell,
@@ -385,7 +479,10 @@ int main(int argc, char** argv) {
                                      bump_arena_alloc,
                                      object_pool_cycle,
                                      spsc_queue_roundtrip,
-                                     battle_world_tick);
+                                     battle_world_tick,
+                                     actor_fan_in,
+                                     actor_limit_smoke,
+                                     multi_battle_tick);
 
         if (!options.output_path.empty()) {
             std::ofstream output(options.output_path, std::ios::binary);

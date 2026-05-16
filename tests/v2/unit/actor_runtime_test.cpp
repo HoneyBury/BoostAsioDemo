@@ -170,6 +170,17 @@ private:
     v2::runtime::ActorSystem& system_;
 };
 
+class ExternalCountingActor final : public v2::actor::Actor {
+public:
+    explicit ExternalCountingActor(std::size_t& count)
+        : count_(count) {}
+
+    void on_message(v2::actor::Message&&) override { ++count_; }
+
+private:
+    std::size_t& count_;
+};
+
 }  // namespace
 
 TEST(V2ActorRuntimeTest, CreateActorStartsAndShutdownStops) {
@@ -713,4 +724,49 @@ TEST(V2ActorRuntimeTest, ShutdownDuringDispatchStopsWithoutDeliveringQueuedTail)
     EXPECT_EQ(actor_system.dispatch_all(), 1U);
     EXPECT_EQ(actor_system.dispatch_owner_core(), std::nullopt);
     EXPECT_EQ(actor_system.dispatch_all(), 0U);
+}
+
+TEST(V2ActorRuntimeTest, CrossCoreMailboxStressDoesNotDropMessages) {
+    v2::runtime::ActorSystem actor_system;
+    InspectingIoEngine io_engine;
+    io_engine.current_core_id_ = 0U;
+    actor_system.set_io_engine(&io_engine);
+
+    std::size_t delivered = 0;
+    auto actor = actor_system.create_actor(std::make_unique<ExternalCountingActor>(delivered), {}, 1U);
+
+    constexpr std::size_t kMessages = 10000;
+    for (std::size_t i = 0; i < kMessages; ++i) {
+        v2::actor::Message message;
+        message.header.kind = v2::actor::MessageKind::kUser;
+        message.payload = std::string("cross-core-stress");
+        actor.tell(std::move(message));
+    }
+
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+    EXPECT_EQ(actor_system.drain_mailbox_and_dispatch(1U), kMessages);
+    EXPECT_EQ(delivered, kMessages);
+    EXPECT_EQ(actor_system.drain_mailbox_and_dispatch(1U), 0U);
+}
+
+TEST(V2ActorRuntimeTest, ShutdownDropsQueuedCrossCoreMailboxMessagesSafely) {
+    v2::runtime::ActorSystem actor_system;
+    InspectingIoEngine io_engine;
+    io_engine.current_core_id_ = 0U;
+    actor_system.set_io_engine(&io_engine);
+
+    std::size_t delivered = 0;
+    auto actor = actor_system.create_actor(std::make_unique<ExternalCountingActor>(delivered), {}, 1U);
+
+    for (std::size_t i = 0; i < 128; ++i) {
+        v2::actor::Message message;
+        message.header.kind = v2::actor::MessageKind::kUser;
+        message.payload = std::string("queued-before-shutdown");
+        actor.tell(std::move(message));
+    }
+
+    actor_system.shutdown();
+    EXPECT_EQ(actor_system.drain_mailbox_and_dispatch(1U), 0U);
+    EXPECT_EQ(delivered, 0U);
+    EXPECT_EQ(actor_system.dispatch_owner_core(), std::nullopt);
 }

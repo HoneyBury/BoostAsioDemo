@@ -1,7 +1,7 @@
 #include "v2/login/login_backend_service.h"
 #include "v2/auth/jwt_validator.h"
 #include "v2/service/backend_server.h"
-#include "v3/proto/envelope_codec.h"
+#include "v2/service/envelope_adapter.h"
 
 #include <nlohmann/json.hpp>
 #include "app/audit_log.h"
@@ -96,17 +96,13 @@ private:
 
     v2::service::BackendEnvelope handle_login_request(
         const v2::service::BackendEnvelope& request) {
-        auto decoded_envelope = v3::proto::decode_typed_envelope(request.payload);
-        auto raw_payload = decoded_envelope.has_value()
-            ? decoded_envelope->payload.dump()
-            : request.payload;
-
-        if (raw_payload.empty()) {
+        auto decoded = v2::service::decode_handler_payload(request);
+        if (!decoded.has_value()) {
             return make_error_response(-1004, "empty_payload");
         }
 
-        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
-        if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("token")) {
+        const auto& doc = decoded->payload;
+        if (!doc.is_object() || !doc.contains("user_id") || !doc.contains("token")) {
             return make_error_response(-1004, "invalid_json");
         }
 
@@ -167,14 +163,10 @@ private:
 
         AUDIT_LOG("login_success", "user_id=" + user_id + " session_id=N/A");
         auto response = make_ok_response(user_id, display_name, is_duplicate, token_role);
-        if (decoded_envelope.has_value()) {
-            nlohmann::json body = nlohmann::json::parse(response.payload, nullptr, false);
-            response.payload = v3::proto::maybe_wrap_typed_response(
-                decoded_envelope,
-                v3::proto::EnvelopeMessageKind::kLoginResponse,
-                body.is_discarded() ? nlohmann::json::object() : body);
-        }
-        return response;
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(response),
+            v3::proto::EnvelopeMessageKind::kLoginResponse);
     }
 
     v2::service::BackendEnvelope handle_token_validate(

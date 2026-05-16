@@ -239,6 +239,53 @@ TEST(V2ServiceBoundaryTest, EnvelopeAdapterRejectsMalformedJsonPayload) {
     EXPECT_FALSE(v2::service::to_typed_envelope(backend).has_value());
 }
 
+TEST(V2ServiceBoundaryTest, DecodeHandlerPayloadExtractsTypedPayload) {
+    v3::proto::EnvelopeMeta meta{
+        .correlation_id = 77,
+        .source_service = "gateway",
+        .target_service = "login",
+        .trace_id = 88,
+        .span_id = 99,
+    };
+    v2::service::BackendEnvelope request{
+        .correlation_id = 77,
+        .source_service = v2::service::ServiceId::kGateway,
+        .target_service = v2::service::ServiceId::kLogin,
+        .kind = v2::service::MessageKind::kRequest,
+        .payload = v3::proto::encode_typed_envelope(
+            meta,
+            v3::proto::EnvelopeMessageKind::kLoginRequest,
+            {{"user_id", "alice"}, {"token", "token:alice"}}),
+        .message_type = "login_request",
+    };
+
+    const auto decoded = v2::service::decode_handler_payload(request);
+
+    ASSERT_TRUE(decoded.has_value());
+    ASSERT_TRUE(decoded->typed_request.has_value());
+    EXPECT_EQ(decoded->typed_request->message_kind,
+              v3::proto::EnvelopeMessageKind::kLoginRequest);
+    EXPECT_EQ(decoded->payload.value("user_id", std::string{}), "alice");
+}
+
+TEST(V2ServiceBoundaryTest, WrapTypedResponseLeavesLegacyPayloadRaw) {
+    v2::service::BackendEnvelope response{
+        .correlation_id = 1,
+        .source_service = v2::service::ServiceId::kLogin,
+        .target_service = v2::service::ServiceId::kGateway,
+        .kind = v2::service::MessageKind::kResponse,
+        .payload = R"({"status":"ok"})",
+    };
+
+    const auto wrapped = v2::service::wrap_typed_response_if_needed(
+        std::nullopt,
+        response,
+        v3::proto::EnvelopeMessageKind::kLoginResponse);
+
+    EXPECT_EQ(wrapped.payload, response.payload);
+    EXPECT_FALSE(v3::proto::decode_typed_envelope(wrapped.payload).has_value());
+}
+
 TEST(V2ServiceBoundaryTest, IsValidRejectsZeroCorrelationId) {
     v2::service::BackendEnvelope envelope{
         .correlation_id = 0,

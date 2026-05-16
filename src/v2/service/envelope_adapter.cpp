@@ -117,4 +117,36 @@ BackendEnvelope to_backend_envelope(const v3::proto::TypedEnvelope& envelope, Me
     };
 }
 
+std::optional<DecodedHandlerPayload> decode_handler_payload(const BackendEnvelope& envelope) {
+    DecodedHandlerPayload decoded;
+    decoded.typed_request = v3::proto::decode_typed_envelope(envelope.payload);
+    if (decoded.typed_request.has_value()) {
+        decoded.payload = decoded.typed_request->payload;
+        return decoded;
+    }
+
+    decoded.payload = nlohmann::json::parse(envelope.payload, nullptr, false);
+    if (decoded.payload.is_discarded()) {
+        return std::nullopt;
+    }
+    return decoded;
+}
+
+BackendEnvelope wrap_typed_response_if_needed(
+    const std::optional<v3::proto::TypedEnvelope>& request_envelope,
+    BackendEnvelope response,
+    v3::proto::EnvelopeMessageKind response_kind) {
+    if (!request_envelope.has_value()) {
+        return response;
+    }
+
+    auto payload = nlohmann::json::parse(response.payload, nullptr, false);
+    response.payload = v3::proto::maybe_wrap_typed_response(
+        request_envelope,
+        response_kind,
+        payload.is_discarded() ? nlohmann::json::object() : payload,
+        response.error_code);
+    return response;
+}
+
 }  // namespace v2::service

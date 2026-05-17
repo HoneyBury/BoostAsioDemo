@@ -18,12 +18,11 @@ global:
 rule_files:
   - /etc/prometheus/prometheus-alerts.yml
 
-# Alertmanager configuration (placeholder — configure your own endpoint)
 alerting:
   alertmanagers:
     - static_configs:
         - targets:
-            # - alertmanager:9093
+            - alertmanager:9093
 
 scrape_configs:
 
@@ -50,4 +49,16 @@ scrape_configs:
           - "localhost:9090"
         labels:
           service: "prometheus"
+          tier: "monitoring"
+
+  # ---------------------------------------------------------------
+  # Redis exporter — Redis runtime metrics
+  # ---------------------------------------------------------------
+  - job_name: "redis-exporter"
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - "redis-exporter:9121"
+        labels:
+          service: "redis-exporter"
           tier: "monitoring"

@@ -18,7 +18,7 @@ curl http://localhost:9080/health
 open http://localhost:9090/targets
 
 # View Grafana dashboard
-open http://localhost:3000/d/boost-gateway/boost-gateway-v2-6
+open http://localhost:3000
 ```
 
 To stop everything:
@@ -38,9 +38,12 @@ docker compose -f env/docker/docker-compose.yml down -v
 | battle backend       | 9303          | 9303          | TCP      | Battle simulation, ECS tick  |
 | matchmaking backend  | 9304          | 9304          | TCP      | MMR-based matchmaking        |
 | leaderboard backend  | 9305          | 9305          | TCP      | Ranked leaderboards          |
-| Redis                | 6379          | 6379          | TCP      | Caching, leaderboard storage |
-| Prometheus           | 9090          | 9090          | HTTP     | Metrics collection           |
-| Grafana              | 3000          | 3000          | HTTP     | Visualization                |
+| Redis                | 6379          | 6380          | TCP      | Default host bind is localhost only |
+| Redis exporter       | 9121          | 9121          | HTTP     | Redis runtime metrics        |
+| Prometheus           | 9090          | 9090          | HTTP     | Default host bind is localhost only |
+| Alertmanager         | 9093          | 9093          | HTTP     | Default host bind is localhost only |
+| Grafana              | 3000          | 3000          | HTTP     | Default host bind is localhost only |
+| cAdvisor             | 8080          | 8081          | HTTP     | Optional `host-observability` profile |
 
 ## Architecture
 
@@ -115,7 +118,18 @@ docker compose -f env/docker/docker-compose.yml up -d gateway redis
 
 # Scale backends
 docker compose -f env/docker/docker-compose.yml up -d --scale room-backend=3
+
+# Optional host/container runtime metrics
+docker compose -f env/docker/docker-compose.yml --profile host-observability up -d cadvisor prometheus-host-observability
 ```
+
+Security and operability defaults:
+
+- `9201` remains the only port that defaults to `0.0.0.0`.
+- `9080`, `9090`, `9093`, `3000`, `6380`, and `9121` default to `127.0.0.1` host binding.
+- Optional host-observability Prometheus binds `127.0.0.1:9091` when enabled.
+- Grafana defaults to `GRAFANA_ADMIN_USER=admin` and `GRAFANA_ADMIN_PASSWORD=boost-gateway-change-me`; override these in real environments.
+- Core services enable `no-new-privileges`, drop Linux capabilities, use json-file log rotation, and define baseline `mem_limit` / `cpus` / `ulimits`.
 
 ### Dockerfiles
 
@@ -157,7 +171,16 @@ Alert rules live at `env/monitoring/prometheus-alerts.yml` and are loaded by
 Prometheus through `rule_files`. The default rules cover gateway scrape down,
 backend route errors/timeouts inferred from gateway RED counters, leaderboard
 Redis-dependent failures, rate-limit spikes, active-session pressure, and
-optional process-exporter RSS/fd signals.
+optional process-exporter RSS/fd and cAdvisor container-memory signals.
+
+The optional host-observability profile uses
+`env/monitoring/prometheus.host-observability.yml` to scrape cAdvisor in a
+separate Prometheus instance, keeping the default Prometheus target set clean.
+
+Alertmanager is wired by default in Compose through
+`env/monitoring/alertmanager.yml`. The shipped receiver is a safe no-op
+placeholder so the stack is valid by default; production should replace it
+with email, webhook, Slack, PagerDuty, or equivalent notification routing.
 
 ### Grafana
 
@@ -176,6 +199,8 @@ Docker Compose also provisions Grafana automatically:
 - `env/monitoring/grafana-datasource.yml` creates the Prometheus datasource.
 - `env/monitoring/grafana-dashboard-provider.yml` loads dashboards from disk.
 - `env/monitoring/grafana-dashboard.json` is mounted into Grafana's dashboard directory.
+- The default dashboard includes gateway RED panels, Redis runtime panels, and
+  optional cAdvisor-based container runtime panels.
 
 ## Redis
 

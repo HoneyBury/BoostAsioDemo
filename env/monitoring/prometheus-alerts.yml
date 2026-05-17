@@ -60,6 +60,26 @@ groups:
           summary: "Leaderboard backend errors or timeouts detected"
           description: "Leaderboard failures may indicate Redis degradation or leaderboard backend issues. Verify redis-cli ping and leaderboard logs."
 
+      - alert: BoostGatewayRedisExporterDown
+        expr: up{job="redis-exporter"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis exporter scrape target is down"
+          description: "Prometheus cannot scrape redis-exporter. Redis runtime metrics visibility is degraded."
+
+      - alert: BoostGatewayRedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_total_system_memory_bytes > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis memory usage exceeded 80% of system memory exposed by redis_exporter."
+
   - name: boost-gateway.protection
     rules:
       - alert: BoostGatewayRateLimitSpike
@@ -105,3 +125,14 @@ groups:
         annotations:
           summary: "Gateway file descriptor usage is high"
           description: "Requires process exporter metrics. Open fd usage is above 80% of the configured limit."
+
+      - alert: BoostGatewayContainerMemoryHigh
+        expr: container_memory_working_set_bytes{name=~"boost-gateway|boost-login-backend|boost-room-backend|boost-battle-backend|boost-matchmaking-backend|boost-leaderboard-backend"} > 1073741824
+        for: 10m
+        labels:
+          severity: warning
+          component: containers
+          exporter: optional-cadvisor
+        annotations:
+          summary: "Container memory usage is high"
+          description: "Requires cAdvisor metrics. One of the core containers exceeded 1 GiB working set."

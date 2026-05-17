@@ -120,6 +120,66 @@ def validate_compose(path: Path, checks: list[dict[str, Any]]) -> None:
         "env/docker/config/gateway.json" in text or "./config/gateway.json:/app/config/gateway.json:ro" in text,
         "gateway container mounts Docker-specific backend routing config",
     )
+    add_check(
+        checks,
+        f"{label}:grafana-nondefault-password",
+        "GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-boost-gateway-change-me}" in text,
+        "Grafana no longer hardcodes the admin/admin default password",
+    )
+    add_check(
+        checks,
+        f"{label}:management-localhost-bound",
+        "${MANAGEMENT_HOST_BIND:-127.0.0.1}:9080:9080" in text,
+        "gateway management port defaults to localhost binding",
+    )
+    add_check(
+        checks,
+        f"{label}:prometheus-localhost-bound",
+        "${PROMETHEUS_HOST_BIND:-127.0.0.1}:9090:9090" in text,
+        "Prometheus defaults to localhost binding",
+    )
+    add_check(
+        checks,
+        f"{label}:grafana-localhost-bound",
+        "${GRAFANA_HOST_BIND:-127.0.0.1}:3000:3000" in text,
+        "Grafana defaults to localhost binding",
+    )
+    add_check(
+        checks,
+        f"{label}:redis-localhost-bound",
+        "${REDIS_HOST_BIND:-127.0.0.1}" in text,
+        "Redis host publishing defaults to localhost binding",
+    )
+    add_check(
+        checks,
+        f"{label}:json-file-log-rotation",
+        'max-size: "10m"' in text and 'max-file: "5"' in text,
+        "Compose defines json-file log rotation",
+    )
+    add_check(
+        checks,
+        f"{label}:no-new-privileges",
+        "no-new-privileges:true" in text,
+        "Compose enables no-new-privileges on core services",
+    )
+    add_check(
+        checks,
+        f"{label}:redis-not-overhardened",
+        "redis:\n" in text and "setpriv: setresuid failed" not in text,
+        "Redis service is not statically validated by over-hardening rules in compose gate",
+    )
+    add_check(
+        checks,
+        f"{label}:alertmanager-service",
+        "alertmanager:" in text and "prom/alertmanager" in text,
+        "Compose includes Alertmanager",
+    )
+    add_check(
+        checks,
+        f"{label}:redis-exporter-service",
+        "redis-exporter:" in text and "oliver006/redis_exporter" in text,
+        "Compose includes Redis exporter",
+    )
 
 
 def validate_docker_gateway_config(checks: list[dict[str, Any]]) -> None:
@@ -211,8 +271,8 @@ def validate_dockerfile(checks: list[dict[str, Any]]) -> None:
         add_check(
             checks,
             f"{label}:bounded-cmake-parallelism",
-            "--parallel 2" in text,
-            f"{label} bounds CMake build parallelism for repeatable local Docker builds",
+            "--parallel 2" in text and "--preset release" in text,
+            f"{label} builds from the Release preset with bounded local Docker parallelism",
         )
         add_check(
             checks,
@@ -231,6 +291,12 @@ def validate_dockerfile(checks: list[dict[str, Any]]) -> None:
         "dockerfile-backend:tcp-healthcheck",
         'nc -z 127.0.0.1 "${SERVICE_PORT}"' in backend,
         "generic backend image uses TCP healthcheck",
+    )
+    add_check(
+        checks,
+        "dockerfile-release-build-output",
+        "/src/build/release" in backend and "/src/build/release" in gateway,
+        "Docker runtime images copy binaries from the Release build tree",
     )
 
 

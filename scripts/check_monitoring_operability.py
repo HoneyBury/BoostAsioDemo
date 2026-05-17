@@ -20,6 +20,12 @@ BACKEND_TARGETS = {
     "leaderboard-backend:9305",
 }
 
+REQUIRED_PROMETHEUS_TARGETS = {
+    "gateway:9080",
+    "localhost:9090",
+    "redis-exporter:9121",
+}
+
 LEGACY_QUERY_TOKENS = {
     "backend_route_",
     "backend_login_healthy_instances",
@@ -35,10 +41,13 @@ REQUIRED_ALERTS = {
     "BoostGatewayBackendErrors",
     "BoostGatewayBackendTimeouts",
     "BoostGatewayLeaderboardBackendErrors",
+    "BoostGatewayRedisExporterDown",
+    "BoostGatewayRedisMemoryHigh",
     "BoostGatewayRateLimitSpike",
     "BoostGatewayHighActiveSessions",
     "BoostGatewayHighRSS",
     "BoostGatewayHighFileDescriptors",
+    "BoostGatewayContainerMemoryHigh",
 }
 
 REQUIRED_DASHBOARD_METRICS = {
@@ -48,6 +57,9 @@ REQUIRED_DASHBOARD_METRICS = {
     "gateway_backend_.*_requests_total",
     "gateway_backend_.*_errors_total",
     "gateway_backend_.*_timeouts_total",
+    "redis_connected_clients",
+    "redis_memory_used_bytes",
+    "container_memory_working_set_bytes",
 }
 
 
@@ -88,10 +100,23 @@ def validate_prometheus(checks: list[dict[str, Any]]) -> None:
     )
     add_check(
         checks,
+        "prometheus:alertmanager-target",
+        "alertmanager:9093" in prometheus,
+        "Prometheus routes alerts to Alertmanager",
+    )
+    add_check(
+        checks,
         "prometheus:gateway-scrape",
         '"gateway:9080"' in prometheus and "metrics_path: /metrics" in prometheus,
         "Prometheus scrapes the gateway HTTP management endpoint",
     )
+    for target in sorted(REQUIRED_PROMETHEUS_TARGETS):
+        add_check(
+            checks,
+            f"prometheus:required-target:{target}",
+            target in prometheus,
+            f"Prometheus scrape config includes {target}",
+        )
     for target in sorted(BACKEND_TARGETS):
         add_check(
             checks,
@@ -127,6 +152,12 @@ def validate_grafana_provisioning(checks: list[dict[str, Any]]) -> None:
         "../monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/boost-gateway.json:ro" in compose,
         "Docker Compose mounts the Boost Gateway dashboard JSON",
     )
+    add_check(
+        checks,
+        "grafana:admin-password-not-default",
+        "GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-boost-gateway-change-me}" in compose,
+        "Grafana compose defaults no longer hardcode admin/admin",
+    )
 
 
 def validate_alerts(checks: list[dict[str, Any]]) -> None:
@@ -159,6 +190,13 @@ def validate_alerts(checks: list[dict[str, Any]]) -> None:
         and "process_resident_memory_bytes" in alerts
         and "process_open_fds" in alerts,
         "RSS/fd alerts are clearly marked as optional process exporter rules",
+    )
+    add_check(
+        checks,
+        "alerts:optional-cadvisor-labeled",
+        "optional-cadvisor" in alerts
+        and "container_memory_working_set_bytes" in alerts,
+        "container runtime alerts are clearly marked as optional cAdvisor rules",
     )
 
 
@@ -204,6 +242,30 @@ def validate_docs(checks: list[dict[str, Any]]) -> None:
         "scrapes gateway `/metrics` only" in env_readme
         and "后端服务没有 HTTP `/metrics`" in deployment,
         "docs preserve the gateway-only scrape boundary",
+    )
+    add_check(
+        checks,
+        "docs:redis-exporter",
+        "redis_exporter" in deployment or "redis exporter" in runbook.lower() or "redis-exporter" in env_readme,
+        "docs explain Redis exporter runtime metrics",
+    )
+    add_check(
+        checks,
+        "docs:alertmanager",
+        "Alertmanager" in deployment or "Alertmanager" in runbook or "alertmanager" in env_readme,
+        "docs explain Alertmanager in the monitoring topology",
+    )
+    add_check(
+        checks,
+        "docs:host-observability-profile",
+        "host-observability" in env_readme or "cAdvisor" in deployment,
+        "docs explain the optional host-observability profile",
+    )
+    add_check(
+        checks,
+        "docs:host-observability-prometheus",
+        "prometheus.host-observability.yml" in env_readme or "9091" in deployment,
+        "docs explain the isolated Prometheus scrape path for optional host observability",
     )
     for phrase in (
         "backend down",

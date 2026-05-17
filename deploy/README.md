@@ -30,10 +30,10 @@ gateway ──HTTP 9080──▶ /health /metrics /metrics/json /metrics/diagnos
 
 ```bash
 bash third_party/download_deps.sh
-cmake --preset default
-cmake --build --preset default --parallel
-ctest --test-dir build/default
-cmake --install build/default --prefix /usr/local
+cmake --preset release
+cmake --build --preset release --parallel
+ctest --preset release
+cmake --install build/release --prefix /usr/local
 ```
 
 安装后主要产物：
@@ -66,6 +66,7 @@ docker compose down
 ```
 
 Compose 会显式把 gateway 后端地址设置为服务名，例如 `login-backend:9202`。不要在容器内使用默认 `127.0.0.1` 连接其他服务。
+生产建议仅对公网开放 `9201`；`9080`、`9090`、`9093`、`3000`、`6380` 和 `9121` 应维持 localhost / 内网绑定。
 
 后端健康检查示例：
 
@@ -115,10 +116,13 @@ systemctl stop boost-gateway boost-leaderboard-backend boost-match-backend boost
 ## 5. 监控
 
 - Gateway HTTP 管理面：`:9080/health`、`:9080/metrics`、`:9080/metrics/json`、`:9080/metrics/diagnostics`
-- Prometheus 配置：`env/monitoring/prometheus.yml`，当前只 scrape gateway HTTP `/metrics`
+- Prometheus 配置：`env/monitoring/prometheus.yml`，当前 scrape gateway HTTP `/metrics`、Prometheus 自身、Redis exporter，以及可选 profile 下的 cAdvisor
+- Alertmanager 配置：`env/monitoring/alertmanager.yml`
 - Grafana 仪表盘：`env/monitoring/grafana-dashboard.json`
+- Redis exporter：默认启用，提供 Redis 运行时指标
+- cAdvisor：`host-observability` profile 下可选启用，提供容器 CPU / memory 指标
 
-管理面不应暴露到公网。生产入口建议放在反向代理或负载均衡之后，并在边界层处理 TLS、限流和访问控制。gateway `/health` 当前是 liveness stub，不等价于完整业务 ready；发布后必须叠加 SDK full-flow 或生产证据 gate。
+管理面不应暴露到公网。生产入口建议放在反向代理或负载均衡之后，并在边界层处理 TLS、限流和访问控制。gateway `/health` 当前是 liveness stub，不等价于完整业务 ready；发布后必须叠加 SDK full-flow 或生产证据 gate。Grafana 默认密码必须通过 `GRAFANA_ADMIN_PASSWORD` 覆盖，Alertmanager 默认 receiver 需要替换成真实通知通道。
 
 ## 6. 部署预检
 

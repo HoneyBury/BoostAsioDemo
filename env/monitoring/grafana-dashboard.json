@@ -3,7 +3,7 @@
   "__requires": [],
   "title": "Boost Gateway Production",
   "uid": "boost-gateway-production",
-  "version": 2,
+  "version": 3,
   "schemaVersion": 39,
   "tags": ["boost-gateway", "game-server", "production"],
   "timezone": "utc",
@@ -203,6 +203,47 @@
         "defaults": { "unit": "short" }
       },
       "description": "Optional process exporter metrics. Empty until a process exporter target is added."
+    },
+    {
+      "title": "Redis Runtime",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 22 },
+      "targets": [
+        { "expr": "redis_connected_clients", "legendFormat": "connected clients" },
+        { "expr": "rate(redis_commands_processed_total[1m])", "legendFormat": "commands/s" },
+        { "expr": "redis_keyspace_hits_total", "legendFormat": "hits total" },
+        { "expr": "redis_keyspace_misses_total", "legendFormat": "misses total" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      },
+      "description": "Redis exporter metrics for runtime visibility"
+    },
+    {
+      "title": "Redis Memory",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 22 },
+      "targets": [
+        { "expr": "redis_memory_used_bytes", "legendFormat": "used bytes" },
+        { "expr": "redis_config_maxmemory", "legendFormat": "configured maxmemory" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" }
+      },
+      "description": "Redis memory usage and configured cap"
+    },
+    {
+      "title": "Optional Container Runtime",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 28 },
+      "targets": [
+        { "expr": "sum by (name) (container_memory_working_set_bytes{name=~\"boost-gateway|boost-login-backend|boost-room-backend|boost-battle-backend|boost-matchmaking-backend|boost-leaderboard-backend\"})", "legendFormat": "{{name}} memory" },
+        { "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name=~\"boost-gateway|boost-login-backend|boost-room-backend|boost-battle-backend|boost-matchmaking-backend|boost-leaderboard-backend\"}[5m]))", "legendFormat": "{{name}} cpu/s" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      },
+      "description": "Optional cAdvisor metrics. Empty until the host-observability profile is enabled."
     }
   ]
 }

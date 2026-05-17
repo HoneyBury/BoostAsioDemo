@@ -50,8 +50,8 @@ COPY third_party/ third_party/
 COPY config/ config/
 
 # Build only the requested target
-RUN cmake --preset default
-RUN cmake --build --preset default --parallel 2 --target ${SERVICE_BINARY}
+RUN cmake --preset release
+RUN cmake --build --preset release --parallel 2 --target ${SERVICE_BINARY}
 
 # ============================================================================
 # Stage 2: Runtime
@@ -72,8 +72,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 RUN mkdir -p /app/bin /app/logs /app/config
 
-COPY --from=builder /src/build/default/examples/${SERVICE_BINARY}/${SERVICE_BINARY} /app/bin/
-COPY --from=builder /src/build/default/_deps/hiredis-build/libhiredis*.so* /usr/local/lib/
+COPY --from=builder /src/build/release/examples/${SERVICE_BINARY}/${SERVICE_BINARY} /app/bin/
+COPY --from=builder /src/build/release/_deps/hiredis-build/libhiredis*.so* /usr/local/lib/
 COPY config/ /app/config/
 RUN ldconfig
 

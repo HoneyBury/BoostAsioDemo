@@ -1,19 +1,168 @@
 # 生产运维 Runbook
 
-更新时间：2026-05-17
+更新时间：2026-05-18（P0-P4）
 
 本文档用于 P3 监控、告警与运维流程收束。当前生产监控只 scrape gateway `/metrics`；后端服务是自定义 TCP 协议，不暴露 HTTP `/metrics`。因此后端异常通过 gateway backend RED counters、Docker/systemd/Kubernetes 健康检查和业务 full-flow 共同判断。
 
 ## 入口
 
-常用入口：
+当前 OrbStack / Docker Compose 本机部署暴露三类运维入口：
+
+| 地址 | 类型 | 用途 | 正常现象 |
+| --- | --- | --- | --- |
+| `http://127.0.0.1:9080` | Gateway 只读管理 API | 给 curl、Prometheus、脚本读取健康与指标 | 访问根路径 `/` 返回 `Not Found` 是正常的；必须访问具体 path |
+| `http://127.0.0.1:9090` | Prometheus Web UI | 查看 scrape target、PromQL、告警规则 | 打开后使用顶部菜单 `Status`、`Alerts`、`Graph` |
+| `http://127.0.0.1:9093` | Alertmanager Web UI | 查看告警路由、silence、通知链 | 默认 receiver 为占位配置；生产需替换 |
+| `http://127.0.0.1:3000` | Grafana Web UI | 查看仪表盘 | 默认账号来自 Compose：`admin` / `admin` |
+| `127.0.0.1:9201` | Gateway TCP 业务入口 | SDK / 客户端连接，不是浏览器页面 | 浏览器访问无意义；用 SDK full-flow 或业务客户端验证 |
+
+### Gateway 管理 API（9080）
+
+`9080` 不是网页控制台。`src/net/http_manager.cpp` 只注册了以下 GET path，访问 `http://127.0.0.1:9080/` 返回 `Not Found` 符合预期：
 
 ```bash
 curl -fsS http://127.0.0.1:9080/health
 curl -fsS http://127.0.0.1:9080/ready
 curl -fsS http://127.0.0.1:9080/metrics
 curl -fsS http://127.0.0.1:9080/metrics/diagnostics/json
-curl -fsS http://127.0.0.1:9090/-/ready
+```
+
+端点含义：
+
+| Path | 格式 | 用途 |
+| --- | --- | --- |
+| `/health` | JSON | liveness / 基础健康信息。当前 Compose 静态路由模式下可能返回 `warn`，不等价于业务不可用 |
+| `/ready` | JSON | readiness / 是否可服务 |
+| `/metrics` | Prometheus text | 给 Prometheus scrape，也可人工 grep |
+| `/metrics/json` | JSON | 机器读取的指标快照 |
+| `/metrics/diagnostics` | text | 人工排查摘要 |
+| `/metrics/diagnostics/json` | JSON | 推荐排查入口，包含 active sessions、accepted sessions、backend metrics 等 |
+
+常用查询：
+
+```bash
+# 查看活跃连接、累计接入、后端 RED 指标
+curl -fsS http://127.0.0.1:9080/metrics/diagnostics/json
+
+# 查看 Prometheus 文本指标
+curl -fsS http://127.0.0.1:9080/metrics
+
+# 只看 gateway session 指标
+curl -fsS http://127.0.0.1:9080/metrics | grep -E 'gateway_active_sessions|gateway_accepted_sessions_total|gateway_outbound_dispatches_total'
+
+# 只看后端请求、错误、超时
+curl -fsS http://127.0.0.1:9080/metrics | grep -E 'gateway_backend_.*_(requests|successes|errors|timeouts)_total'
+```
+
+注意：Compose 部署中 gateway 实际通过 `env/docker/config/gateway.json` 的静态服务名路由到后端。`/health` 里的 service registry 动态注册项为空时可能显示 `warn`，因此上线验收必须叠加 SDK full-flow。
+
+### Prometheus（9090）
+
+`9090` 是 Prometheus 自带的 Web UI，不是项目业务页面。它的作用是抓取 `gateway:9080/metrics`，保存时间序列，并提供查询和告警状态。
+
+常用页面：
+
+| 页面 | URL | 用途 |
+| --- | --- | --- |
+| Ready | `http://127.0.0.1:9090/-/ready` | Prometheus 自身是否 ready |
+| Targets | `http://127.0.0.1:9090/targets` | 查看 `gateway`、`prometheus` scrape 是否 `UP` |
+| Alerts | `http://127.0.0.1:9090/alerts` | 查看当前告警是否 firing |
+| Graph | `http://127.0.0.1:9090/graph` | 执行 PromQL 查询 |
+| Rules | `http://127.0.0.1:9090/rules` | 查看加载的告警规则 |
+
+推荐 PromQL：
+
+```promql
+# Gateway 是否被 Prometheus 抓到，1 表示正常
+up{job="gateway"}
+
+# 当前活跃连接数
+gateway_active_sessions
+
+# 最近 5 分钟新连接速率
+rate(gateway_accepted_sessions_total[5m])
+
+# 后端请求速率
+sum by (__name__) (rate({__name__=~"gateway_backend_.*_requests_total"}[5m]))
+
+# 后端错误速率
+sum by (__name__) (rate({__name__=~"gateway_backend_.*_errors_total"}[5m]))
+
+# 后端超时速率
+sum by (__name__) (rate({__name__=~"gateway_backend_.*_timeouts_total"}[5m]))
+
+# leaderboard / Redis 相关错误
+rate(gateway_backend_leaderboard_errors_total[5m]) + rate(gateway_backend_leaderboard_timeouts_total[5m])
+```
+
+当前 Prometheus 配置只 scrape gateway 和 Prometheus 自身。后端服务是 TCP 协议，不直接暴露 HTTP `/metrics`；后端健康通过 Docker healthcheck、gateway backend counters、日志和 SDK full-flow 共同判断。
+
+### Grafana（3000）
+
+`3000` 是 Grafana 仪表盘。首次访问需要登录，Docker Compose 默认配置为：
+
+```text
+username: admin
+password: 由 `GRAFANA_ADMIN_PASSWORD` 决定；当前默认值是 `boost-gateway-change-me`
+```
+
+登录后查看：
+
+1. 左侧 `Dashboards`。
+2. 进入文件夹 `Boost Gateway`。
+3. 打开 `Boost Gateway Production`。
+
+Grafana 已通过以下文件自动配置 Prometheus 数据源和 dashboard：
+
+- `env/monitoring/grafana-datasource.yml`
+- `env/monitoring/grafana-dashboard-provider.yml`
+- `env/monitoring/grafana-dashboard.json`
+
+主要面板含义：
+
+| 面板 | 看什么 | 异常判断 |
+| --- | --- | --- |
+| `Gateway Up` | Prometheus 是否能抓到 gateway | `0` 表示 scrape down |
+| `Active Sessions` | 当前连接数 | 突增要结合压测/攻击/客户端重连判断 |
+| `Accepted Sessions` | 接入速率 | 长时间为 0 但有业务预期时排查入口 |
+| `Backend Requests` | 后端请求与成功速率 | 某服务请求异常变化要看业务流 |
+| `Backend Errors / Timeouts` | 后端错误和超时 | 非 0 持续增长要排查对应 backend |
+| `Leaderboard / Redis Dependent Errors` | 排行榜/Redis 相关失败 | 优先查 Redis 和 leaderboard backend |
+| `Rate Limit / Blocked Packets` | 限流/丢弃 | 突增可能是重试风暴或异常客户端 |
+
+生产环境不要继续使用默认密码，应改为强密码并限制 `3000`、`9090`、`9093`、`9080`、`9121`、`6380` 只允许内网、VPN 或堡垒机访问。
+
+### Alertmanager（9093）
+
+`9093` 是 Alertmanager，用来接收 Prometheus 告警并转发到通知通道。当前 Compose 已经把 Prometheus 指向 `alertmanager:9093`，但仓库内置的 receiver 仍是无副作用占位配置，目的是让本地和 CI 栈可以稳定启动。
+
+常用页面：
+
+| 页面 | URL | 用途 |
+| --- | --- | --- |
+| Ready | `http://127.0.0.1:9093/-/ready` | Alertmanager 是否 ready |
+| Status | `http://127.0.0.1:9093/#/status` | 查看配置和集群状态 |
+| Alerts | `http://127.0.0.1:9093/#/alerts` | 查看收到的告警 |
+| Silences | `http://127.0.0.1:9093/#/silences` | 创建维护窗口静默 |
+
+生产需要改的地方：
+
+- 用 email / webhook / Slack / PagerDuty 替换 `env/monitoring/alertmanager.yml` 里的占位 receiver。
+- 保证 `9093` 只在内网开放。
+- 在发布记录里写清接收渠道、值班组和静默流程。
+
+### 业务入口（9201）
+
+`9201` 是 TCP 协议入口，浏览器无法直接使用。验证真实业务闭环用 SDK 示例：
+
+```bash
+build/default/sdk/examples/sdk_full_flow_client 127.0.0.1 9201
+```
+
+成功输出应包含：
+
+```text
+=== ALL TESTS PASSED ===
 ```
 
 关键产物：

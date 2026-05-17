@@ -1,0 +1,15 @@
+{
+  "service": {
+    "name": "matchmaking",
+    "port": 9304,
+    "config_version": "production-matchmaking-v1"
+  },
+  "raft": {
+    "node_id": "",
+    "peers": [],
+    "storage_dir": "runtime/raft/matchmaking",
+    "election_timeout_min_ms": 150,
+    "election_timeout_max_ms": 300,
+    "heartbeat_interval_ms": 50
+  }
+}

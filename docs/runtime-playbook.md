@@ -362,16 +362,16 @@ python scripts/verify_observability_gate.py --build-dir build/default --skip-bui
 
 ### v2 login backend 生产鉴权
 
-`config/login_backend.json` 默认保留 `provider=dev`，仅用于本地和测试。生产运行必须显式启用 JWT：
+`config/environments/local/login.json` 默认保留 `auth.mode=dev`，仅用于本地和测试。生产模板 `config/environments/production/login.json` 使用 `auth.mode=production`，生产运行必须显式注入 JWT secret 或公钥：
 
 ```bash
-V2_LOGIN_AUTH_MODE=production V2_LOGIN_JWT_SECRET=<secret> v2_login_backend 9202
+V2_LOGIN_JWT_SECRET=<secret> v2_login_backend --config config/environments/production/login.json
 ```
 
 或使用 RS256 公钥：
 
 ```bash
-V2_LOGIN_AUTH_MODE=production V2_LOGIN_JWT_PUBLIC_KEY="$(cat public.pem)" v2_login_backend 9202
+V2_LOGIN_JWT_PUBLIC_KEY="$(cat public.pem)" v2_login_backend --config config/environments/production/login.json
 ```
 
 生产模式下未配置 `V2_LOGIN_JWT_SECRET` 或 `V2_LOGIN_JWT_PUBLIC_KEY` 会拒绝启动；release candidate 会通过 `scripts/check_security_release_gate.py` 检查该证据链。

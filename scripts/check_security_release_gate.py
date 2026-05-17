@@ -19,34 +19,36 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def check_login_backend_config(root: Path, errors: list[str], warnings: list[str]) -> None:
-    config_path = root / "config" / "login_backend.json"
+    config_path = root / "config" / "environments" / "production" / "login.json"
     if not config_path.exists():
-        errors.append("missing config/login_backend.json")
+        errors.append("missing config/environments/production/login.json")
         return
 
     config = load_json(config_path)
-    auth = config.get("login_backend", {}).get("auth", {})
-    provider = str(auth.get("provider", "dev"))
-    if provider == "dev":
+    auth = config.get("auth", {})
+    mode = str(auth.get("mode", "dev"))
+    if mode == "dev":
         warnings.append(
-            "config/login_backend.json uses dev auth; production must set "
+            "config/environments/production/login.json uses dev auth; production must set "
             "V2_LOGIN_AUTH_MODE=production and V2_LOGIN_JWT_SECRET or V2_LOGIN_JWT_PUBLIC_KEY"
         )
-    elif provider not in {"jwt", "dev"}:
-        errors.append(f"unsupported login_backend.auth.provider: {provider}")
+    elif mode not in {"jwt", "prod", "production"}:
+        errors.append(f"unsupported login auth.mode: {mode}")
 
 
 def check_source_contracts(root: Path, errors: list[str]) -> None:
     login_header = root / "include" / "v2" / "login" / "login_backend_service.h"
     login_source = root / "src" / "v2" / "login" / "login_backend_service.cpp"
     login_main = root / "examples" / "v2_login_backend" / "main.cpp"
+    config_source = root / "src" / "app" / "config.cpp"
     admin_doc = root / "docs" / "v1-admin-audit-rules.md"
     admin_source = root / "src" / "game" / "gateway" / "admin_service.cpp"
 
     required_snippets = {
         login_header: ["production_auth_required"],
         login_source: ["jwt_required", "production auth requires"],
-        login_main: ["V2_LOGIN_AUTH_MODE", "V2_LOGIN_JWT_SECRET", "V2_LOGIN_JWT_PUBLIC_KEY"],
+        login_main: ["resolve_backend_config_path", "load_backend_service_config"],
+        config_source: ["V2_LOGIN_AUTH_MODE", "V2_LOGIN_JWT_SECRET", "V2_LOGIN_JWT_PUBLIC_KEY"],
     admin_doc: ["admin_invoke", "admin_denied", "默认启用最小 ACL"],
     admin_source: ["AUDIT_LOG(\"admin_invoke\"", "admin_denied", "is_authorized", "payload_excerpt"],
     }

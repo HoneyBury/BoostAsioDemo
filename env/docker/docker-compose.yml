@@ -42,11 +42,11 @@ services:
       - "${GATEWAY_HOST_BIND:-0.0.0.0}:9201:9201"
       - "${MANAGEMENT_HOST_BIND:-127.0.0.1}:9080:9080"
     environment:
+      CONFIG_PATH: /app/config/environments/docker/gateway.json
       MANAGEMENT_PORT: "9080"
       BOOST_LOG_LEVEL: "info"
     volumes:
       - ../../config:/app/config:ro
-      - ./config/gateway.json:/app/config/gateway.json:ro
       - gateway-logs:/app/logs
     restart: unless-stopped
     security_opt:
@@ -121,6 +121,7 @@ services:
     ports:
       - "${BACKEND_HOST_BIND:-127.0.0.1}:9202:9202"
     environment:
+      CONFIG_PATH: /app/config/environments/docker/login.json
       SERVICE_PORT: "9202"
       BOOST_LOG_LEVEL: "info"
     volumes:
@@ -165,6 +166,7 @@ services:
     ports:
       - "${BACKEND_HOST_BIND:-127.0.0.1}:9302:9302"
     environment:
+      CONFIG_PATH: /app/config/environments/docker/room.json
       SERVICE_PORT: "9302"
       BOOST_LOG_LEVEL: "info"
     volumes:
@@ -209,6 +211,7 @@ services:
     ports:
       - "${BACKEND_HOST_BIND:-127.0.0.1}:9303:9303"
     environment:
+      CONFIG_PATH: /app/config/environments/docker/battle.json
       SERVICE_PORT: "9303"
       BOOST_LOG_LEVEL: "info"
     volumes:
@@ -253,6 +256,7 @@ services:
     ports:
       - "${BACKEND_HOST_BIND:-127.0.0.1}:9304:9304"
     environment:
+      CONFIG_PATH: /app/config/environments/docker/matchmaking.json
       SERVICE_PORT: "9304"
       BOOST_LOG_LEVEL: "info"
     volumes:
@@ -297,6 +301,7 @@ services:
     ports:
       - "${BACKEND_HOST_BIND:-127.0.0.1}:9305:9305"
     environment:
+      CONFIG_PATH: /app/config/environments/docker/leaderboard.json
       SERVICE_PORT: "9305"
       REDIS_HOST: redis
       REDIS_PORT: "6379"

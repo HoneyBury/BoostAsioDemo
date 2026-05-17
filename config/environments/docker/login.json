@@ -1,0 +1,12 @@
+{
+  "service": {
+    "name": "login",
+    "port": 9202,
+    "config_version": "docker-login-v1"
+  },
+  "auth": {
+    "mode": "dev",
+    "jwt_issuer": "boost-gateway",
+    "jwt_audience": ""
+  }
+}

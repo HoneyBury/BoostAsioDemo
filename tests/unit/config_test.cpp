@@ -160,6 +160,69 @@ TEST(ConfigTest, TryLoadGatewayConfigReturnsNulloptWhenJsonInvalid) {
     std::filesystem::remove(path);
 }
 
+TEST(ConfigTest, LoadsBackendServiceConfigFromJsonFile) {
+    app::logging::init("project_tests");
+
+    const auto path = std::filesystem::temp_directory_path() / "backend_service_test.json";
+    {
+        std::ofstream output(path);
+        output << "{\n";
+        output << "  \"service\": {\n";
+        output << "    \"name\": \"leaderboard\",\n";
+        output << "    \"port\": 9505,\n";
+        output << "    \"config_version\": \"test-v7\"\n";
+        output << "  },\n";
+        output << "  \"redis\": {\n";
+        output << "    \"host\": \"redis.internal\",\n";
+        output << "    \"port\": 6380,\n";
+        output << "    \"leaderboard_key\": \"lb:test\"\n";
+        output << "  },\n";
+        output << "  \"raft\": {\n";
+        output << "    \"node_id\": \"lb-1\",\n";
+        output << "    \"storage_dir\": \"runtime/raft/lb-1\",\n";
+        output << "    \"election_timeout_min_ms\": 200,\n";
+        output << "    \"election_timeout_max_ms\": 450,\n";
+        output << "    \"heartbeat_interval_ms\": 75,\n";
+        output << "    \"peers\": [\n";
+        output << "      {\"id\": \"lb-1\", \"host\": \"127.0.0.1\", \"port\": 9505}\n";
+        output << "    ]\n";
+        output << "  }\n";
+        output << "}\n";
+    }
+
+    const auto config = app::config::load_backend_service_config("leaderboard", path, 9305);
+    EXPECT_EQ(config.service_name, "leaderboard");
+    EXPECT_EQ(config.port, 9505);
+    EXPECT_EQ(config.config_version, "test-v7");
+    EXPECT_EQ(config.redis.host, "redis.internal");
+    EXPECT_EQ(config.redis.port, 6380);
+    EXPECT_EQ(config.redis.leaderboard_key, "lb:test");
+    EXPECT_EQ(config.raft.node_id, "lb-1");
+    EXPECT_EQ(config.raft.storage_dir, "runtime/raft/lb-1");
+    EXPECT_EQ(config.raft.election_timeout_min, std::chrono::milliseconds(200));
+    EXPECT_EQ(config.raft.election_timeout_max, std::chrono::milliseconds(450));
+    EXPECT_EQ(config.raft.heartbeat_interval, std::chrono::milliseconds(75));
+    ASSERT_EQ(config.raft.peers.size(), 1U);
+    EXPECT_EQ(config.raft.peers[0].id, "lb-1");
+    EXPECT_EQ(config.raft.peers[0].host, "127.0.0.1");
+    EXPECT_EQ(config.raft.peers[0].port, 9505);
+
+    std::filesystem::remove(path);
+}
+
+TEST(ConfigTest, ResolveBackendConfigPathHonorsConfigFlag) {
+    app::logging::init("project_tests");
+
+    char binary[] = "v2_room_backend";
+    char flag[] = "--config";
+    char path[] = "config/environments/docker/room.json";
+    char* argv[] = {binary, flag, path};
+
+    const auto resolved = app::config::resolve_backend_config_path(
+        "room", 3, argv, "config/environments/local/room.json");
+    EXPECT_EQ(resolved.generic_string(), "config/environments/docker/room.json");
+}
+
 TEST(ConfigTest, LoadsPressureConfigFromJsonFile) {
     app::logging::init("project_tests");
 

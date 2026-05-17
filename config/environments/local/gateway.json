@@ -1,0 +1,56 @@
+{
+  "gateway": {
+    "port": 9000,
+    "http_management_port": 9080,
+    "io_threads": 2,
+    "business_threads": 2,
+    "metrics_log_interval_ms": 5000,
+    "metrics_prometheus_path": "runtime/metrics/gateway.prom",
+    "metrics_json_path": "runtime/metrics/gateway.json",
+    "auth": {
+      "provider": "dev",
+      "users_path": "config/auth_users.json"
+    },
+    "v2_shadow_bridge_enabled": false,
+    "v2_shadow_bridge_emit_responses": false,
+    "v2_shadow_bridge_login": true,
+    "v2_shadow_bridge_room": true,
+    "v2_shadow_bridge_battle": true,
+    "v2_shadow_bridge_echo": false,
+    "v2_shadow_bridge_emit_battle_input_push": true,
+    "v2_shadow_bridge_emit_battle_state_started": true,
+    "v2_shadow_bridge_emit_battle_state_frame": true,
+    "v2_shadow_bridge_emit_battle_state_settlement": true,
+    "v2_shadow_bridge_emit_battle_state_finished": true
+  },
+  "session": {
+    "max_packet_size": 1048576,
+    "max_pending_write_bytes": 262144,
+    "heartbeat_check_interval_ms": 5000,
+    "heartbeat_timeout_ms": 30000
+  },
+  "backends": {
+    "login": { "host": "127.0.0.1", "port": 9202 },
+    "room": { "host": "127.0.0.1", "port": 9302 },
+    "battle": { "host": "127.0.0.1", "port": 9303 },
+    "match": { "host": "127.0.0.1", "port": 9304 },
+    "leaderboard": { "host": "127.0.0.1", "port": 9305 }
+  },
+  "feature_flags": {
+    "v3_tls_enabled": { "enabled": false, "rollout_percentage": 0 }
+  },
+  "tls": {
+    "cert_chain_path": "certs/server.crt",
+    "private_key_path": "certs/server.key",
+    "ca_cert_path": "certs/ca.crt",
+    "verify_mode": "mutual"
+  },
+  "security_policy": {
+    "require_tls": false,
+    "login": { "tls_required": true, "mtls_required": false },
+    "room": { "tls_required": true, "mtls_required": false },
+    "battle": { "tls_required": true, "mtls_required": false },
+    "match": { "tls_required": true, "mtls_required": false },
+    "leaderboard": { "tls_required": true, "mtls_required": true }
+  }
+}

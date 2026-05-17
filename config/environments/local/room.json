@@ -1,0 +1,10 @@
+{
+  "service": {
+    "name": "room",
+    "port": 9302,
+    "config_version": "local-room-v1"
+  },
+  "battle": {
+    "max_frames": 3
+  }
+}

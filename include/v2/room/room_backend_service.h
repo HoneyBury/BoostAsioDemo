@@ -8,6 +8,7 @@ namespace v2::room {
 class RoomBackendService {
 public:
     explicit RoomBackendService(std::uint16_t port);
+    RoomBackendService(std::uint16_t port, std::uint32_t battle_max_frames);
     ~RoomBackendService();
 
     void start();

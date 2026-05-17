@@ -69,6 +69,7 @@
 - [生产候选实测与发布硬化规划](./production-candidate-hardening-plan.md) — P0-P6 收束后的下一阶段规划，聚焦固定 runner 常态化、长稳、容量、Kubernetes 发布演练、观测闭环和 SDK 企业接入包
 - [生产部署运行手册](./production-deployment-runbook.md) — P0 生产部署事实源，覆盖云服务器、Docker Compose、systemd、Kubernetes、监控、备份、回滚和发布后验证
 - [生产运维 Runbook](./production-operations-runbook.md) — P3 告警响应、backend/Redis/gateway 排障、发布失败、回滚和日志采集流程
+- [生产配置 Runbook](./production-configuration-runbook.md) — gateway / backend / Docker / systemd 配置入口、热重载边界、修改方式和生产配置建议
 - [v3.x 发布清单](./v3-release-checklist.md) — v3.x 阶段的版本口径、P3 数据恢复、配置脚本、控制面入口和发布阻断条件
 - [固定 Runner 执行手册](./fixed-runner-playbook.md) — Release baseline、Redis live、Operator kind 固定 runner 的 label、环境预检和手动 workflow 参数
 - [生产证据固定 Runner 配置说明](./production-evidence-runner.md) — P2 生产证据 workflow 的 runner JSON 输入、真实依赖场景、预检 summary 和 artifact 归档标准

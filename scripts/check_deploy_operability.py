@@ -117,8 +117,8 @@ def validate_compose(path: Path, checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         f"{label}:docker-gateway-config-mounted",
-        "env/docker/config/gateway.json" in text or "./config/gateway.json:/app/config/gateway.json:ro" in text,
-        "gateway container mounts Docker-specific backend routing config",
+        "CONFIG_PATH: /app/config/environments/docker/gateway.json" in text,
+        "gateway container selects Docker-specific backend routing config",
     )
     add_check(
         checks,
@@ -183,12 +183,12 @@ def validate_compose(path: Path, checks: list[dict[str, Any]]) -> None:
 
 
 def validate_docker_gateway_config(checks: list[dict[str, Any]]) -> None:
-    path = REPO_ROOT / "env/docker/config/gateway.json"
+    path = REPO_ROOT / "config/environments/docker/gateway.json"
     add_check(
         checks,
         "docker-gateway-config:exists",
         path.exists(),
-        "Docker-specific gateway config is present",
+        "Docker-specific gateway config is present in the governed environments tree",
     )
     if not path.exists():
         return
@@ -315,8 +315,8 @@ def validate_examples(checks: list[dict[str, Any]]) -> None:
         add_check(
             checks,
             f"{relative}:service-port-env",
-            'std::getenv("SERVICE_PORT")' in text,
-            f"{relative} accepts generic container SERVICE_PORT",
+            '"SERVICE_PORT"' in read_text("src/app/config.cpp"),
+            f"{relative} accepts generic container SERVICE_PORT via app::config overlay",
         )
 
     gateway_main = read_text("examples/v2_gateway_demo/main.cpp")

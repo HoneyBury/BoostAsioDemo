@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -168,6 +169,226 @@ std::optional<std::filesystem::path> get_path_value(const ConfigStore& store, co
     return std::filesystem::path(*value);
 }
 
+std::optional<std::string> env_value(const std::string& name) {
+    const char* value = std::getenv(name.c_str());
+    if (value == nullptr || value[0] == '\0') {
+        return std::nullopt;
+    }
+    return std::string(value);
+}
+
+std::uint16_t read_uint16_or(std::optional<std::string> value, std::uint16_t fallback) {
+    if (!value) {
+        return fallback;
+    }
+    if (const auto parsed = parse_integer<std::uint16_t>(*value)) {
+        return *parsed;
+    }
+    return fallback;
+}
+
+std::optional<std::uint32_t> read_uint32(std::optional<std::string> value) {
+    if (!value) {
+        return std::nullopt;
+    }
+    return parse_integer<std::uint32_t>(*value);
+}
+
+std::chrono::milliseconds read_milliseconds_or(std::optional<std::string> value,
+                                               std::chrono::milliseconds fallback) {
+    if (!value) {
+        return fallback;
+    }
+    if (const auto parsed = parse_integer<std::uint64_t>(*value)) {
+        return std::chrono::milliseconds(*parsed);
+    }
+    return fallback;
+}
+
+std::vector<RaftPeerConfig> parse_raft_peers(std::string_view raw) {
+    std::vector<RaftPeerConfig> peers;
+    const auto text = trim(std::string(raw));
+    if (text.empty()) {
+        return peers;
+    }
+
+    try {
+        if (text.front() == '[') {
+            const auto doc = json::parse(text);
+            if (doc.is_array()) {
+                for (const auto& item : doc) {
+                    if (!item.is_object()) {
+                        continue;
+                    }
+                    const auto id = item.value("id", std::string{});
+                    const auto host = item.value("host", std::string{});
+                    const auto port = item.value("port", std::uint16_t{0});
+                    if (!id.empty() && !host.empty() && port > 0) {
+                        peers.push_back(RaftPeerConfig{.id = id, .host = host, .port = port});
+                    }
+                }
+                return peers;
+            }
+        }
+    } catch (const std::exception&) {
+    }
+
+    std::stringstream stream(text);
+    std::string token;
+    while (std::getline(stream, token, ',')) {
+        token = trim(token);
+        const auto at = token.find('@');
+        const auto colon = token.rfind(':');
+        if (at == std::string::npos || colon == std::string::npos || colon <= at + 1) {
+            continue;
+        }
+        const auto port = parse_integer<std::uint16_t>(token.substr(colon + 1));
+        if (!port) {
+            continue;
+        }
+        peers.push_back(RaftPeerConfig{
+            .id = token.substr(0, at),
+            .host = token.substr(at + 1, colon - at - 1),
+            .port = *port,
+        });
+    }
+    return peers;
+}
+
+void fill_backend_from_store(const ConfigStore& store, BackendServiceConfig& config) {
+    if (const auto value = store.get_string("service.name")) {
+        config.service_name = *value;
+    }
+    if (const auto value = store.get_string("service.config_version")) {
+        config.config_version = *value;
+    }
+    if (const auto value = store.get_uint16("service.port")) {
+        config.port = *value;
+    }
+    if (const auto value = store.get_string("auth.mode")) {
+        config.jwt.mode = *value;
+    }
+    if (const auto value = store.get_string("auth.jwt_secret")) {
+        config.jwt.secret = *value;
+    }
+    if (const auto value = store.get_string("auth.jwt_public_key_pem")) {
+        config.jwt.public_key_pem = *value;
+    }
+    if (const auto value = store.get_string("auth.jwt_private_key_pem")) {
+        config.jwt.private_key_pem = *value;
+    }
+    if (const auto value = store.get_string("auth.jwt_issuer")) {
+        config.jwt.issuer = *value;
+    }
+    if (const auto value = store.get_string("auth.jwt_audience")) {
+        config.jwt.audience = *value;
+    }
+    if (const auto value = store.get_string("redis.host")) {
+        config.redis.host = *value;
+    }
+    if (const auto value = store.get_uint16("redis.port")) {
+        config.redis.port = *value;
+    }
+    if (const auto value = store.get_string("redis.password")) {
+        config.redis.password = *value;
+    }
+    if (const auto value = store.get_string("redis.leaderboard_key")) {
+        config.redis.leaderboard_key = *value;
+    }
+    if (const auto value = store.get_string("raft.node_id")) {
+        config.raft.node_id = *value;
+    }
+    if (const auto value = store.get_string("raft.storage_dir")) {
+        config.raft.storage_dir = *value;
+    }
+    if (const auto value = store.get_milliseconds("raft.election_timeout_min_ms")) {
+        config.raft.election_timeout_min = *value;
+    }
+    if (const auto value = store.get_milliseconds("raft.election_timeout_max_ms")) {
+        config.raft.election_timeout_max = *value;
+    }
+    if (const auto value = store.get_milliseconds("raft.heartbeat_interval_ms")) {
+        config.raft.heartbeat_interval = *value;
+    }
+    if (const auto value = store.get_string("raft.peers")) {
+        config.raft.peers = parse_raft_peers(*value);
+    }
+    if (const auto value = store.get_uint32("battle.max_frames")) {
+        config.battle_max_frames = *value;
+    }
+}
+
+void apply_backend_env_overlay(const std::string& service_name, BackendServiceConfig& config) {
+    const auto upper_service = [&service_name] {
+        std::string value;
+        value.reserve(service_name.size());
+        for (const char ch : service_name) {
+            value.push_back(static_cast<char>(
+                ch == '-' ? '_' : std::toupper(static_cast<unsigned char>(ch))));
+        }
+        return value;
+    }();
+
+    config.port = read_uint16_or(env_value(upper_service + "_PORT"), config.port);
+    if (service_name == "matchmaking") {
+        config.port = read_uint16_or(env_value("MATCH_PORT"), config.port);
+    }
+    if (service_name == "leaderboard") {
+        config.port = read_uint16_or(env_value("LEADERBOARD_PORT"), config.port);
+    }
+    config.port = read_uint16_or(env_value("SERVICE_PORT"), config.port);
+
+    if (const auto value = env_value("V2_LOGIN_AUTH_MODE")) {
+        config.jwt.mode = *value;
+    }
+    if (const auto value = env_value("V2_LOGIN_JWT_SECRET")) {
+        config.jwt.secret = *value;
+    }
+    if (const auto value = env_value("V2_LOGIN_JWT_PUBLIC_KEY")) {
+        config.jwt.public_key_pem = *value;
+    }
+    if (const auto value = env_value("V2_LOGIN_JWT_PRIVATE_KEY")) {
+        config.jwt.private_key_pem = *value;
+    }
+    if (const auto value = env_value("V2_LOGIN_JWT_ISSUER")) {
+        config.jwt.issuer = *value;
+    }
+    if (const auto value = env_value("V2_LOGIN_JWT_AUDIENCE")) {
+        config.jwt.audience = *value;
+    }
+
+    if (const auto value = env_value("REDIS_HOST")) {
+        config.redis.host = *value;
+    }
+    config.redis.port = read_uint16_or(env_value("REDIS_PORT"), config.redis.port);
+    if (const auto value = env_value("REDIS_PASSWORD")) {
+        config.redis.password = *value;
+    }
+    if (const auto value = env_value("REDIS_LEADERBOARD_KEY")) {
+        config.redis.leaderboard_key = *value;
+    }
+
+    if (const auto value = env_value("RAFT_NODE_ID")) {
+        config.raft.node_id = *value;
+    }
+    if (const auto value = env_value("RAFT_PEERS")) {
+        config.raft.peers = parse_raft_peers(*value);
+    }
+    if (const auto value = env_value("RAFT_STORAGE_DIR")) {
+        config.raft.storage_dir = *value;
+    }
+    config.raft.election_timeout_min = read_milliseconds_or(
+        env_value("RAFT_ELECTION_TIMEOUT_MIN_MS"), config.raft.election_timeout_min);
+    config.raft.election_timeout_max = read_milliseconds_or(
+        env_value("RAFT_ELECTION_TIMEOUT_MAX_MS"), config.raft.election_timeout_max);
+    config.raft.heartbeat_interval = read_milliseconds_or(
+        env_value("RAFT_HEARTBEAT_INTERVAL_MS"), config.raft.heartbeat_interval);
+
+    if (const auto value = read_uint32(env_value("V2_BATTLE_MAX_FRAMES"))) {
+        config.battle_max_frames = *value;
+    }
+}
+
 void fill_gateway_from_store(const ConfigStore& store, GatewayAppConfig& config) {
     if (const auto value = store.get_uint16("gateway.port")) {
         config.port = *value;
@@ -317,6 +538,60 @@ std::optional<std::chrono::milliseconds> ConfigStore::get_milliseconds(const std
         return std::nullopt;
     }
     return std::chrono::milliseconds(*parsed);
+}
+
+std::filesystem::path resolve_backend_config_path(const std::string& service_name,
+                                                  int argc,
+                                                  char* argv[],
+                                                  std::filesystem::path fallback_path) {
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::string(argv[i]) == "--config") {
+            return std::filesystem::path(argv[i + 1]);
+        }
+    }
+
+    const auto upper_service = [&service_name] {
+        std::string value;
+        value.reserve(service_name.size());
+        for (const char ch : service_name) {
+            value.push_back(static_cast<char>(
+                ch == '-' ? '_' : std::toupper(static_cast<unsigned char>(ch))));
+        }
+        return value;
+    }();
+
+    if (const auto path = env_value(upper_service + "_CONFIG_PATH")) {
+        return std::filesystem::path(*path);
+    }
+    if (const auto path = env_value("CONFIG_PATH")) {
+        return std::filesystem::path(*path);
+    }
+    return fallback_path;
+}
+
+BackendServiceConfig load_backend_service_config(const std::string& service_name,
+                                                 const std::filesystem::path& path,
+                                                 std::uint16_t default_port) {
+    BackendServiceConfig config;
+    config.service_name = service_name;
+    config.config_path = path.generic_string();
+    config.port = default_port;
+
+    ConfigStore store;
+    if (store.load(path)) {
+        fill_backend_from_store(store, config);
+        LOG_INFO("Loaded {} backend config from {} (version: {})",
+                 config.service_name,
+                 path.string(),
+                 config.config_version);
+    } else {
+        LOG_WARN("{} backend config file {} not found or invalid, using defaults plus env overlay",
+                 service_name,
+                 path.string());
+    }
+
+    apply_backend_env_overlay(service_name, config);
+    return config;
 }
 
 std::optional<GatewayAppConfig> try_load_gateway_config(const std::filesystem::path& path) {

@@ -6,7 +6,6 @@
 #include "app/audit_log.h"
 
 #include <algorithm>
-#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -14,15 +13,6 @@
 #include <vector>
 
 namespace {
-
-std::uint32_t read_battle_max_frames_override(std::uint32_t fallback) {
-    const char* raw = std::getenv("V2_BATTLE_MAX_FRAMES");
-    if (raw == nullptr || raw[0] == '\0') {
-        return fallback;
-    }
-    const auto parsed = std::strtoul(raw, nullptr, 10);
-    return parsed > 0 ? static_cast<std::uint32_t>(parsed) : fallback;
-}
 
 struct RoomMember {
     std::string user_id;
@@ -88,7 +78,8 @@ namespace v2::room {
 
 class RoomBackendService::Impl {
 public:
-    explicit Impl(std::uint16_t port) : port_(port) {}
+    explicit Impl(std::uint16_t port, std::uint32_t battle_max_frames)
+        : port_(port), battle_max_frames_(battle_max_frames) {}
 
     void start() {
         v2::service::BackendServer::HandlerMap handlers;
@@ -114,6 +105,7 @@ public:
 
 private:
     std::uint16_t port_;
+    std::uint32_t battle_max_frames_ = 3;
     std::unique_ptr<v2::service::BackendServer> server_;
     RoomStateManager room_manager_;
 
@@ -273,7 +265,7 @@ private:
             {"battle_id", battle_id},
             {"room_id", room_id},
             {"player_ids", player_ids},
-            {"max_frames", read_battle_max_frames_override(3)},
+            {"max_frames", battle_max_frames_},
         };
 
         return make_ok({
@@ -323,7 +315,10 @@ private:
 };
 
 RoomBackendService::RoomBackendService(std::uint16_t port)
-    : impl_(std::make_unique<Impl>(port)) {}
+    : RoomBackendService(port, 3) {}
+
+RoomBackendService::RoomBackendService(std::uint16_t port, std::uint32_t battle_max_frames)
+    : impl_(std::make_unique<Impl>(port, battle_max_frames > 0 ? battle_max_frames : 3)) {}
 
 RoomBackendService::~RoomBackendService() = default;
 

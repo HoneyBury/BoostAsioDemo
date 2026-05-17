@@ -85,17 +85,18 @@ docker compose -f env/docker/docker-compose.yml down -v
 
 ## Service Configuration
 
-Each service reads its configuration from `config/` at startup. The key config
-files and their environment variable overrides are:
+Each service reads its configuration from the governed environment tree at
+startup. Docker Compose injects `CONFIG_PATH` for every process, while legacy
+environment variables remain as deployment-level overlays:
 
-| Service             | Config File                     | Port Env Var       |
-|---------------------|---------------------------------|--------------------|
-| gateway             | `config/gateway.json`           | `GATEWAY_PORT`     |
-| login backend       | `config/login_backend.json`     | (CLI arg)          |
-| room backend        | `config/room_backend.json`      | (CLI arg)          |
-| battle backend      | `config/battle_backend.json`    | (CLI arg)          |
-| matchmaking backend | — (port via env `MATCH_PORT`)   | `MATCH_PORT`       |
-| leaderboard backend | — (port via env `LEADERBOARD_PORT`) | `LEADERBOARD_PORT` |
+| Service             | Docker Config Path                                      | Compatible Overrides |
+|---------------------|----------------------------------------------------------|----------------------|
+| gateway             | `/app/config/environments/docker/gateway.json`           | `GATEWAY_CONFIG_PATH`, `CONFIG_PATH` |
+| login backend       | `/app/config/environments/docker/login.json`             | `SERVICE_PORT`, `LOGIN_PORT`, `V2_LOGIN_*` |
+| room backend        | `/app/config/environments/docker/room.json`              | `SERVICE_PORT`, `ROOM_PORT`, `V2_BATTLE_MAX_FRAMES` |
+| battle backend      | `/app/config/environments/docker/battle.json`            | `SERVICE_PORT`, `BATTLE_PORT` |
+| matchmaking backend | `/app/config/environments/docker/matchmaking.json`       | `SERVICE_PORT`, `MATCH_PORT`, `MATCHMAKING_PORT`, `RAFT_*` |
+| leaderboard backend | `/app/config/environments/docker/leaderboard.json`       | `SERVICE_PORT`, `LEADERBOARD_PORT`, `REDIS_*`, `RAFT_*` |
 
 ### Environment Variables
 
@@ -138,8 +139,8 @@ Security and operability defaults:
 
 - **`env/docker/Dockerfile.backend`** — Generic image for all 5 backend services
   (login, room, battle, matchmaking, leaderboard). The `SERVICE_BINARY`
-  build argument selects which binary to include; the `SERVICE_PORT` env
-  variable controls the listening port at runtime.
+  build argument selects which binary to include; `CONFIG_PATH` selects the
+  service config and `SERVICE_PORT` remains a compatible port override.
 
 ## Kubernetes
 

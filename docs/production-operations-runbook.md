@@ -54,7 +54,7 @@ curl -fsS http://127.0.0.1:9080/metrics | grep -E 'gateway_active_sessions|gatew
 curl -fsS http://127.0.0.1:9080/metrics | grep -E 'gateway_backend_.*_(requests|successes|errors|timeouts)_total'
 ```
 
-注意：Compose 部署中 gateway 实际通过 `env/docker/config/gateway.json` 的静态服务名路由到后端。`/health` 里的 service registry 动态注册项为空时可能显示 `warn`，因此上线验收必须叠加 SDK full-flow。
+注意：Compose 部署中 gateway 通过 `CONFIG_PATH=/app/config/environments/docker/gateway.json` 读取 Docker 环境的静态服务名路由。`/health` 里的 service registry 动态注册项为空时可能显示 `warn`，因此上线验收必须叠加 SDK full-flow。
 
 ### Prometheus（9090）
 

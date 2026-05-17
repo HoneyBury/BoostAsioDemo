@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boost-gateway.local/schemas/backend-service.schema.json",
+  "title": "Boost Gateway Backend Service Config",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["service"],
+  "properties": {
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "port", "config_version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "config_version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string", "enum": ["dev", "production", "prod", "jwt"] },
+        "jwt_secret": { "type": "string" },
+        "jwt_public_key_pem": { "type": "string" },
+        "jwt_private_key_pem": { "type": "string" },
+        "jwt_issuer": { "type": "string" },
+        "jwt_audience": { "type": "string" }
+      }
+    },
+    "redis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": { "type": "string" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "password": { "type": "string" },
+        "leaderboard_key": { "type": "string", "minLength": 1 }
+      }
+    },
+    "raft": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "node_id": { "type": "string" },
+        "storage_dir": { "type": "string" },
+        "election_timeout_min_ms": { "type": "integer", "minimum": 1 },
+        "election_timeout_max_ms": { "type": "integer", "minimum": 1 },
+        "heartbeat_interval_ms": { "type": "integer", "minimum": 1 },
+        "peers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "host", "port"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "host": { "type": "string", "minLength": 1 },
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            }
+          }
+        }
+      }
+    },
+    "battle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_frames": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

@@ -62,6 +62,48 @@ struct GatewayAppConfig {
     net::TlsConfig tls;
 };
 
+struct JwtServiceConfig {
+    std::string mode = "dev";
+    std::string secret;
+    std::string public_key_pem;
+    std::string private_key_pem;
+    std::string issuer = "boost-gateway";
+    std::string audience;
+};
+
+struct RedisServiceConfig {
+    std::string host;
+    std::uint16_t port = 6379;
+    std::string password;
+    std::string leaderboard_key = "lb:global";
+};
+
+struct RaftPeerConfig {
+    std::string id;
+    std::string host;
+    std::uint16_t port = 0;
+};
+
+struct RaftServiceConfig {
+    std::string node_id;
+    std::string storage_dir;
+    std::chrono::milliseconds election_timeout_min{150};
+    std::chrono::milliseconds election_timeout_max{300};
+    std::chrono::milliseconds heartbeat_interval{50};
+    std::vector<RaftPeerConfig> peers;
+};
+
+struct BackendServiceConfig {
+    std::string service_name;
+    std::string config_path;
+    std::string config_version = "local";
+    std::uint16_t port = 0;
+    JwtServiceConfig jwt;
+    RedisServiceConfig redis;
+    RaftServiceConfig raft;
+    std::optional<std::uint32_t> battle_max_frames;
+};
+
 enum class PressureScenario {
     kEcho,
     kInvalidToken,
@@ -86,6 +128,15 @@ struct PressureAppConfig {
     std::uint32_t malicious_packet_size = 2 * 1024 * 1024;
 };
 
+[[nodiscard]] std::filesystem::path resolve_backend_config_path(
+    const std::string& service_name,
+    int argc,
+    char* argv[],
+    std::filesystem::path fallback_path);
+[[nodiscard]] BackendServiceConfig load_backend_service_config(
+    const std::string& service_name,
+    const std::filesystem::path& path,
+    std::uint16_t default_port);
 [[nodiscard]] std::optional<GatewayAppConfig> try_load_gateway_config(const std::filesystem::path& path);
 [[nodiscard]] GatewayAppConfig load_gateway_config(const std::filesystem::path& path);
 [[nodiscard]] PressureAppConfig load_pressure_config(const std::filesystem::path& path);

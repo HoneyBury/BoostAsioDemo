@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boost-gateway.local/schemas/gateway.schema.json",
+  "title": "Boost Gateway Config",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["gateway", "session", "backends"],
+  "properties": {
+    "gateway": {
+      "type": "object",
+      "required": ["port", "http_management_port"],
+      "properties": {
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "http_management_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "io_threads": { "type": "integer", "minimum": 1 },
+        "business_threads": { "type": "integer", "minimum": 1 },
+        "metrics_log_interval_ms": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "session": {
+      "type": "object",
+      "properties": {
+        "max_packet_size": { "type": "integer", "minimum": 1 },
+        "max_pending_write_bytes": { "type": "integer", "minimum": 1 },
+        "heartbeat_check_interval_ms": { "type": "integer", "minimum": 1 },
+        "heartbeat_timeout_ms": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "backends": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-z_]+$": {
+          "type": "object",
+          "required": ["host", "port"],
+          "properties": {
+            "host": { "type": "string", "minLength": 1 },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        }
+      }
+    }
+  }
+}

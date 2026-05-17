@@ -1,0 +1,7 @@
+{
+  "service": {
+    "name": "battle",
+    "port": 9303,
+    "config_version": "docker-battle-v1"
+  }
+}

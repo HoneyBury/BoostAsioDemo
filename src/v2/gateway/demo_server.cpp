@@ -15,6 +15,21 @@
 #include <utility>
 
 namespace v2::gateway {
+namespace {
+
+std::filesystem::path gateway_config_path() {
+    const char* raw = std::getenv("CONFIG_PATH");
+    if (raw != nullptr && raw[0] != '\0') {
+        return std::filesystem::path(raw);
+    }
+    raw = std::getenv("GATEWAY_CONFIG_PATH");
+    if (raw != nullptr && raw[0] != '\0') {
+        return std::filesystem::path(raw);
+    }
+    return std::filesystem::path("config/gateway.json");
+}
+
+}  // namespace
 
 DemoServer::DemoServer(std::uint16_t port,
                        net::SessionOptions session_options,
@@ -498,7 +513,7 @@ void DemoServer::do_accept() {
 }
 
 void DemoServer::load_gateway_config() {
-    const std::filesystem::path config_path("config/gateway.json");
+    const std::filesystem::path config_path = gateway_config_path();
     std::ifstream file(config_path);
     if (!file.is_open()) {
         LOG_WARN("DemoServer: cannot open gateway config {}", config_path.string());
@@ -610,7 +625,7 @@ void DemoServer::load_gateway_config() {
 }
 
 void DemoServer::start_config_watcher() {
-    const std::filesystem::path config_path("config/gateway.json");
+    const std::filesystem::path config_path = gateway_config_path();
     if (!std::filesystem::exists(config_path)) {
         LOG_INFO("DemoServer: no gateway config at {}, skipping config watcher",
                  config_path.string());

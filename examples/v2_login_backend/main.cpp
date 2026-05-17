@@ -1,9 +1,10 @@
+#include "app/config.h"
+#include "app/logging.h"
 #include "v2/login/login_backend_service.h"
 
 #include <atomic>
 #include <chrono>
 #include <csignal>
-#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -22,22 +23,20 @@ void handle_signal(int) {
     }
 }
 
-std::string env_or_empty(const char* name) {
-    const char* value = std::getenv(name);
-    return value ? std::string(value) : std::string();
-}
-
-bool production_auth_required() {
-    const auto mode = env_or_empty("V2_LOGIN_AUTH_MODE");
+bool production_auth_required(const std::string& mode) {
     return mode == "production" || mode == "prod" || mode == "jwt";
 }
 
 }  // namespace
 
 int main(int argc, char* argv[]) {
-    std::uint16_t port = 9202;
-    if (argc > 1) {
-        port = static_cast<std::uint16_t>(std::stoi(argv[1]));
+    app::logging::init("v2_login_backend");
+
+    const auto config_path = app::config::resolve_backend_config_path(
+        "login", argc, argv, "config/environments/local/login.json");
+    auto config = app::config::load_backend_service_config("login", config_path, 9202);
+    if (argc > 1 && std::string(argv[1]) != "--config") {
+        config.port = static_cast<std::uint16_t>(std::stoi(argv[1]));
     }
 
     std::signal(SIGINT, handle_signal);
@@ -45,14 +44,13 @@ int main(int argc, char* argv[]) {
 
     try {
         v2::login::LoginBackendOptions options;
-        options.port = port;
-        options.production_auth_required = production_auth_required();
-        options.jwt_secret = env_or_empty("V2_LOGIN_JWT_SECRET");
-        options.jwt_public_key_pem = env_or_empty("V2_LOGIN_JWT_PUBLIC_KEY");
-        options.jwt_private_key_pem = env_or_empty("V2_LOGIN_JWT_PRIVATE_KEY");
-        const auto jwt_issuer = env_or_empty("V2_LOGIN_JWT_ISSUER");
-        options.jwt_issuer = jwt_issuer.empty() ? "boost-gateway" : jwt_issuer;
-        options.jwt_audience = env_or_empty("V2_LOGIN_JWT_AUDIENCE");
+        options.port = config.port;
+        options.production_auth_required = production_auth_required(config.jwt.mode);
+        options.jwt_secret = config.jwt.secret;
+        options.jwt_public_key_pem = config.jwt.public_key_pem;
+        options.jwt_private_key_pem = config.jwt.private_key_pem;
+        options.jwt_issuer = config.jwt.issuer.empty() ? "boost-gateway" : config.jwt.issuer;
+        options.jwt_audience = config.jwt.audience;
 
         v2::login::LoginBackendService service(std::move(options));
         g_service = &service;

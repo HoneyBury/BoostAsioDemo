@@ -1,9 +1,12 @@
+#include "app/config.h"
+#include "app/logging.h"
 #include "v2/battle/battle_backend_service.h"
 
 #include <atomic>
 #include <chrono>
 #include <csignal>
 #include <iostream>
+#include <string>
 #include <thread>
 
 namespace {
@@ -22,15 +25,19 @@ void handle_signal(int) {
 }  // namespace
 
 int main(int argc, char* argv[]) {
-    std::uint16_t port = 9303;
-    if (argc > 1) {
-        port = static_cast<std::uint16_t>(std::stoi(argv[1]));
+    app::logging::init("v2_battle_backend");
+
+    const auto config_path = app::config::resolve_backend_config_path(
+        "battle", argc, argv, "config/environments/local/battle.json");
+    auto config = app::config::load_backend_service_config("battle", config_path, 9303);
+    if (argc > 1 && std::string(argv[1]) != "--config") {
+        config.port = static_cast<std::uint16_t>(std::stoi(argv[1]));
     }
 
     std::signal(SIGINT, handle_signal);
     std::signal(SIGTERM, handle_signal);
 
-    v2::battle::BattleBackendService service(port);
+    v2::battle::BattleBackendService service(config.port);
     g_service = &service;
 
     service.start();

@@ -57,6 +57,13 @@ The repository-level P5 gate wraps this default test path:
 python ../../scripts/verify_control_plane_gate.py
 ```
 
+The default gate also validates the committed CRD, RBAC, manager deployment,
+and sample `BoostGatewayCluster` manifests:
+
+```bash
+python ../../scripts/check_operator_manifests.py
+```
+
 `envtest` is also wired for reconcile-level validation. It requires
 `KUBEBUILDER_ASSETS` to point at the local API server / etcd binaries.
 

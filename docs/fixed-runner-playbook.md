@@ -72,9 +72,10 @@ python scripts/verify_observability_gate.py --build-dir build/default --skip-bui
 
 ## Control Plane / P5
 
-默认 release gate 已运行 `scripts/verify_control_plane_gate.py`，只依赖 Go fake-client/unit tests，不要求 Docker 或 kind。固定控制面 runner 可追加：
+默认 release gate 已运行 `scripts/verify_control_plane_gate.py`，只依赖 Operator manifest 静态契约和 Go fake-client/unit tests，不要求 Docker 或 kind。固定控制面 runner 可追加：
 
 ```bash
+python scripts/check_operator_manifests.py --summary-path runtime/validation/operator-manifests-summary.json
 python scripts/check_fixed_runner_environment.py --profile control-plane --build-dir build/default --require-kind
 python scripts/verify_control_plane_gate.py --include-kind
 python scripts/verify_control_plane_gate.py --include-envtest --include-kind
@@ -92,6 +93,7 @@ python scripts/verify_control_plane_gate.py --include-kind --summary-path runtim
 通过标准：
 
 - `runtime/validation/control-plane-gate-summary.json` 中 `passed=true`。
+- 默认门禁会额外写出 `runtime/validation/operator-manifests-summary.json`，要求 CRD/status schema、RBAC、manager probes 和 sample 六组件静态契约通过。
 - 本机收束 summary `runtime/validation/dev-p5-specialized-e2e-summary.json` 中 `passed=true`，且 `include_redis_live=true`、`include_operator_kind=true`。
 - `--include-kind` 场景必须断言 sample `BoostGatewayCluster` 的 `Ready=True`、`Progressing=False`、`Degraded=False`、`TLSReady=False`，六个 `status.components[]` 均存在且可用，并验证 sample CR 删除完成。
 - `--include-envtest` 场景要求 runner 已准备 controller-runtime envtest assets，例如 `KUBEBUILDER_ASSETS`。

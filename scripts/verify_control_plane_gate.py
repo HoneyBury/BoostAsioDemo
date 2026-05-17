@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -21,7 +22,14 @@ def tail(text: str | bytes | None, max_chars: int = 4000) -> str:
     return text if len(text) <= max_chars else text[-max_chars:]
 
 
-def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_seconds: int) -> dict[str, object]:
+def run_step(
+    name: str,
+    category: str,
+    cmd: list[str],
+    cwd: Path,
+    timeout_seconds: int,
+    env: dict[str, str] | None = None,
+) -> dict[str, object]:
     print(f"==> {name}", flush=True)
     started = time.monotonic()
     try:
@@ -34,6 +42,7 @@ def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_second
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout_seconds,
+            env=env,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
@@ -74,6 +83,16 @@ def require_command(name: str) -> None:
         raise FileNotFoundError(f"missing required command: {name}")
 
 
+def go_environment(root: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    cache_root = root / "runtime" / "go-cache"
+    env.setdefault("GOCACHE", str(cache_root / "build"))
+    env.setdefault("GOMODCACHE", str(cache_root / "mod"))
+    Path(env["GOCACHE"]).mkdir(parents=True, exist_ok=True)
+    Path(env["GOMODCACHE"]).mkdir(parents=True, exist_ok=True)
+    return env
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--operator-dir", type=Path, default=Path("operator/boostgateway-operator"))
@@ -111,11 +130,26 @@ def main() -> int:
                 require_command(command)
 
         summary["steps"].append(run_step(
+            "Operator static manifest contract",
+            "manifests",
+            [
+                sys.executable,
+                str(root / "scripts" / "check_operator_manifests.py"),
+                "--operator-dir",
+                str(operator_dir),
+                "--summary-path",
+                str(summary_path.parent / "operator-manifests-summary.json"),
+            ],
+            root,
+            30,
+        ))
+        summary["steps"].append(run_step(
             "Operator fake-client and unit tests",
             "operator",
             ["go", "test", "./..."],
             operator_dir,
             args.go_test_timeout_seconds,
+            env=go_environment(root),
         ))
         if args.include_envtest:
             summary["steps"].append(run_step(

@@ -12,7 +12,7 @@
 | CI 快速契约 | `python scripts/verify_r4_contract.py --build-dir <build-dir> --skip-build --skip-arch-baseline` | 不重编译、不跑性能基线，验证 schema 与 R4 聚焦测试；失败时 summary 标出 `failed_category` 和 `failed_step` |
 | 安全发布门禁 | `python scripts/check_security_release_gate.py` | 生产模式 dev token fallback 有显式禁用路径，admin 审计最小键与 ACL 边界有证据 |
 | P4 可观测性/限流门禁 | `python scripts/verify_observability_gate.py --build-dir <build-dir> --skip-build` | rate limit 全局消息类型/IP/user/login/connection、trace/OTel、backend RED metrics、gateway metrics 和 audit 聚合用例通过，并写出 `runtime/validation/observability-gate-summary.json` |
-| P5 控制面门禁 | `python scripts/verify_control_plane_gate.py` | Operator fake-client Go 测试通过；固定 runner 可显式启用 envtest/kind，kind smoke 断言 status conditions、components 覆盖和样例 CR 删除路径 |
+| P5 控制面门禁 | `python scripts/verify_control_plane_gate.py` | Operator manifest 静态契约与 fake-client Go 测试通过；固定 runner 可显式启用 envtest/kind，kind smoke 断言 status conditions、components 覆盖和样例 CR 删除路径 |
 | 稳定性短 soak | `python scripts/verify_stability_soak.py --build-dir build/windows-msvc-debug --configuration Debug --skip-build --soak-profile short` | I/O accept 策略、WriteBehind drain/failure、backend timeout/recovery、短架构基线全部通过，并写出 `runtime/validation/stability-soak-summary.json` |
 | P3 数据恢复门禁 | `python scripts/verify_data_recovery_gate.py --build-dir <build-dir> --skip-build` | replay/result/snapshot、WriteBehind flush/drain、Redis degraded、Raft committed restart replay 与持久化 round trip 全部通过，并写出 `runtime/validation/data-recovery-summary.json` |
 | Proto schema | `cmake --build <build-dir> --target check_v3_proto_schema` | v3 proto 文件、包名、核心 message 存在 |
@@ -88,7 +88,7 @@ python scripts/verify_observability_gate.py --build-dir build/default --skip-bui
 python scripts/verify_observability_gate.py --build-dir build/default --skip-build --include-runtime-http
 ```
 
-P5 控制面门禁使用 `scripts/verify_control_plane_gate.py` 聚合，并已接入 RC 总门禁。默认入口不依赖 Docker/kind；固定 Kubernetes runner 可追加：
+P5 控制面门禁使用 `scripts/verify_control_plane_gate.py` 聚合，并已接入 RC 总门禁。默认入口不依赖 Docker/kind，覆盖 Operator manifest 静态契约与 fake-client Go 测试；固定 Kubernetes runner 可追加：
 
 ```powershell
 .\scripts\verify_control_plane_gate.ps1 -IncludeEnvtest

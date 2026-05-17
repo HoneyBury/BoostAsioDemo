@@ -80,6 +80,9 @@ jobs:
       - name: Security release gate
         run: python scripts/check_security_release_gate.py
 
+      - name: Monitoring operability gate
+        run: python scripts/check_monitoring_operability.py --summary-path runtime/validation/release-monitoring-operability-summary.json
+
       - name: Observability release gate
         run: python scripts/verify_observability_gate.py --build-dir build/${{ matrix.configure_preset }} --configuration Release --skip-build
 

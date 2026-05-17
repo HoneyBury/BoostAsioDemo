@@ -298,6 +298,12 @@ def validate_monitoring(checks: list[dict[str, Any]]) -> None:
         '"gateway:9080"' in text and "metrics_path: /metrics" in text,
         "Prometheus scrapes gateway HTTP metrics",
     )
+    add_check(
+        checks,
+        "prometheus:alert-rules-loaded",
+        "prometheus-alerts.yml" in text,
+        "Prometheus loads production alert rules",
+    )
     for service, (_, port) in BACKENDS.items():
         add_check(
             checks,
@@ -312,6 +318,32 @@ def validate_monitoring(checks: list[dict[str, Any]]) -> None:
         "docs:env-readme:gateway-only-scrape",
         "scrapes gateway `/metrics` only" in env_readme and "scrape /metrics from all 6 services" not in env_readme,
         "environment README describes the current gateway-only Prometheus scrape scope",
+    )
+
+    compose = read_text("env/docker/docker-compose.yml")
+    add_check(
+        checks,
+        "compose:prometheus-alerts-mounted",
+        "../monitoring/prometheus-alerts.yml:/etc/prometheus/prometheus-alerts.yml:ro" in compose,
+        "Compose mounts Prometheus alert rules",
+    )
+    add_check(
+        checks,
+        "compose:grafana-datasource-mounted",
+        "../monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro" in compose,
+        "Compose mounts Grafana datasource provisioning",
+    )
+    add_check(
+        checks,
+        "compose:grafana-dashboard-provider-mounted",
+        "../monitoring/grafana-dashboard-provider.yml:/etc/grafana/provisioning/dashboards/boost-gateway.yml:ro" in compose,
+        "Compose mounts Grafana dashboard provider",
+    )
+    add_check(
+        checks,
+        "compose:grafana-dashboard-mounted",
+        "../monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/boost-gateway.json:ro" in compose,
+        "Compose mounts Grafana dashboard JSON",
     )
 
 

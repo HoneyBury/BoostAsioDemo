@@ -21,6 +21,7 @@ curl -fsS http://127.0.0.1:9090/-/ready
 - Prometheus 配置：`env/monitoring/prometheus.yml`
 - Prometheus 告警：`env/monitoring/prometheus-alerts.yml`
 - Grafana 面板：`env/monitoring/grafana-dashboard.json`
+- Grafana 自动配置：`env/monitoring/grafana-datasource.yml`、`env/monitoring/grafana-dashboard-provider.yml`
 - 监控静态 gate：`scripts/check_monitoring_operability.py`
 
 ## 告警分级

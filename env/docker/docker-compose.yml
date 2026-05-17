@@ -302,6 +302,9 @@ services:
       GF_INSTALL_PLUGINS: ""
     volumes:
       - grafana-data:/var/lib/grafana
+      - ../monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ../monitoring/grafana-dashboard-provider.yml:/etc/grafana/provisioning/dashboards/boost-gateway.yml:ro
+      - ../monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/boost-gateway.json:ro
     restart: unless-stopped
     depends_on:
       - prometheus

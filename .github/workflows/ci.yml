@@ -57,6 +57,9 @@ jobs:
       - name: R4 contract gate
         run: python scripts/verify_r4_contract.py --build-dir build/${{ matrix.configure_preset }} --skip-build --skip-arch-baseline --configuration Debug
 
+      - name: Monitoring operability gate
+        run: python scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
+
   docker:
     runs-on: ubuntu-latest
     needs: build-and-test

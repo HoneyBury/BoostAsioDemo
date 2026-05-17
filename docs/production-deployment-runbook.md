@@ -180,6 +180,7 @@ python3 scripts/check_monitoring_operability.py --summary-path runtime/validatio
 Grafana 导入：
 
 - `env/monitoring/grafana-dashboard.json`
+- Docker Compose 会通过 `env/monitoring/grafana-datasource.yml` 和 `env/monitoring/grafana-dashboard-provider.yml` 自动配置 Prometheus datasource 与 dashboard。
 
 Prometheus 告警：
 

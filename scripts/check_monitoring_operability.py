@@ -101,6 +101,34 @@ def validate_prometheus(checks: list[dict[str, Any]]) -> None:
         )
 
 
+def validate_grafana_provisioning(checks: list[dict[str, Any]]) -> None:
+    compose = read_text("env/docker/docker-compose.yml")
+    datasource = read_text("env/monitoring/grafana-datasource.yml")
+    provider = read_text("env/monitoring/grafana-dashboard-provider.yml")
+
+    add_check(
+        checks,
+        "grafana:datasource-provisioned",
+        "../monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro" in compose
+        and "url: http://prometheus:9090" in datasource
+        and "isDefault: true" in datasource,
+        "Docker Compose provisions the Prometheus datasource for Grafana",
+    )
+    add_check(
+        checks,
+        "grafana:dashboard-provider-provisioned",
+        "../monitoring/grafana-dashboard-provider.yml:/etc/grafana/provisioning/dashboards/boost-gateway.yml:ro" in compose
+        and "path: /var/lib/grafana/dashboards" in provider,
+        "Docker Compose provisions the dashboard provider",
+    )
+    add_check(
+        checks,
+        "grafana:dashboard-json-mounted",
+        "../monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/boost-gateway.json:ro" in compose,
+        "Docker Compose mounts the Boost Gateway dashboard JSON",
+    )
+
+
 def validate_alerts(checks: list[dict[str, Any]]) -> None:
     alerts = read_text("env/monitoring/prometheus-alerts.yml")
     for alert in sorted(REQUIRED_ALERTS):
@@ -204,6 +232,7 @@ def main() -> int:
 
     checks: list[dict[str, Any]] = []
     validate_prometheus(checks)
+    validate_grafana_provisioning(checks)
     validate_alerts(checks)
     validate_dashboard(checks)
     validate_docs(checks)

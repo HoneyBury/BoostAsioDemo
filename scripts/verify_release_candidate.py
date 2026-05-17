@@ -132,6 +132,18 @@ def main() -> int:
         30,
     ))
     steps.append(run_step(
+        "monitoring operability gate",
+        "monitoring",
+        [
+            sys.executable,
+            str(root / "scripts" / "check_monitoring_operability.py"),
+            "--summary-path",
+            str(root / "runtime" / "validation" / "rc-monitoring-operability-summary.json"),
+        ],
+        root,
+        30,
+    ))
+    steps.append(run_step(
         "observability release gate",
         "observability",
         [

@@ -171,6 +171,12 @@ visualization:
 Import it into Grafana via **Configuration > Data Sources > Add data source >
 Prometheus**, then **+ Import** the JSON file.
 
+Docker Compose also provisions Grafana automatically:
+
+- `env/monitoring/grafana-datasource.yml` creates the Prometheus datasource.
+- `env/monitoring/grafana-dashboard-provider.yml` loads dashboards from disk.
+- `env/monitoring/grafana-dashboard.json` is mounted into Grafana's dashboard directory.
+
 ## Redis
 
 The Redis configuration (`env/redis/redis.conf`) is tuned for the gateway's

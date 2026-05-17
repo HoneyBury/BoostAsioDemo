@@ -106,11 +106,11 @@ void DemoServer::start() {
         management_thread_ = std::make_unique<std::thread>([this]() { management_io_->run(); });
         LOG_INFO("v2 demo server HTTP management listening on :{}", *options_.http_management_port);
     }
-    acceptor_ = io_engine_->listen("127.0.0.1",
+    acceptor_ = io_engine_->listen("0.0.0.0",
                                    port_,
                                    session_options_,
                                    v2::io::IoListenOptions{.fixed_core_id = options_.acceptor_core_id});
-    LOG_INFO("v2 demo server listening on 127.0.0.1:{}", acceptor_->local_port());
+    LOG_INFO("v2 demo server listening on 0.0.0.0:{}", acceptor_->local_port());
     do_accept();
     start_config_watcher();
     io_engine_->run();

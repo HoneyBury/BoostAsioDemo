@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     ca-certificates \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -34,6 +35,7 @@ COPY cmake/ cmake/
 # Copy source (gateway binary is in examples/)
 COPY include/ include/
 COPY src/ src/
+COPY sdk/ sdk/
 COPY examples/ examples/
 COPY tests/ tests/
 COPY third_party/ third_party/
@@ -41,7 +43,7 @@ COPY config/ config/
 
 # Configure and build only the gateway target
 RUN cmake --preset default
-RUN cmake --build --preset default --parallel --target v2_gateway_demo
+RUN cmake --build --preset default --parallel 2 --target v2_gateway_demo
 
 # ============================================================================
 # Stage 2: Runtime
@@ -60,7 +62,9 @@ WORKDIR /app
 RUN mkdir -p /app/bin /app/logs /app/config
 
 COPY --from=builder /src/build/default/examples/v2_gateway_demo/v2_gateway_demo /app/bin/
+COPY --from=builder /src/build/default/_deps/hiredis-build/libhiredis*.so* /usr/local/lib/
 COPY config/ /app/config/
+RUN ldconfig
 
 EXPOSE 9201 9080
 

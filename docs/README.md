@@ -84,6 +84,7 @@
 - [v3.3.2 P5 长稳故障回滚记录](./releases/v3.3.2-p5-production-resilience.md) — P5 resilience gate、bounded soak、故障恢复、Redis/Raft/Operator、runtime HTTP 与回滚演练入口收束
 - [v3.3.2 P6 生产证据收束记录](./releases/v3.3.2-p6-production-evidence.md) — 本机 Redis/kind/Release baseline 真实依赖验证与最终门禁结果
 - [v3.3.2 H0-H5 生产候选硬化记录](./releases/v3.3.2-h0-h5-production-hardening.md) — 固定 runner、长稳/容量入口、K8s、观测和 SDK 企业接入包证据收束
+- [v3.3.2 OrbStack 生产部署上线记录](./releases/v3.3.2-orbstack-production-deployment.md) — 本机 OrbStack Docker Compose 全栈部署、监控入口和 SDK 真实业务闭环证据
 - [部署手册](../deploy/README.md) — Docker Compose + systemd 部署运行手册
 
 ## 文档使用建议

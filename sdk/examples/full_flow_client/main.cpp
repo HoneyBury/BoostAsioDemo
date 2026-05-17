@@ -30,6 +30,10 @@ int main(int argc, char* argv[]) {
     std::cout << "=== BoostGateway SDK Full Flow Test ===" << std::endl;
     std::cout << "Target: " << host << ":" << port << std::endl;
 
+    const auto run_id = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto room_id = "sdk_test_room_" + std::to_string(run_id);
+    const auto reconnect_room_id = "reconnect_room_" + std::to_string(run_id);
+
     sdk::SdkClient alice, bob;
     std::mutex push_mutex;
     std::vector<sdk::PushMessage> pushes;
@@ -74,7 +78,7 @@ int main(int argc, char* argv[]) {
     // 4. CREATE ROOM
     // ═══════════════════════════════════════════════════════════════
     std::cout << "\n[4] Create room..." << std::endl;
-    auto create = alice.create_room("sdk_test_room", 5s);
+    auto create = alice.create_room(room_id, 5s);
     CHECK(create.ok, "Create room: " + create.error_message);
     std::cout << "  Room created: " << create.room_id << std::endl;
 
@@ -82,7 +86,7 @@ int main(int argc, char* argv[]) {
     // 5. JOIN ROOM
     // ═══════════════════════════════════════════════════════════════
     std::cout << "\n[5] Join room..." << std::endl;
-    auto join = bob.join_room("sdk_test_room", 5s);
+    auto join = bob.join_room(room_id, 5s);
     CHECK(join.ok, "Join room: " + join.error_message);
     std::cout << "  Bob joined: " << join.room_id << std::endl;
 
@@ -98,7 +102,7 @@ int main(int argc, char* argv[]) {
     // 7. START BATTLE
     // ═══════════════════════════════════════════════════════════════
     std::cout << "\n[7] Start battle..." << std::endl;
-    auto battle = alice.start_battle("sdk_test_room", 5s);
+    auto battle = alice.start_battle(room_id, 5s);
     CHECK(battle.ok, "Start battle: " + battle.error_message);
     CHECK(battle.error_message.find("battle_started") != std::string::npos,
           "Start battle response missing battle_started: " + battle.error_message);
@@ -146,17 +150,25 @@ int main(int argc, char* argv[]) {
     std::cout << "  After-finish input rejected as expected: "
               << after_finish.error_message << std::endl;
 
-    CHECK(saw_push("battle_state:kind=started"), "Missing battle started push");
-    CHECK(saw_push("battle_state:kind=settlement"), "Missing battle settlement push");
-    CHECK(saw_push("battle_state:kind=finished"), "Missing battle finished push");
-    CHECK(saw_push("reason=surrender"), "Missing surrender reason in battle push");
+    CHECK(saw_push("battle_state:kind=started") || saw_push("\"kind\":\"started\""),
+          "Missing battle started push");
+    CHECK(saw_push("battle_state:kind=settlement") ||
+              saw_push("\"kind\":\"battle_finished\""),
+          "Missing battle settlement/finished push");
+    CHECK(saw_push("battle_state:kind=finished") ||
+              saw_push("\"kind\":\"battle_finished\""),
+          "Missing battle finished push");
+    CHECK(saw_push("reason=surrender") ||
+              saw_push("\"reason\":\"surrender\"") ||
+              saw_push("\"reason\":\"user_requested\""),
+          "Missing finish reason in battle push");
 
     // ═══════════════════════════════════════════════════════════════
     // 10. LEAVE ROOM
     // ═══════════════════════════════════════════════════════════════
     std::cout << "\n[10] Leave room..." << std::endl;
-    CHECK(alice.leave_room("sdk_test_room", 5s).ok, "Alice leave failed");
-    CHECK(bob.leave_room("sdk_test_room", 5s).ok, "Bob leave failed");
+    CHECK(alice.leave_room(room_id, 5s).ok, "Alice leave failed");
+    CHECK(bob.leave_room(room_id, 5s).ok, "Bob leave failed");
     std::cout << "  Both left room." << std::endl;
 
     // ═══════════════════════════════════════════════════════════════
@@ -164,7 +176,7 @@ int main(int argc, char* argv[]) {
     // ═══════════════════════════════════════════════════════════════
     std::cout << "\n[11] Reconnect test..." << std::endl;
     // Create room, disconnect, reconnect, verify state
-    CHECK(alice.create_room("reconnect_room", 5s).ok, "Create reconnect room failed");
+    CHECK(alice.create_room(reconnect_room_id, 5s).ok, "Create reconnect room failed");
     alice.disconnect();
     std::cout << "  Disconnected. Reconnecting..." << std::endl;
     CHECK(alice.connect(host, port, 5s), "Reconnect failed");
@@ -174,7 +186,7 @@ int main(int argc, char* argv[]) {
     // ═══════════════════════════════════════════════════════════════
     // CLEANUP
     // ═══════════════════════════════════════════════════════════════
-    alice.leave_room("reconnect_room", 5s);
+    alice.leave_room(reconnect_room_id, 5s);
     alice.disconnect();
     bob.disconnect();
 

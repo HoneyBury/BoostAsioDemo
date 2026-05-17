@@ -114,6 +114,41 @@ def validate_compose(path: Path, checks: list[dict[str, Any]]) -> None:
         "redis:\n        condition: service_healthy" in text,
         "leaderboard backend waits for Redis health in compose",
     )
+    add_check(
+        checks,
+        f"{label}:docker-gateway-config-mounted",
+        "env/docker/config/gateway.json" in text or "./config/gateway.json:/app/config/gateway.json:ro" in text,
+        "gateway container mounts Docker-specific backend routing config",
+    )
+
+
+def validate_docker_gateway_config(checks: list[dict[str, Any]]) -> None:
+    path = REPO_ROOT / "env/docker/config/gateway.json"
+    add_check(
+        checks,
+        "docker-gateway-config:exists",
+        path.exists(),
+        "Docker-specific gateway config is present",
+    )
+    if not path.exists():
+        return
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    backends = doc.get("backends", {})
+    expected = {
+        "login": ("login-backend", 9202),
+        "room": ("room-backend", 9302),
+        "battle": ("battle-backend", 9303),
+        "match": ("matchmaking-backend", 9304),
+        "leaderboard": ("leaderboard-backend", 9305),
+    }
+    for name, (host, port) in expected.items():
+        entry = backends.get(name, {})
+        add_check(
+            checks,
+            f"docker-gateway-config:{name}:host-port",
+            entry.get("host") == host and entry.get("port") == port,
+            f"{name} routes to Docker service {host}:{port}",
+        )
 
 
 def validate_systemd(checks: list[dict[str, Any]]) -> None:
@@ -155,17 +190,46 @@ def validate_systemd(checks: list[dict[str, Any]]) -> None:
 
 
 def validate_dockerfile(checks: list[dict[str, Any]]) -> None:
-    text = read_text("env/docker/Dockerfile.backend")
+    backend = read_text("env/docker/Dockerfile.backend")
+    gateway = read_text("env/docker/Dockerfile.gateway")
+    for label, text in (
+        ("dockerfile-backend", backend),
+        ("dockerfile-gateway", gateway),
+    ):
+        add_check(
+            checks,
+            f"{label}:openssl-dev-installed",
+            "libssl-dev" in text,
+            f"{label} builder image contains OpenSSL headers/libraries for CMake",
+        )
+        add_check(
+            checks,
+            f"{label}:sdk-copied",
+            "COPY sdk/ sdk/" in text,
+            f"{label} build context includes sdk because top-level CMake adds it",
+        )
+        add_check(
+            checks,
+            f"{label}:bounded-cmake-parallelism",
+            "--parallel 2" in text,
+            f"{label} bounds CMake build parallelism for repeatable local Docker builds",
+        )
+        add_check(
+            checks,
+            f"{label}:hiredis-runtime-library",
+            "libhiredis*.so*" in text and "ldconfig" in text,
+            f"{label} runtime image contains the hiredis shared library required by linked binaries",
+        )
     add_check(
         checks,
         "dockerfile-backend:nc-installed",
-        "netcat-openbsd" in text,
+        "netcat-openbsd" in backend,
         "backend runtime image contains a TCP probe utility",
     )
     add_check(
         checks,
         "dockerfile-backend:tcp-healthcheck",
-        'nc -z 127.0.0.1 "${SERVICE_PORT}"' in text,
+        'nc -z 127.0.0.1 "${SERVICE_PORT}"' in backend,
         "generic backend image uses TCP healthcheck",
     )
 
@@ -190,6 +254,7 @@ def validate_examples(checks: list[dict[str, Any]]) -> None:
         )
 
     gateway_main = read_text("examples/v2_gateway_demo/main.cpp")
+    gateway_server = read_text("src/v2/gateway/demo_server.cpp")
     for host, (host_flag, port_flag, _) in GATEWAY_ROUTED_BACKENDS.items():
         add_check(
             checks,
@@ -197,6 +262,12 @@ def validate_examples(checks: list[dict[str, Any]]) -> None:
             host_flag in gateway_main and port_flag in gateway_main,
             f"gateway demo parses {host_flag}/{port_flag}",
         )
+    add_check(
+        checks,
+        "src/v2/gateway/demo_server.cpp:container-listen-address",
+        'listen("0.0.0.0"' in gateway_server,
+        "gateway listens on all interfaces so Docker-published TCP ingress reaches the container",
+    )
 
 
 def validate_k8s(checks: list[dict[str, Any]]) -> None:
@@ -373,6 +444,7 @@ def main() -> int:
 
     checks: list[dict[str, Any]] = []
     validate_dockerfile(checks)
+    validate_docker_gateway_config(checks)
     validate_compose(REPO_ROOT / "docker-compose.yml", checks)
     validate_compose(REPO_ROOT / "env/docker/docker-compose.yml", checks)
     validate_systemd(checks)

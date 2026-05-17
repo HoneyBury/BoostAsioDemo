@@ -39,6 +39,7 @@ services:
       BOOST_LOG_LEVEL: "info"
     volumes:
       - ./config:/app/config:ro
+      - ./env/docker/config/gateway.json:/app/config/gateway.json:ro
       - gateway-logs:/app/logs
     restart: unless-stopped
     command:
@@ -237,7 +238,7 @@ services:
     networks:
       - boost-net
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_PORT:-6380}:6379"
     volumes:
       - ./env/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis-data:/data

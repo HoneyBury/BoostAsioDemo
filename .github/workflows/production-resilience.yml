@@ -4,6 +4,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
+  schedule:
+    - cron: "20 19 * * 2"
   workflow_dispatch:
     inputs:
       runner:
@@ -82,10 +84,10 @@ permissions:
 
 jobs:
   production-resilience:
-    runs-on: ${{ fromJSON(inputs.runner) }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 720
     concurrency:
-      group: production-resilience-${{ inputs.runner }}
+      group: production-resilience-${{ inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || 'ubuntu-latest' }}
       cancel-in-progress: false
 
     steps:
@@ -108,7 +110,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure
-        run: cmake --preset ${{ inputs.configure_preset }}
+        run: cmake --preset ${{ inputs.configure_preset || 'default' }}
 
       - name: Production resilience gate
         shell: bash
@@ -116,13 +118,13 @@ jobs:
           set -euo pipefail
           args=(
             scripts/verify_production_resilience_gate.py
-            --build-dir "${{ inputs.build_dir }}"
-            --configuration "${{ inputs.configuration }}"
-            --soak-profile "${{ inputs.soak_profile }}"
-            --baseline-profile "${{ inputs.baseline_profile }}"
-            --perf-repetitions "${{ inputs.perf_repetitions }}"
-            --step-timeout-seconds "${{ inputs.step_timeout_seconds }}"
-            --kind-timeout-seconds "${{ inputs.kind_timeout_seconds }}"
+            --build-dir "${{ inputs.build_dir || 'build/default' }}"
+            --configuration "${{ inputs.configuration || 'Debug' }}"
+            --soak-profile "${{ inputs.soak_profile || 'smoke' }}"
+            --baseline-profile "${{ inputs.baseline_profile || 'debug' }}"
+            --perf-repetitions "${{ inputs.perf_repetitions || '1' }}"
+            --step-timeout-seconds "${{ inputs.step_timeout_seconds || '1200' }}"
+            --kind-timeout-seconds "${{ inputs.kind_timeout_seconds || '1200' }}"
             --summary-path runtime/validation/production-resilience-summary.json
           )
           if [ "${{ inputs.include_redis_live }}" = "true" ]; then

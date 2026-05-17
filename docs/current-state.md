@@ -29,6 +29,7 @@
 - P2 固定 runner 证据：`.github/workflows/production-evidence.yml` 已支持 JSON runner 输入、preflight summary 归档、Redis/kind 真实依赖、runtime HTTP observability、release baseline 和 capacity baseline 的手动固定 runner 场景；配置说明见 `docs/production-evidence-runner.md`。
 - P3 监控运维：Prometheus 已加载 `env/monitoring/prometheus-alerts.yml`，Grafana dashboard 已对齐当前 gateway `/metrics` 真实指标，`scripts/check_monitoring_operability.py` 会阻断后端 HTTP scrape、旧指标名和 runbook 漂移；运维流程见 `docs/production-operations-runbook.md`。
 - P4 SDK 企业级封装：C++ SDK heartbeat 已实作，disconnect callback 可由 heartbeat failure 触发；C ABI 暴露 heartbeat 控制，Python/C# wrapper 增加 native 版本校验和加载/分配诊断；SDK business-flow 与 full-flow client 验证覆盖 login、room、ready、battle、push、reconnect、heartbeat。
+- H0-H5 生产候选硬化：`scripts/check_production_hardening_gate.py` 聚合固定 runner 定时入口、长稳/容量/K8s/观测/SDK 企业接入证据；`production-resilience.yml` 与 `production-evidence.yml` 已具备 weekly schedule 和 runner fallback。
 
 ## 保留边界
 
@@ -49,7 +50,7 @@
 
 ## 下一阶段优先级
 
-下一阶段不建议继续横向扩功能，建议进入“生产候选实测与发布硬化”阶段，事实源见 `docs/production-candidate-hardening-plan.md`。
+生产候选实测与发布硬化阶段 H0-H5 已完成可执行证据收束，事实源见 `docs/production-candidate-hardening-plan.md`。
 
 1. H0：固定 runner 真实依赖常态化，持续跑 Redis live、Operator kind、runtime HTTP、P5/P6 gates。
 2. H1：2h/8h soak 与资源曲线沉淀，补 RSS、fd、CPU、错误率和 P99 长稳报告。

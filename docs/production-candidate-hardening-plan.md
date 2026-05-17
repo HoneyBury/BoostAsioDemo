@@ -12,6 +12,8 @@
 
 ## H0：固定 Runner 常态化
 
+状态：completed。证据：`scripts/check_production_hardening_gate.py`、`.github/workflows/production-resilience.yml`、`.github/workflows/production-evidence.yml`。
+
 目标：让 P5/P6 不再依赖人工临时执行。
 
 任务：
@@ -26,6 +28,8 @@
 - preflight 失败和业务失败能通过 `failed_category` / `failed_step` 清晰区分。
 
 ## H1：长稳与资源曲线
+
+状态：completed for executable evidence. 2h/8h 长跑数据仍由固定 runner 持续沉淀。证据：`scripts/verify_stability_soak.py`、`nightly-stability.yml`、`production-resilience.yml`。
 
 目标：补齐生产候选最需要的长时间运行事实。
 
@@ -42,6 +46,8 @@
 
 ## H2：容量边界与退化阈值
 
+状态：completed for gate and archival contract. 5K/10K 多轮固定机器数据继续沉淀。证据：`scripts/collect_release_baseline.py`、`scripts/collect_v2_perf_baseline.py`、`runtime/perf/release-baseline/summary.json`。
+
 目标：把 5K/10K 连接和 battle 高负载从“容量探索”变成可复测数据。
 
 任务：
@@ -56,6 +62,8 @@
 - capacity 失败时能说明瓶颈、错误类型和下一步优化方向。
 
 ## H3：Kubernetes 发布演练
+
+状态：completed for static and kind-entry evidence. 真实集群 rollout/rollback 继续在固定 runner 执行。证据：`env/k8s/*-deployment.yaml`、`scripts/operator_kind_smoke.py`、`production-resilience.yml --include-operator-kind`。
 
 目标：让 Kubernetes 路径具备真实生产发布和回滚证据。
 
@@ -72,6 +80,8 @@
 
 ## H4：观测闭环增强
 
+状态：completed for runtime evidence entry and documented boundary. route latency histogram/summary 属后续指标增强。证据：`scripts/verify_observability_gate.py --include-runtime-http --include-otel-collector`、`env/monitoring/grafana-dashboard.json`。
+
 目标：减少“能看到错误但看不到延迟和根因”的盲区。
 
 任务：
@@ -86,6 +96,8 @@
 - OTel collector 异常不影响 gateway 主流程。
 
 ## H5：SDK 企业接入包
+
+状态：completed for examples and compatibility diagnostics. 证据：`sdk/examples/python_full_flow.py`、`sdk/examples/csharp_full_flow/Program.cs`、`sdk/docs/README.md`。
 
 目标：降低后续客户端开发和企业接入成本。
 

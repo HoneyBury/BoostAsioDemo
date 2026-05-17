@@ -27,6 +27,7 @@ REQUIRED_SCENARIOS = {
     "sdk_enterprise_client_gate",
     "production_resilience_gate",
     "production_evidence_gate",
+    "production_hardening_gate",
 }
 
 

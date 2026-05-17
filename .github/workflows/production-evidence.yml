@@ -4,6 +4,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
+  schedule:
+    - cron: "50 19 * * 4"
   workflow_dispatch:
     inputs:
       runner:
@@ -83,10 +85,10 @@ permissions:
 
 jobs:
   production-evidence:
-    runs-on: ${{ fromJSON(inputs.runner) }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 720
     concurrency:
-      group: production-evidence-${{ inputs.runner }}
+      group: production-evidence-${{ inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || 'ubuntu-latest' }}
       cancel-in-progress: false
 
     steps:
@@ -115,7 +117,7 @@ jobs:
           args=(
             scripts/check_fixed_runner_environment.py
             --profile production-evidence
-            --build-dir "${{ inputs.build_dir }}"
+            --build-dir "${{ inputs.build_dir || 'build/default' }}"
             --summary-path runtime/validation/fixed-runner-preflight-summary.json
           )
           if [ "${{ inputs.include_redis_live }}" = "true" ]; then
@@ -127,7 +129,7 @@ jobs:
           python "${args[@]}"
 
       - name: Configure
-        run: cmake --preset ${{ inputs.configure_preset }}
+        run: cmake --preset ${{ inputs.configure_preset || 'default' }}
 
       - name: Production evidence gate
         shell: bash
@@ -135,12 +137,12 @@ jobs:
           set -euo pipefail
           args=(
             scripts/verify_production_evidence_gate.py
-            --build-dir "${{ inputs.build_dir }}"
-            --configuration "${{ inputs.configuration }}"
-            --soak-profile "${{ inputs.soak_profile }}"
-            --baseline-profile "${{ inputs.baseline_profile }}"
-            --perf-repetitions "${{ inputs.perf_repetitions }}"
-            --step-timeout-seconds "${{ inputs.step_timeout_seconds }}"
+            --build-dir "${{ inputs.build_dir || 'build/default' }}"
+            --configuration "${{ inputs.configuration || 'Debug' }}"
+            --soak-profile "${{ inputs.soak_profile || 'smoke' }}"
+            --baseline-profile "${{ inputs.baseline_profile || 'debug' }}"
+            --perf-repetitions "${{ inputs.perf_repetitions || '1' }}"
+            --step-timeout-seconds "${{ inputs.step_timeout_seconds || '1200' }}"
             --summary-path runtime/validation/production-evidence-summary.json
           )
           if [ "${{ inputs.include_redis_live }}" = "true" ]; then
@@ -166,8 +168,8 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/verify_observability_gate.py \
-            --build-dir "${{ inputs.build_dir }}" \
-            --configuration "${{ inputs.configuration }}" \
+            --build-dir "${{ inputs.build_dir || 'build/default' }}" \
+            --configuration "${{ inputs.configuration || 'Debug' }}" \
             --skip-build \
             --include-runtime-http \
             --summary-path runtime/validation/p2-observability-runtime-summary.json

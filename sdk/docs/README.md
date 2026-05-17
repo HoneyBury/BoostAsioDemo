@@ -4,6 +4,8 @@
 
 > **当前版本: v4.1.0** | **分发状态: C++ 静态库 + C ABI 动态库 + Python/C# 轻量封装** | [路线与当前状态](roadmap.md)
 
+版本兼容与语言封装边界见 [SDK 与 Gateway 兼容矩阵](compatibility.md)。
+
 ## 快速开始
 
 ```cpp
@@ -158,6 +160,12 @@ target_link_libraries(your_app PRIVATE boost_gateway::sdk)
 C API 动态库会随 SDK 一起安装，用于 Python `ctypes` 与 C# `DllImport` 绑定。C ABI 入口包含 `gsdk_version()`，用于运行时校验 native library 与语言封装版本是否匹配。
 
 Python wrapper 会优先读取 `BOOST_GATEWAY_SDK_LIBRARY` 指定的 native library 路径，加载失败时会列出尝试过的路径和底层错误。Python/C# wrapper 都会校验 native SDK 主版本号，避免语言封装与动态库版本错配。
+
+生产接入示例：
+
+- C++：`sdk/examples/full_flow_client/main.cpp`
+- Python：`sdk/examples/python_full_flow.py`
+- C#：`sdk/examples/csharp_full_flow/Program.cs`
 
 分发验证入口：
 

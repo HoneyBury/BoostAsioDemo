@@ -17,6 +17,7 @@ REQUIRED_FILES = {
     "deployment-runbook": "docs/production-deployment-runbook.md",
     "operations-runbook": "docs/production-operations-runbook.md",
     "sdk-runbook": "sdk/docs/README.md",
+    "sdk-compatibility-matrix": "sdk/docs/compatibility.md",
     "release-checklist": "docs/v3-release-checklist.md",
     "reliability-matrix": "docs/reliability-matrix.md",
     "fixed-runner-playbook": "docs/fixed-runner-playbook.md",
@@ -31,6 +32,7 @@ REQUIRED_FILES = {
     "sdk-full-flow-gate": "scripts/verify_sdk_full_flow_client.py",
     "p5-resilience-gate": "scripts/verify_production_resilience_gate.py",
     "p6-production-evidence-gate": "scripts/verify_production_evidence_gate.py",
+    "h0-h5-production-hardening-gate": "scripts/check_production_hardening_gate.py",
     "production-evidence-workflow": ".github/workflows/production-evidence.yml",
     "production-resilience-workflow": ".github/workflows/production-resilience.yml",
 }
@@ -50,6 +52,20 @@ REQUIRED_TEXT = {
         "H3：Kubernetes 发布演练",
         "H4：观测闭环增强",
         "H5：SDK 企业接入包",
+    ],
+    "docs/releases/v3.3.2-h0-h5-production-hardening.md": [
+        "H0 固定 Runner 常态化",
+        "H1 长稳与资源曲线",
+        "H2 容量边界与退化阈值",
+        "H3 Kubernetes 发布演练",
+        "H4 观测闭环增强",
+        "H5 SDK 企业接入包",
+    ],
+    "sdk/docs/compatibility.md": [
+        "v3.3.2",
+        "v4.1.0",
+        "BOOST_GATEWAY_SDK_LIBRARY",
+        "disconnect callback",
     ],
     "docs/v3-release-checklist.md": [
         "P6 生产证据聚合入口",

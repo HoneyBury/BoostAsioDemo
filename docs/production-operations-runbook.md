@@ -173,6 +173,23 @@ build/default/sdk/examples/sdk_full_flow_client 127.0.0.1 9201
 - Grafana 自动配置：`env/monitoring/grafana-datasource.yml`、`env/monitoring/grafana-dashboard-provider.yml`
 - 监控静态 gate：`scripts/check_monitoring_operability.py`
 
+### 生产性能快照
+
+当本机 OrbStack / Docker Compose 生产栈已经启动后，用下面的有界采样命令确认“部署健康、观测链路可用、空载资源没有明显异常”：
+
+```bash
+python3 scripts/collect_docker_production_perf_snapshot.py
+```
+
+输出：
+
+- `runtime/perf/docker-production-snapshot/summary.json`
+- `runtime/perf/docker-production-snapshot/report.md`
+
+脚本会从容器内读取 gateway `/ready` 与 `/metrics/diagnostics/json`，检查 Prometheus targets、Grafana health，并记录 `docker stats --no-stream` 资源快照。它需要能访问 Docker API 的本机或固定 runner 权限；如果运行环境无法连接 Docker socket，应在有 Docker 权限的终端或已授权的自动化环境中执行。
+
+该快照只回答当前生产栈的运行态健康和空载资源问题，不替代 2h/8h soak、5K/10K capacity 和 battle-500 容量专项。
+
 ## 告警分级
 
 | 告警 | 严重级别 | 首要动作 |

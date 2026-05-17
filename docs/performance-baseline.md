@@ -150,7 +150,24 @@ pwsh ./scripts/collect_v2_perf_baseline.ps1 `
 
 `collect_release_baseline.py` 在启用性能采集时会把 `performance_summary_path` 和 `performance_report_path` 写入 release summary，方便从 `runtime/validation/release-baseline-summary.json` 直接追溯性能证据。
 
-### 1.7 P1 性能优化实验口径
+### 1.7 Docker 生产栈采样入口
+
+本机 OrbStack / Docker Compose 生产部署验证通过后，生产运行态的轻量性能与可观测性快照统一使用：
+
+```bash
+python3 scripts/collect_docker_production_perf_snapshot.py
+```
+
+脚本从容器内读取 gateway `/ready`、`/metrics/diagnostics/json`、Prometheus targets、Grafana health，并通过 `docker stats --no-stream` 记录 gateway、五个 backend、Redis、Prometheus、Grafana、Alertmanager 和 redis-exporter 的 CPU/RSS/PID/IO 快照。输出固定为：
+
+| 产物 | 说明 |
+|---|---|
+| `runtime/perf/docker-production-snapshot/summary.json` | 机器可读事实源，包含 readiness、diagnostics、Prometheus targets、Grafana health 和 Docker stats |
+| `runtime/perf/docker-production-snapshot/report.md` | 人工可读快照报告，可贴入发布记录或故障复盘 |
+
+注意：该脚本需要能访问 Docker API 的本机或固定 runner 权限；在 Codex 沙箱内直接运行会被 Docker socket 权限拦截，需要走已授权执行环境。
+
+### 1.8 P1 性能优化实验口径
 
 P1 阶段优先保证默认基线稳定，不把实验性优化直接推入默认路径。`collect_v2_perf_baseline.py` 支持：
 
@@ -169,7 +186,7 @@ python ./scripts/collect_v2_perf_baseline.py \
 - `backend_pool_size=1`：baseline 单轮通过，`echo-1000` p99 20ms，`battle-100` p99 200ms，rejected/failed/forced_timeout 均为 0。
 - `backend_pool_size=8`：smoke 中 battle 场景出现 backend_error/rejected，说明多连接池会放大当前 backend connection 生命周期和熔断交互的波动，不进入默认优化。
 
-### 1.8 首轮 smoke 数据（2026-05-16，Windows）
+### 1.9 首轮 smoke 数据（2026-05-16，Windows）
 
 首轮基于 `python ./scripts/collect_v2_perf_baseline.py --build-dir build/windows-ninja-release --run-preset smoke`
 得到的结果如下，原始产物保存在：
@@ -231,7 +248,7 @@ python ./scripts/collect_v2_perf_baseline.py \
 |---|---|---|---|
 | 纯 echo | 23,952 msg/s | 5K/10K 连接建立失败 | capacity 单轮 echo-5000 吞吐峰值，但 failed=3,653 |
 | 战斗广播 | 1,812 msg/s | battle-500 rejected 与 P99 退化 | baseline battle-100 通过，capacity battle-500 失败 |
-| 稳定性浸泡 | _待测定_ | _待测定_ | 8 小时运行 |
+| 稳定性浸泡 | 待固定机器长跑 | RSS/fd/CPU/P99 波动 | 2h/8h soak 专项，不能用短采样替代 |
 
 ---
 
@@ -258,8 +275,8 @@ python ./scripts/collect_v2_perf_baseline.py \
 **测量方式**: `GatewayServiceBridge::route()` 中 `send_request()` 前后打点，记录到 `BackendMetrics::record_latency()`。通过 `GET /metrics/diagnostics/json` 获取。
 
 > `R1-2` 状态：采集脚本已保留每次运行的 diagnostics JSON，且
-> `DemoServer::diagnostics_json()` 已补 `avg_latency_us` / `latency_sample_count`；
-> 下一步从 baseline 目录提取并回填。
+> `DemoServer::diagnostics_json()` 已补 `avg_latency_us` / `latency_sample_count`。
+> 当前生产 Compose 空载快照中 `backend_metrics={}` 属于正常现象，因为未施加业务流量；后端延迟表必须来自 baseline/capacity 压测后的 diagnostics，不能用空载快照填充。
 
 ### 3.3 战斗输入广播延迟
 
@@ -277,10 +294,12 @@ python ./scripts/collect_v2_perf_baseline.py \
 
 | 指标 | gateway | login backend | room backend | battle backend |
 |---|---|---|---|---|
-| RSS (MB) | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
-| 虚拟内存 (MB) | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
-| 文件描述符 | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
-| 线程数 | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
+| RSS (MB) | 3.94 | 2.00 | 1.97 | 2.03 |
+| 虚拟内存 (MB) | 432160.67 | 432143.72 | 432139.66 | 432143.64 |
+| 文件描述符 | 21 | 13 | 13 | 13 |
+| 线程数 | macOS 快照未采集 | macOS 快照未采集 | macOS 快照未采集 | macOS 快照未采集 |
+
+> 数据来源：`runtime/perf/release-baseline/summary.json.resource_analysis.idle`，为 macOS Release 本地多进程拓扑空载快照。Docker 生产栈容器空载快照见 7.2。
 
 ### 4.2 负载资源用量
 
@@ -357,6 +376,8 @@ python ./scripts/collect_v2_perf_baseline.py \
 | 8 核, 16 GB | _待测定_ | _待测定_ | — |
 | 16 核, 32 GB | _待测定_ | _待测定_ | — |
 
+> 当前已有 1K baseline 和退化容量样本，但 4/8/16 核单实例上限需要固定机器独占执行 2h/8h soak 与 5K/10K capacity 复测后才能定版；文档不再用本机短采样推导生产上限。
+
 ### 6.2 扩容公式
 
 ```
@@ -406,7 +427,8 @@ python ./scripts/collect_v2_perf_baseline.py \
 | BackendMetrics | ✅ 可用 | per-service 请求/成功/超时/错误/延迟计数 |
 | DiagnosticsSnapshot | ✅ 可用 | JSON 格式，含 messages_per_second |
 | gateway 独立启动 | ✅ 可用 | `v2_gateway_demo --io-cores N --management-port 9080` |
-| 4 进程拓扑 | ⚠️ 待验证 | backend 服务需独立启动并按顺序编排 |
+| 4 进程拓扑 | ✅ 已验证 | `collect_release_baseline.py` 与 `collect_v2_perf_baseline.py` 自动编排 gateway/login/room/battle |
+| Docker 生产拓扑 | ✅ 已验证 | `collect_docker_production_perf_snapshot.py` 覆盖 gateway、五个 backend、Redis、Prometheus、Grafana、Alertmanager |
 
 > **注意**: 性能数据采集需要在受控环境下进行（独占机器、关闭无关进程、预热后采集）。以下命令已验证可执行，但实际数据待填入上表。
 
@@ -434,6 +456,52 @@ while true; do
   sleep 5
 done
 
-# —— 服务端延迟 (通过 HTTP 诊断口) ——
-curl -s http://localhost:9202/metrics/diagnostics/json | jq '.backends[].metrics'
+# —— 服务端延迟 (通过 gateway HTTP 诊断口) ——
+curl -s http://localhost:9080/metrics/diagnostics/json | jq '.backend_metrics'
 ```
+
+### 7.2 OrbStack 生产栈快照（2026-05-18）
+
+命令：
+
+```bash
+python3 scripts/collect_docker_production_perf_snapshot.py
+```
+
+结果：
+
+| 检查项 | 结果 |
+|---|---|
+| gateway `/ready` | pass |
+| Prometheus active targets | 3/3 up (`gateway` / `prometheus` / `redis-exporter`) |
+| Grafana health | database ok |
+| gateway diagnostics | `io_core_count=1`，`active_sessions=0`，`backend_instances=5` |
+| 总体判定 | `overall_pass=true` |
+
+容器空载资源快照：
+
+| 容器 | CPU | Memory | Mem % | PIDs |
+|---|---:|---:|---:|---:|
+| boost-gateway | 0.01% | 9.32MiB / 1GiB | 0.91% | 5 |
+| boost-login-backend | 1.77% | 2.277MiB / 512MiB | 0.44% | 2 |
+| boost-room-backend | 1.68% | 2.43MiB / 768MiB | 0.32% | 2 |
+| boost-battle-backend | 1.66% | 2.445MiB / 1GiB | 0.24% | 2 |
+| boost-matchmaking-backend | 1.99% | 2.789MiB / 512MiB | 0.54% | 3 |
+| boost-leaderboard-backend | 0.05% | 1.852MiB / 768MiB | 0.24% | 2 |
+| boost-redis | 2.69% | 13.57MiB / 512MiB | 2.65% | 6 |
+| boost-prometheus | 0.56% | 89.91MiB / 512MiB | 17.56% | 17 |
+| boost-grafana | 0.03% | 141.9MiB / 512MiB | 27.71% | 17 |
+| boost-alertmanager | 0.16% | 24.28MiB / 256MiB | 9.48% | 11 |
+| boost-redis-exporter | 0.00% | 16.71MiB / 256MiB | 6.53% | 12 |
+
+该快照用于回答“生产部署是否健康、观测链路是否可用、空载资源是否异常”。它不是吞吐容量结论；容量与长稳结论仍以 `collect_release_baseline.py --perf-preset baseline/capacity` 和固定 runner soak 为准。
+
+### 7.3 当前仍需固定机器沉淀的性能项
+
+| 项目 | 当前状态 | 下一步证据入口 |
+|---|---|---|
+| 2h/8h soak RSS/fd/CPU/P99 波动 | 未定版 | `verify_production_evidence_gate.py` 显式启用 long soak，在固定 runner 归档 summary/report |
+| 5K/10K echo 容量上限 | 已发现退化点，未作为通过线 | `collect_release_baseline.py --perf-preset capacity --perf-repetitions 3` |
+| battle-500 容量 | 已发现 rejected 与 P99 退化 | capacity profile + battle专项复测 |
+| 1/2/4 核线性扩容 | 仅 4 核 baseline 已沉淀 | 固定机器分别设置 `--io-cores 1/2/4` 后归档报告 |
+| Prometheus P99 histogram/summary | 当前 `/metrics` 未导出 route latency histogram | H4 观测增强，新增可 scrape 的 route latency histogram/summary |

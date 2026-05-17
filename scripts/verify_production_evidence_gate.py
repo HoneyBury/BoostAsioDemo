@@ -186,6 +186,20 @@ def main() -> int:
         args.step_timeout_seconds,
     ))
 
+    candidate_cmd = [
+        sys.executable,
+        str(root / "scripts" / "check_production_candidate_audit.py"),
+        "--summary-path",
+        str(root / "runtime" / "validation" / "p6-candidate-audit-summary.json"),
+    ]
+    steps.append(run_step(
+        "P6 production candidate audit",
+        "candidate_audit",
+        candidate_cmd,
+        root,
+        60,
+    ))
+
     if args.include_release_baseline or args.include_capacity_baseline:
         perf_preset = "capacity" if args.include_capacity_baseline else "baseline"
         release_cmd = [

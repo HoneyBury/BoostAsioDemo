@@ -183,6 +183,7 @@ jobs:
             runtime/validation/p6-stability-soak-summary.json \
             runtime/validation/p6-data-recovery-summary.json \
             runtime/validation/p6-specialized-e2e-summary.json \
+            runtime/validation/p6-candidate-audit-summary.json \
             runtime/validation/p6-release-baseline-summary.json \
             runtime/validation/p2-observability-runtime-summary.json \
             runtime/validation/gateway-observability-runtime-summary.json \

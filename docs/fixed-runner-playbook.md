@@ -13,6 +13,7 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs
 | Operator kind | `self-hosted,operator-kind` | `specialized-e2e.yml` | Docker、kind、kubectl、make、CMake、Ninja、Python |
 | Observability | `self-hosted,observability` | 手动命令或 release gate | CMake、Ninja、Python、可绑定本地端口；可选 fake OTel collector 与真实 gateway HTTP runtime 测试 |
 | Control plane | `self-hosted,operator-kind` | 手动命令或 `specialized-e2e.yml` | Go、Docker、kind、kubectl、make、Python；可选 envtest assets |
+| Production resilience | `self-hosted,production-resilience` | 手动命令或 `production-evidence.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
 | Production evidence | `self-hosted,production-evidence` | `production-evidence.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
 
 GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-evidence.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","production-evidence"]`。
@@ -101,6 +102,27 @@ python scripts/verify_control_plane_gate.py --include-kind --summary-path runtim
 - `--include-kind` 场景必须断言 sample `BoostGatewayCluster` 的 `Ready=True`、`Progressing=False`、`Degraded=False`、`TLSReady=False`，六个 `status.components[]` 均存在且可用，并验证 sample CR 删除完成。
 - `--include-envtest` 场景要求 runner 已准备 controller-runtime envtest assets，例如 `KUBEBUILDER_ASSETS`。
 
+## Production Resilience / P5
+
+P5 长稳、故障注入与回滚演练使用 `scripts/verify_production_resilience_gate.py` 作为统一入口。默认模式保持有界，只跑固定 runner 预检、bounded stability soak、data recovery 和 Redis/Raft/Operator failure-path 专项；真实 Redis、kind、runtime HTTP、release/capacity baseline 必须显式启用。
+
+推荐本机或固定 runner 命令：
+
+```bash
+python scripts/check_fixed_runner_environment.py --profile production-resilience --build-dir build/default
+python scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build --summary-path runtime/validation/dev-p5-production-resilience-summary.json
+python scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build --soak-profile short --include-redis-live --include-runtime-http --summary-path runtime/validation/dev-p5-production-resilience-live-summary.json
+python scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build --include-operator-kind --kind-timeout-seconds 1200 --summary-path runtime/validation/dev-p5-production-resilience-kind-summary.json
+```
+
+通过标准：
+
+- `runtime/validation/production-resilience-summary.json` 或指定 summary 中 `passed=true`。
+- 子 summary `p5-long-soak-summary.json`、`p5-fault-data-recovery-summary.json`、`p5-specialized-failure-summary.json` 均通过。
+- 启用 `--include-redis-live` 时，Redis live persistence/event-store 和 Redis service live gates 必须通过。
+- 启用 `--include-operator-kind` 时，Operator kind status smoke 与 control-plane kind gate 必须通过，并覆盖 Ready/Progressing/Degraded/TLSReady、六组件 status 和 sample CR 删除。
+- 启用 `--include-runtime-http` 时，真实 gateway HTTP `/health`、`/ready` 与 `/metrics*` 必须通过 runtime observability gate。
+
 ## 本地预检
 
 执行长任务前可先跑：
@@ -111,6 +133,7 @@ python scripts/check_fixed_runner_environment.py --profile specialized-e2e --bui
 python scripts/check_fixed_runner_environment.py --profile specialized-e2e --build-dir build/default --require-kind
 python scripts/check_fixed_runner_environment.py --profile observability --build-dir build/default
 python scripts/check_fixed_runner_environment.py --profile control-plane --build-dir build/default --require-kind
+python scripts/check_fixed_runner_environment.py --profile production-resilience --build-dir build/default --require-redis --require-kind
 ```
 
 预检只检查工具链和外部服务可达性，不替代实际测试。

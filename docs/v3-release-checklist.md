@@ -13,6 +13,7 @@
 | 安全发布门禁 | `python scripts/check_security_release_gate.py` | 生产模式 dev token fallback 有显式禁用路径，admin 审计最小键与 ACL 边界有证据 |
 | P4 可观测性/限流门禁 | `python scripts/verify_observability_gate.py --build-dir <build-dir> --skip-build` | rate limit 全局消息类型/IP/user/login/connection、trace/OTel、backend RED metrics、gateway metrics 和 audit 聚合用例通过，并写出 `runtime/validation/observability-gate-summary.json` |
 | P5 控制面门禁 | `python scripts/verify_control_plane_gate.py` | Operator manifest 静态契约与 fake-client Go 测试通过；固定 runner 可显式启用 envtest/kind，kind smoke 断言 status conditions、components 覆盖和样例 CR 删除路径 |
+| P5 长稳故障回滚门禁 | `python scripts/verify_production_resilience_gate.py --build-dir <build-dir> --skip-build` | 固定 runner 预检、bounded soak、data recovery、Redis/Raft/Operator failure-path 聚合通过；固定 runner 可追加 Redis live、Operator kind、runtime HTTP、release/capacity baseline |
 | 稳定性短 soak | `python scripts/verify_stability_soak.py --build-dir build/windows-msvc-debug --configuration Debug --skip-build --soak-profile short` | I/O accept 策略、WriteBehind drain/failure、backend timeout/recovery、短架构基线全部通过，并写出 `runtime/validation/stability-soak-summary.json` |
 | P3 数据恢复门禁 | `python scripts/verify_data_recovery_gate.py --build-dir <build-dir> --skip-build` | replay/result/snapshot、WriteBehind flush/drain、Redis degraded、Raft committed restart replay 与持久化 round trip 全部通过，并写出 `runtime/validation/data-recovery-summary.json` |
 | Proto schema | `cmake --build <build-dir> --target check_v3_proto_schema` | v3 proto 文件、包名、核心 message 存在 |
@@ -96,6 +97,16 @@ python scripts/verify_control_plane_gate.py --include-kind
 python scripts/verify_control_plane_gate.py --include-envtest --include-kind
 ```
 
+P5 长稳、故障注入与回滚演练使用 `scripts/verify_production_resilience_gate.py` 聚合。默认入口不依赖 Redis live、kind 或长容量任务；固定 runner 上可逐步打开真实依赖和长项：
+
+```powershell
+.\scripts\verify_production_resilience_gate.ps1 -BuildDir build/windows-ninja-debug -SkipBuild
+python scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build --soak-profile short
+python scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build --include-redis-live --include-runtime-http
+python scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build --include-operator-kind --kind-timeout-seconds 1200
+python scripts/verify_production_resilience_gate.py --build-dir build/release --configuration Release --skip-build --soak-profile short --baseline-profile release --include-release-baseline --perf-repetitions 3
+```
+
 P6 生产证据聚合使用 `scripts/verify_production_evidence_gate.py`。默认入口保持有界，不跑长容量任务；固定 runner 上可逐步打开真实依赖和长项：
 
 ```powershell
@@ -113,6 +124,7 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 | 安全发布门禁失败 | 生产模式鉴权、admin 审计或 ACL 边界证据不完整时不得发布 |
 | P4 可观测性/限流门禁失败 | 先修复 rate limit、trace/OTel、metrics 或 audit 聚合用例，再继续发布 |
 | P5 控制面门禁失败 | 先修复 Operator reconcile/status/components/delete 证据；若为 kind/envtest 环境缺失，必须明确标记固定 runner 缺失 |
+| P5 长稳故障回滚门禁失败 | 先查看 `runtime/validation/production-resilience-summary.json` 的 `failed_category` / `failed_step`，再修复 soak、data recovery、specialized、runtime observability 或 rollback/kind 子 summary |
 | `runtime/perf/release-baseline/summary.json` 缺失或 `release_gates.overall_pass=false` | 重新采集多进程性能基线并确认退化原因 |
 | R4 release summary 缺失或 `passed=false` | 先修复 R4 contract、schema、恢复路径或短架构基线 |
 | typed envelope 新增业务字段未进 `common.proto` contract | 补 schema 与 `check_v3_proto_transport_contract` |

@@ -25,6 +25,7 @@ REQUIRED_SCENARIOS = {
     "validation_summary_rendering",
     "monitoring_operability_gate",
     "sdk_enterprise_client_gate",
+    "production_resilience_gate",
     "production_evidence_gate",
 }
 

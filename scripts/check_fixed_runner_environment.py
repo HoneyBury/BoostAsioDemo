@@ -59,7 +59,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--profile",
-        choices=["release-baseline", "specialized-e2e", "observability", "control-plane", "production-evidence"],
+        choices=[
+            "release-baseline",
+            "specialized-e2e",
+            "observability",
+            "control-plane",
+            "production-resilience",
+            "production-evidence",
+        ],
         required=True,
     )
     parser.add_argument("--build-dir", type=Path, default=Path("build/default"))
@@ -84,8 +91,16 @@ def main() -> int:
 
     if args.profile == "release-baseline":
         checks.append(check_command("ninja", False, errors, warnings))
-    elif args.profile == "production-evidence":
+    elif args.profile in {"production-resilience", "production-evidence"}:
         checks.append(check_command("ninja", False, errors, warnings))
+        if args.profile == "production-resilience":
+            warnings.append("production-resilience profile uses bounded default soak; 2h/8h soak must run on a fixed runner with an expanded timeout")
+            checks.append({
+                "name": "resilience:long-soak-runner",
+                "required": False,
+                "status": "warning",
+                "message": warnings[-1],
+            })
         if args.require_kind:
             for command in ["kind", "kubectl", "make", "docker"]:
                 checks.append(check_command(command, True, errors, warnings))

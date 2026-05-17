@@ -80,6 +80,7 @@
 - [v3.3.2 P4 SDK 企业级运行语义记录](./releases/v3.3.2-p4-sdk-enterprise-runtime.md) — SDK heartbeat、disconnect callback、push/reconnect、C ABI heartbeat 与 Python/C# 版本诊断收束
 - [v3.3.2 P4 运行态可观测性记录](./releases/v3.3.2-p4-observability-runtime.md) — 真实 `v2_gateway_demo` + SDK 流量验证 `/health`、`/ready` 与 `/metrics*`
 - [v3.3.2 P5 控制面门禁记录](./releases/v3.3.2-p5-control-plane.md) — Operator manifest 静态契约、仓库本地 Go cache 与默认控制面门禁收束
+- [v3.3.2 P5 长稳故障回滚记录](./releases/v3.3.2-p5-production-resilience.md) — P5 resilience gate、bounded soak、故障恢复、Redis/Raft/Operator、runtime HTTP 与回滚演练入口收束
 - [v3.3.2 P6 生产证据收束记录](./releases/v3.3.2-p6-production-evidence.md) — 本机 Redis/kind/Release baseline 真实依赖验证与最终门禁结果
 - [部署手册](../deploy/README.md) — Docker Compose + systemd 部署运行手册
 

@@ -142,7 +142,7 @@ python scripts/check_fixed_runner_environment.py --profile production-resilience
 
 ## P6 Production Evidence
 
-P6 聚合入口用于把固定 runner 上的稳定性、数据恢复、Redis/Raft/Operator 和 release baseline 证据收束到一个 summary。默认命令只跑有界任务：
+P6 聚合入口用于把固定 runner 上的稳定性、数据恢复、Redis/Raft/Operator、生产候选完整性审核和 release baseline 证据收束到一个 summary。默认命令只跑有界任务：
 
 ```bash
 python scripts/verify_production_evidence_gate.py --build-dir build/default --skip-build
@@ -174,6 +174,6 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 
 - `runtime/validation/production-evidence-summary.json` 中 `passed=true`。
 - `runtime/validation/fixed-runner-preflight-summary.json` 中 `passed=true`，且 Redis/kind 必需项与 workflow 输入一致。
-- 子 summary `p6-stability-soak-summary.json`、`p6-data-recovery-summary.json`、`p6-specialized-e2e-summary.json` 均为 `passed=true`。
+- 子 summary `p6-stability-soak-summary.json`、`p6-data-recovery-summary.json`、`p6-specialized-e2e-summary.json`、`p6-candidate-audit-summary.json` 均为 `passed=true`。
 - 启用 release/capacity baseline 时，`p6-release-baseline-summary.json` 和 `runtime/perf/release-baseline/summary.json` 必须同步归档。
 - 启用 runtime observability 时，`p2-observability-runtime-summary.json` 和 `gateway-observability-runtime-summary.json` 必须同步归档。

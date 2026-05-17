@@ -59,17 +59,20 @@ REQUIRED_TEXT = {
         "P6 Production Evidence",
         "production-resilience.yml",
         "production-evidence.yml",
+        "p6-candidate-audit-summary.json",
     ],
     "docs/production-evidence-runner.md": [
         "production-evidence.yml",
         "Redis + kind + observability runtime",
         "Full evidence",
+        "p6-candidate-audit-summary.json",
     ],
     ".github/workflows/production-evidence.yml": [
         "scripts/verify_production_evidence_gate.py",
         "scripts/render_validation_summary.py",
         "actions/upload-artifact@v4",
         "runtime/validation/production-evidence-summary.json",
+        "runtime/validation/p6-candidate-audit-summary.json",
     ],
     ".github/workflows/production-resilience.yml": [
         "scripts/verify_production_resilience_gate.py",

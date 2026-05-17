@@ -22,7 +22,7 @@ GitHub Actions 的 `production-evidence.yml` 使用 JSON 输入解析 runner：
 
 | 场景 | 关键输入 | 产物 |
 | --- | --- | --- |
-| Bounded default | 所有 include 设为 `false`，`soak_profile=smoke` | `production-evidence-summary.json`、`p6-*-summary.json` |
+| Bounded default | 所有 include 设为 `false`，`soak_profile=smoke` | `production-evidence-summary.json`、`p6-*-summary.json`、`p6-candidate-audit-summary.json` |
 | Redis + kind | `include_redis_live=true`、`include_operator_kind=true` | 额外验证 Redis live 与 Operator kind smoke |
 | Observability runtime | `include_observability_runtime=true` | `p2-observability-runtime-summary.json`、`gateway-observability-runtime-summary.json` |
 | Release baseline | `configuration=Release`、`include_release_baseline=true`、`perf_repetitions=3` | `p6-release-baseline-summary.json`、`runtime/perf/release-baseline/**` |
@@ -59,6 +59,7 @@ python scripts/check_fixed_runner_environment.py \
 - `runtime/validation/p6-stability-soak-summary.json`
 - `runtime/validation/p6-data-recovery-summary.json`
 - `runtime/validation/p6-specialized-e2e-summary.json`
+- `runtime/validation/p6-candidate-audit-summary.json`
 - 启用性能时归档 `runtime/validation/p6-release-baseline-summary.json` 与 `runtime/perf/release-baseline/**`
 - 启用 runtime observability 时归档 `runtime/validation/p2-observability-runtime-summary.json` 与 `runtime/validation/gateway-observability-runtime-summary.json`
 

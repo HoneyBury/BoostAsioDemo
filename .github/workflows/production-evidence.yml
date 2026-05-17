@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: "Runner label"
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","production-evidence"]'
         required: true
-        default: "ubuntu-latest"
+        default: '"ubuntu-latest"'
       configure_preset:
         description: "CMake configure preset"
         required: true
@@ -64,6 +64,11 @@ on:
         required: true
         default: false
         type: boolean
+      include_observability_runtime:
+        description: "Run runtime HTTP observability checks"
+        required: true
+        default: false
+        type: boolean
       perf_repetitions:
         description: "Repetitions per performance case"
         required: true
@@ -78,7 +83,11 @@ permissions:
 
 jobs:
   production-evidence:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 720
+    concurrency:
+      group: production-evidence-${{ inputs.runner }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
@@ -107,6 +116,7 @@ jobs:
             scripts/check_fixed_runner_environment.py
             --profile production-evidence
             --build-dir "${{ inputs.build_dir }}"
+            --summary-path runtime/validation/fixed-runner-preflight-summary.json
           )
           if [ "${{ inputs.include_redis_live }}" = "true" ]; then
             args+=(--require-redis)
@@ -150,17 +160,32 @@ jobs:
           fi
           python "${args[@]}"
 
+      - name: Observability runtime evidence
+        if: inputs.include_observability_runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_observability_gate.py \
+            --build-dir "${{ inputs.build_dir }}" \
+            --configuration "${{ inputs.configuration }}" \
+            --skip-build \
+            --include-runtime-http \
+            --summary-path runtime/validation/p2-observability-runtime-summary.json
+
       - name: Render production evidence summary
         if: always()
         shell: bash
         run: |
           summaries=()
           for path in \
+            runtime/validation/fixed-runner-preflight-summary.json \
             runtime/validation/production-evidence-summary.json \
             runtime/validation/p6-stability-soak-summary.json \
             runtime/validation/p6-data-recovery-summary.json \
             runtime/validation/p6-specialized-e2e-summary.json \
             runtime/validation/p6-release-baseline-summary.json \
+            runtime/validation/p2-observability-runtime-summary.json \
+            runtime/validation/gateway-observability-runtime-summary.json \
             runtime/perf/release-baseline/summary.json; do
             if [ -f "$path" ]; then
               summaries+=("$path")
@@ -174,10 +199,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: production-evidence-${{ inputs.runner }}
+          name: production-evidence-${{ github.run_id }}
           path: |
+            runtime/validation/fixed-runner-preflight-summary.json
             runtime/validation/production-evidence-summary.json
             runtime/validation/p6-*-summary.json
+            runtime/validation/p2-observability-runtime-summary.json
+            runtime/validation/gateway-observability-runtime-summary.json
             runtime/perf/v2-stability-soak/**
             runtime/perf/release-baseline/**
           if-no-files-found: warn

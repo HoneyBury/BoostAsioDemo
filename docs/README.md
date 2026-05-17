@@ -69,9 +69,11 @@
 - [生产部署运行手册](./production-deployment-runbook.md) — P0 生产部署事实源，覆盖云服务器、Docker Compose、systemd、Kubernetes、监控、备份、回滚和发布后验证
 - [v3.x 发布清单](./v3-release-checklist.md) — v3.x 阶段的版本口径、P3 数据恢复、配置脚本、控制面入口和发布阻断条件
 - [固定 Runner 执行手册](./fixed-runner-playbook.md) — Release baseline、Redis live、Operator kind 固定 runner 的 label、环境预检和手动 workflow 参数
+- [生产证据固定 Runner 配置说明](./production-evidence-runner.md) — P2 生产证据 workflow 的 runner JSON 输入、真实依赖场景、预检 summary 和 artifact 归档标准
 - [v3.3.2 P1 性能稳定化记录](./releases/v3.3.2-p1-performance-stabilization.md) — 性能事实管线、backend pool 实验和默认 baseline 稳定线
 - [v3.3.2 P0 生产部署收束记录](./releases/v3.3.2-p0-production-deployment.md) — 生产部署 runbook、Kubernetes tag 固化、部署 gate 和监控口径收束
 - [v3.3.2 P2 部署运维收束记录](./releases/v3.3.2-p2-deploy-operability.md) — Docker Compose、systemd、K8s、Prometheus 与部署预检门禁收束
+- [v3.3.2 P2 生产证据固定 Runner 收束记录](./releases/v3.3.2-p2-production-evidence-runner.md) — production-evidence workflow、preflight summary、真实依赖场景和归档标准收束
 - [v3.3.2 P3 SDK 企业级封装记录](./releases/v3.3.2-p3-sdk-distribution.md) — SDK 版本、CMake package、C ABI、Python/C# wrapper 与分发门禁收束
 - [v3.3.2 P4 运行态可观测性记录](./releases/v3.3.2-p4-observability-runtime.md) — 真实 `v2_gateway_demo` + SDK 流量验证 `/health`、`/ready` 与 `/metrics*`
 - [v3.3.2 P5 控制面门禁记录](./releases/v3.3.2-p5-control-plane.md) — Operator manifest 静态契约、仓库本地 Go cache 与默认控制面门禁收束

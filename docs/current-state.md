@@ -25,10 +25,11 @@
 - P4 可观测性/限流：`scripts/verify_observability_gate.py` 聚合 rate limit 全局消息类型/IP/user/login/connection、trace/OTel、backend RED metrics、gateway metrics 导出和 audit 事件证据，并接入 RC 总门禁；固定观测 runner 可通过 `--include-otel-collector` 验证 fake collector POST，通过 `--include-runtime-http` 启动真实 `v2_gateway_demo` + SDK full-flow 验证 `/health`、`/ready` 与 `/metrics*`。
 - P5 控制面：`scripts/verify_control_plane_gate.py` 聚合 Operator manifest 静态契约、fake-client Go 测试，并接入 RC 总门禁；Go build/module cache 固定到仓库 `runtime/go-cache`，避免依赖用户 HOME 权限；固定 runner 可通过 `--include-envtest` / `--include-kind` 验证 envtest、kind status/components 和样例 CR 删除路径。
 - P6 生产证据聚合：`scripts/verify_production_evidence_gate.py` 将 stability soak、P3 data recovery、Redis/Raft/Operator specialized E2E 与可选 release/capacity baseline 聚合为一个固定 runner 入口；默认模式保持有界，长稳、Redis live、Operator kind、settlement replay、capacity baseline 通过显式参数启用。本机 P6 收束验证已覆盖 Release 构建、Redis live、Operator kind 和 3 轮 Release baseline，交付记录见 `docs/releases/v3.3.2-p6-production-evidence.md`。
+- P2 固定 runner 证据：`.github/workflows/production-evidence.yml` 已支持 JSON runner 输入、preflight summary 归档、Redis/kind 真实依赖、runtime HTTP observability、release baseline 和 capacity baseline 的手动固定 runner 场景；配置说明见 `docs/production-evidence-runner.md`。
 
 ## 保留边界
 
-- 长稳 2h/8h soak、10K 连接生产容量基线、跨节点 Redis/Raft、更完整 Operator rollback/probe E2E、更完整角色化 RBAC 和外部 OTel collector 长稳仍属于后续稳定性专项；P6 已提供统一聚合入口，但正式数据仍需固定 runner 沉淀。
+- 长稳 2h/8h soak、10K 连接生产容量基线、跨节点 Redis/Raft、更完整 Operator rollback/probe E2E、更完整角色化 RBAC 和外部 OTel collector 长稳仍属于后续稳定性专项；P6 与 production-evidence workflow 已提供统一聚合入口，但正式数据仍需固定 runner 持续沉淀。
 - 默认 CI/release workflow 使用有界 smoke 门禁，避免长时间占用终端或 runner。
 - 文档出现编码显示异常时，以 UTF-8 文件内容和 CI 校验结果为准，PowerShell 控制台乱码不代表文件编码错误。
 

@@ -2,6 +2,8 @@
 
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
+P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs/production-evidence-runner.md`。
+
 ## Runner 标签建议
 
 | 用途 | 建议 label | Workflow | 必需能力 |
@@ -11,9 +13,9 @@
 | Operator kind | `self-hosted,operator-kind` | `specialized-e2e.yml` | Docker、kind、kubectl、make、CMake、Ninja、Python |
 | Observability | `self-hosted,observability` | 手动命令或 release gate | CMake、Ninja、Python、可绑定本地端口；可选 fake OTel collector 与真实 gateway HTTP runtime 测试 |
 | Control plane | `self-hosted,operator-kind` | 手动命令或 `specialized-e2e.yml` | Go、Docker、kind、kubectl、make、Python；可选 envtest assets |
-| Production evidence | `self-hosted,production-evidence` | `production-evidence.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境 |
+| Production evidence | `self-hosted,production-evidence` | `production-evidence.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
 
-GitHub Actions 手动触发时，`runner` 输入填实际 label。多个 label 可使用 JSON 数组语法，例如 `["self-hosted","release-baseline"]`。
+GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-evidence.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","production-evidence"]`。
 
 ## Release Baseline
 
@@ -130,6 +132,12 @@ python scripts/check_fixed_runner_environment.py --profile production-evidence -
 python scripts/verify_production_evidence_gate.py --build-dir build/default --skip-build --include-redis-live --include-operator-kind
 ```
 
+Runtime observability 固定 runner 建议：
+
+```bash
+python scripts/verify_observability_gate.py --build-dir build/default --skip-build --include-runtime-http --summary-path runtime/validation/p2-observability-runtime-summary.json
+```
+
 Release baseline / capacity 固定机器建议：
 
 ```bash
@@ -140,5 +148,7 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 通过标准：
 
 - `runtime/validation/production-evidence-summary.json` 中 `passed=true`。
+- `runtime/validation/fixed-runner-preflight-summary.json` 中 `passed=true`，且 Redis/kind 必需项与 workflow 输入一致。
 - 子 summary `p6-stability-soak-summary.json`、`p6-data-recovery-summary.json`、`p6-specialized-e2e-summary.json` 均为 `passed=true`。
 - 启用 release/capacity baseline 时，`p6-release-baseline-summary.json` 和 `runtime/perf/release-baseline/summary.json` 必须同步归档。
+- 启用 runtime observability 时，`p2-observability-runtime-summary.json` 和 `gateway-observability-runtime-summary.json` 必须同步归档。

@@ -74,6 +74,32 @@ def render_release_gates(summary: dict[str, Any]) -> list[str]:
     return lines
 
 
+def render_checks(checks: list[Any]) -> list[str]:
+    if not checks:
+        return []
+
+    lines = [
+        "### Checks",
+        "",
+        "| Check | Required | Status | Detail |",
+        "| --- | --- | --- | --- |",
+    ]
+    for item in checks:
+        if not isinstance(item, dict):
+            continue
+        detail = item.get("message") or item.get("path") or ""
+        if isinstance(item.get("clusters"), list):
+            detail = ", ".join(str(cluster) for cluster in item["clusters"]) or "no clusters"
+        lines.append(
+            f"| `{item.get('name', 'unknown')}` | "
+            f"`{item.get('required', False)}` | "
+            f"{status_icon(item.get('status'))} | "
+            f"{detail} |"
+        )
+    lines.append("")
+    return lines
+
+
 def render_summary(path: Path, title: str | None) -> str:
     summary = read_json(path)
     heading = title or path.name
@@ -92,6 +118,10 @@ def render_summary(path: Path, title: str | None) -> str:
     if isinstance(steps, list):
         lines.extend(["### Steps", ""])
         lines.extend(render_step_table(steps))
+
+    checks = summary.get("checks")
+    if isinstance(checks, list):
+        lines.extend(render_checks(checks))
 
     lines.extend(render_release_gates(summary))
     return "\n".join(lines).rstrip() + "\n"

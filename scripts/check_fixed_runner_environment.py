@@ -87,7 +87,7 @@ def main() -> int:
         if args.require_redis:
             check_tcp(args.redis_host, args.redis_port, True, errors, warnings)
     elif args.profile == "observability":
-        warnings.append("observability profile requires local 127.0.0.1 TCP bind permissions for backend and fake OTel collector tests")
+        warnings.append("observability profile requires local 127.0.0.1 TCP bind permissions for backend, fake OTel collector, and gateway HTTP runtime tests")
     elif args.profile == "control-plane":
         check_command("go", True, errors, warnings)
         if args.require_kind:

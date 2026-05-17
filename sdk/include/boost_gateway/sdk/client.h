@@ -69,7 +69,7 @@ public:
     // ── Callbacks ───────────────────────────────────────────────────
 
     /// Set callback for server push messages (kicked, resumed, room state, battle state).
-    void on_push(PushCallback callback) { push_callback_ = std::move(callback); }
+    void on_push(PushCallback callback);
 
     /// Set callback for unexpected disconnection.
     void on_disconnect(DisconnectCallback callback) { disconnect_callback_ = std::move(callback); }

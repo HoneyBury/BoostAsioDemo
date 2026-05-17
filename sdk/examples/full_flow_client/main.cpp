@@ -11,7 +11,10 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <mutex>
+#include <string>
 #include <thread>
+#include <vector>
 
 namespace sdk = boost_gateway::sdk;
 using namespace std::chrono_literals;
@@ -28,10 +31,12 @@ int main(int argc, char* argv[]) {
     std::cout << "Target: " << host << ":" << port << std::endl;
 
     sdk::SdkClient alice, bob;
-    int push_count = 0;
+    std::mutex push_mutex;
+    std::vector<sdk::PushMessage> pushes;
     auto on_push = [&](const sdk::PushMessage& push) {
-        ++push_count;
-        std::cout << "  [PUSH #" << push_count << "] msg_id="
+        std::lock_guard<std::mutex> lock(push_mutex);
+        pushes.push_back(push);
+        std::cout << "  [PUSH #" << pushes.size() << "] msg_id="
                   << push.message_id << " body=" << push.body << std::endl;
     };
     alice.on_push(on_push);
@@ -95,7 +100,9 @@ int main(int argc, char* argv[]) {
     std::cout << "\n[7] Start battle..." << std::endl;
     auto battle = alice.start_battle("sdk_test_room", 5s);
     CHECK(battle.ok, "Start battle: " + battle.error_message);
-    std::cout << "  Battle started: " << battle.battle_id << std::endl;
+    CHECK(battle.error_message.find("battle_started") != std::string::npos,
+          "Start battle response missing battle_started: " + battle.error_message);
+    std::cout << "  Battle started: " << battle.error_message << std::endl;
 
     // Drain battle state pushes
     std::this_thread::sleep_for(200ms);
@@ -105,23 +112,44 @@ int main(int argc, char* argv[]) {
     // ═══════════════════════════════════════════════════════════════
     std::cout << "\n[8] Battle inputs..." << std::endl;
     auto move1 = alice.send_battle_input("move:50,50", 5s);
-    std::cout << "  Alice move: " << (move1.ok ? "accepted" : "rejected") << std::endl;
+    CHECK(move1.ok, "Alice move rejected: " + move1.error_message);
+    std::cout << "  Alice move: accepted" << std::endl;
 
     auto move2 = bob.send_battle_input("move:60,60", 5s);
-    std::cout << "  Bob move: " << (move2.ok ? "accepted" : "rejected") << std::endl;
-
-    auto atk = alice.send_battle_input("attack:bob", 5s);
-    std::cout << "  Alice attack: " << (atk.ok ? "accepted" : "rejected") << std::endl;
+    CHECK(move2.ok, "Bob move rejected: " + move2.error_message);
+    std::cout << "  Bob move: accepted" << std::endl;
 
     // ═══════════════════════════════════════════════════════════════
     // 9. FINISH BATTLE
     // ═══════════════════════════════════════════════════════════════
     std::cout << "\n[9] Finish battle..." << std::endl;
     auto finish = alice.send_battle_input("finish:surrender", 5s);
-    std::cout << "  Surrender: " << (finish.ok ? "accepted" : "rejected") << std::endl;
+    CHECK(finish.ok, "Surrender rejected: " + finish.error_message);
+    CHECK(finish.error_message.find("battle_end_accepted:surrender") != std::string::npos,
+          "Surrender response missing battle_end_accepted:surrender: " + finish.error_message);
+    std::cout << "  Surrender: accepted" << std::endl;
 
-    // Drain settlement pushes
-    std::this_thread::sleep_for(500ms);
+    auto saw_push = [&](const std::string& fragment) {
+        std::lock_guard<std::mutex> lock(push_mutex);
+        for (const auto& push : pushes) {
+            if (push.body.find(fragment) != std::string::npos) return true;
+        }
+        return false;
+    };
+
+    auto after_finish = bob.send_battle_input("move:70,70", 5s);
+    CHECK(!after_finish.ok, "Battle input after finish should be rejected");
+    CHECK(after_finish.error_message.find("battle_not_started") != std::string::npos ||
+              after_finish.error_message.find("BattleNotStarted") != std::string::npos ||
+              after_finish.error_message.find("finished") != std::string::npos,
+          "Unexpected after-finish rejection body: " + after_finish.error_message);
+    std::cout << "  After-finish input rejected as expected: "
+              << after_finish.error_message << std::endl;
+
+    CHECK(saw_push("battle_state:kind=started"), "Missing battle started push");
+    CHECK(saw_push("battle_state:kind=settlement"), "Missing battle settlement push");
+    CHECK(saw_push("battle_state:kind=finished"), "Missing battle finished push");
+    CHECK(saw_push("reason=surrender"), "Missing surrender reason in battle push");
 
     // ═══════════════════════════════════════════════════════════════
     // 10. LEAVE ROOM
@@ -151,6 +179,6 @@ int main(int argc, char* argv[]) {
     bob.disconnect();
 
     std::cout << "\n=== ALL TESTS PASSED ===" << std::endl;
-    std::cout << "Push messages received: " << push_count << std::endl;
+    std::cout << "Push messages received: " << pushes.size() << std::endl;
     return 0;
 }

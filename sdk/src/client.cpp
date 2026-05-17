@@ -5,6 +5,7 @@
 #include <boost/asio.hpp>
 #include <atomic>
 #include <chrono>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -16,6 +17,7 @@ using namespace std::chrono_literals;
 class TcpConnection {
 public:
     TcpConnection() : socket_(io_context_) {}
+    ~TcpConnection() { disconnect(); }
     bool connect(const std::string& host, std::uint16_t port, std::chrono::milliseconds timeout) {
         boost::system::error_code ec;
         auto dl = std::chrono::steady_clock::now() + timeout;
@@ -44,16 +46,24 @@ private:
 };
 
 class SdkClient::Impl {
-    TcpConnection conn_; std::atomic<std::uint32_t> next_{1};
+    TcpConnection conn_; std::atomic<std::uint32_t> next_{1}; PushCallback push_callback_; std::mutex callback_mutex_;
 
     bool is_push(std::uint16_t id) { return id == msg::kSessionKickedPush || id == msg::kSessionResumedPush || id == msg::kRoomStatePush || id == msg::kBattleStatePush || id == msg::kBattleInputPush; }
+    void dispatch_push(const protocol::DecodedPacket& p) {
+        PushCallback callback;
+        {
+            std::lock_guard<std::mutex> lock(callback_mutex_);
+            callback = push_callback_;
+        }
+        if (callback) callback(PushMessage{.message_id = p.message_id, .body = p.body});
+    }
 
     protocol::DecodedPacket expect(std::uint16_t req, const std::string& body, std::chrono::milliseconds to, std::uint16_t exp) {
         auto rid = next_++; if (!conn_.send(req, rid, body)) return {};
         auto dl = std::chrono::steady_clock::now() + to;
         while (std::chrono::steady_clock::now() < dl) {
             auto p = conn_.read(std::chrono::milliseconds(100)); if (p.message_id == 0) continue;
-            if (is_push(p.message_id)) continue;
+            if (is_push(p.message_id)) { dispatch_push(p); continue; }
             return p;
         }
         return {};
@@ -96,6 +106,10 @@ public:
         auto r = expect(msg::kEchoRequest, b, to, msg::kEchoResponse);
         EchoResult er; er.ok = (r.message_id == msg::kEchoResponse); er.echo_body = r.body; return er;
     }
+    void on_push(PushCallback callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        push_callback_ = std::move(callback);
+    }
 };
 
 SdkClient::SdkClient() : impl_(std::make_unique<Impl>()) {}
@@ -111,6 +125,7 @@ RoomResult SdkClient::set_ready(bool r, std::chrono::milliseconds t) { return im
 BattleStartResult SdkClient::start_battle(const std::string& r, std::chrono::milliseconds t) { return impl_->start_battle(r,t); }
 BattleInputResult SdkClient::send_battle_input(const std::string& d, std::chrono::milliseconds t) { return impl_->send_battle_input(d,t); }
 EchoResult SdkClient::echo(const std::string& b, std::chrono::milliseconds t) { return impl_->echo(b,t); }
+void SdkClient::on_push(PushCallback callback) { impl_->on_push(std::move(callback)); }
 void SdkClient::start_heartbeat(std::chrono::seconds) {}
 void SdkClient::stop_heartbeat() {}
 

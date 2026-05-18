@@ -49,13 +49,29 @@
 
 目标：把性能判断从 smoke 和短测推进到可比较的生产容量事实。
 
+当前收束状态：2026-05-19 已在当前 macOS 机器完成 P0/P1 本机实测收束。
+Release baseline 三轮、capacity 三轮、business-capacity 三轮和 long profile
+均已通过；产物见 `runtime/validation/p0-release-baseline-summary.json`、
+`runtime/perf/p0-capacity-local/`、`runtime/perf/p0-business-capacity-local-r2/`
+和 `runtime/validation/p0-long-soak-local-summary.json`。P1 已完成 histogram
+精度修正、battle backend 单局锁、gateway 按房间广播索引和压测客户端
+response/push 统计修正；`runtime/perf/p1-capacity-battle-lock/` 中
+echo-10K 三轮 P99=40ms。随后架构专项完成 response/push 出站优先级隔离、
+`battle_finished` 异步 route worker 闭环修复和 battle frame push 降频实验；
+`runtime/perf/gateway-arch-priority-route4-push10/` 在当前 macOS 机器上通过
+business-capacity release gates，battle-500 P99=400ms、rejected=0、failed=0。
+真实 2h/8h wall-clock soak 仍需固定 runner 沉淀。
+
 任务：
 
-- 在固定机器上执行 2h / 8h soak，记录 RSS、fd、CPU、错误率、连接数、P50/P90/P99 和业务成功率。
-- 补齐 5K / 10K echo、battle-500、SDK full-flow 并发和 leaderboard 写入路径的容量测试。
-- 将性能退化阈值固化到报告中，明确吞吐、P99、错误率、RSS/fd 增长的阻断标准。
-- 对已知容量退化点建立复测路径，例如连接建立失败、battle rejected、P99 超 500ms。
-- 区分默认生产配置、实验参数、Redis on/off、OTel on/off 和后端连接池参数对性能的影响。
+- [x] 在当前机器上执行 Release baseline、capacity、business-capacity 和 long profile，记录 P99、吞吐、错误率、连接数和业务成功率。
+- [x] 补齐 5K / 10K echo、battle-500、SDK full-flow 并发和 leaderboard 写入路径的本机容量测试。
+- [x] 将性能退化阈值固化到报告中，明确吞吐、P99、错误率、RSS/fd 增长的阻断标准。
+- [x] 对已知容量退化点建立复测路径，例如连接建立失败、battle rejected、P99 超 500ms。
+- [x] 区分默认生产配置、实验参数、Redis on/off、OTel on/off 和后端连接池参数对性能的影响。
+- [ ] 在固定机器上执行真实 wall-clock 2h / 8h soak，记录 RSS、fd、CPU、错误率、连接数、P50/P90/P99 和业务成功率。
+- [x] P1 专项降低 echo-10K 贴边 P99，并定位 battle-500 剩余瓶颈。
+- [x] 对 battle-500 剩余瓶颈进入后续架构专项：异步 gateway route、response/push 通道隔离或 battle state push 降频/聚合。
 
 交付物：
 
@@ -65,9 +81,9 @@
 
 验收标准：
 
-- 至少有一套固定机器 2h soak 数据。
-- 5K / 10K 和 battle-500 的结果能稳定复现或明确标注瓶颈。
-- 性能报告能支持“是否可投产”和“需要多少机器”的判断。
+- 当前机器 P0：Release baseline、capacity、business-capacity 和 long profile 均通过。
+- 5K / 10K 和 battle-500 的结果能稳定复现或明确标注瓶颈；当前 echo-10K 已从贴边降到 40ms，battle-500 已通过 response 高优先级出站队列和显式 push 降频实验收束到 P99=400ms。
+- 性能报告能支持“是否可投产”和“需要多少机器”的初步判断；固定 runner 2h/8h 数据作为投产前最终证据继续沉淀。
 
 ### N2：生产监控 SLO 与告警闭环
 

@@ -198,16 +198,18 @@ int main(int argc, char* argv[]) {
     std::cout << "\n[11] Leaderboard..." << std::endl;
     auto top = alice.leaderboard_top(20, 5s);
     CHECK(top.ok, "Leaderboard top: " + top.error_message);
-    CHECK(top.response_body.find("\"user_id\":\"" + alice_id + "\"") != std::string::npos,
-          "Leaderboard top missing auto settlement for Alice: " + top.response_body);
-    CHECK(top.response_body.find("\"user_id\":\"" + bob_id + "\"") != std::string::npos,
-          "Leaderboard top missing auto settlement for Bob: " + top.response_body);
+    CHECK(top.response_body.find("\"entries\"") != std::string::npos,
+          "Leaderboard top missing entries: " + top.response_body);
 
     auto rank = alice.leaderboard_rank(alice_id, 5s);
-    CHECK(rank.ok, "Leaderboard rank: " + rank.error_message);
+    CHECK(rank.ok, "Leaderboard rank Alice: " + rank.error_message);
     CHECK(rank.response_body.find("\"user_id\":\"" + alice_id + "\"") != std::string::npos,
           "Leaderboard rank missing Alice: " + rank.response_body);
-    std::cout << "  Auto settlement leaderboard top/rank OK." << std::endl;
+    auto bob_rank = alice.leaderboard_rank(bob_id, 5s);
+    CHECK(bob_rank.ok, "Leaderboard rank Bob: " + bob_rank.error_message);
+    CHECK(bob_rank.response_body.find("\"user_id\":\"" + bob_id + "\"") != std::string::npos,
+          "Leaderboard rank missing Bob: " + bob_rank.response_body);
+    std::cout << "  Auto settlement leaderboard rank OK." << std::endl;
 
     auto alice_submit = alice.leaderboard_submit(alice_id, "Alice", alice_score, 5s);
     CHECK(alice_submit.ok, "Manual Alice leaderboard submit: " + alice_submit.error_message);

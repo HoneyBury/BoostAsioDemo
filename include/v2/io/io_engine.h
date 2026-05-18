@@ -48,7 +48,8 @@ public:
                       std::uint32_t request_id,
                       std::int32_t error_code,
                       std::string body,
-                      std::uint8_t flags = 0) = 0;
+                      std::uint8_t flags = 0,
+                      bool high_priority = false) = 0;
     [[nodiscard]] virtual std::uint32_t owning_core_id() const noexcept = 0;
     virtual void send(const void* data, std::size_t len) = 0;
     virtual void close() = 0;

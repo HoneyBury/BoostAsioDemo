@@ -62,8 +62,14 @@ public:
               std::uint32_t request_id,
               std::int32_t error_code,
               std::string body,
-              std::uint8_t flags) override {
-        session_->send(message_id, request_id, error_code, std::move(body), flags);
+              std::uint8_t flags,
+              bool high_priority) override {
+        session_->send(message_id,
+                       request_id,
+                       error_code,
+                       std::move(body),
+                       flags,
+                       high_priority);
     }
 
     [[nodiscard]] std::uint32_t owning_core_id() const noexcept override {

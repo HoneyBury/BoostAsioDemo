@@ -25,6 +25,7 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -1071,6 +1072,92 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughBattleBackend) {
     ASSERT_TRUE(decoded.has_value());
     EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleInputResponse);
     EXPECT_EQ(decoded->payload.value("battle_id", ""), "battle_1");
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, BattleBackendAllowsParallelInputsForDifferentBattles) {
+    v2::battle::BattleBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection setup_conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(setup_conn.connect());
+
+    constexpr int kBattleCount = 8;
+    for (int i = 0; i < kBattleCount; ++i) {
+        const auto battle_id = "parallel_battle_" + std::to_string(i);
+        auto create_req = payload_envelope(nlohmann::json{
+            {"battle_id", battle_id},
+            {"room_id", "parallel_room_" + std::to_string(i)},
+            {"player_ids", {"alice_" + std::to_string(i), "bob_" + std::to_string(i)}},
+            {"max_frames", 64},
+        }.dump());
+        create_req.message_type = "battle_create";
+        auto create_resp = setup_conn.send_request(create_req);
+        ASSERT_TRUE(create_resp.has_value()) << battle_id;
+    }
+
+    std::atomic<int> ready{0};
+    std::atomic<bool> start{false};
+    std::atomic<int> ok_count{0};
+    std::vector<std::thread> workers;
+    workers.reserve(kBattleCount);
+
+    for (int i = 0; i < kBattleCount; ++i) {
+        workers.emplace_back([&, i]() {
+            v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+                .host = "127.0.0.1", .port = service.local_port()});
+            if (!conn.connect()) {
+                return;
+            }
+
+            ready.fetch_add(1, std::memory_order_release);
+            while (!start.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+
+            v3::proto::EnvelopeMeta meta;
+            meta.correlation_id = 700 + i;
+            meta.source_service = "gateway";
+            meta.target_service = "battle";
+            const auto battle_id = "parallel_battle_" + std::to_string(i);
+            auto encoded = v3::proto::encode_typed_envelope(
+                meta,
+                v3::proto::EnvelopeMessageKind::kBattleInputRequest,
+                {{"user_id", "alice_" + std::to_string(i)},
+                 {"battle_id", battle_id},
+                 {"input_data", "move:1,2"},
+                 {"submitted_frame", 1}});
+
+            auto req = payload_envelope(encoded);
+            req.message_type = "battle_input";
+            auto resp = conn.send_request(req);
+            if (!resp.has_value()) {
+                return;
+            }
+            auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+            if (decoded.has_value() &&
+                decoded->message_kind == v3::proto::EnvelopeMessageKind::kBattleInputResponse &&
+                decoded->payload.value("battle_id", "") == battle_id) {
+                ok_count.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (ready.load(std::memory_order_acquire) < kBattleCount &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(ready.load(std::memory_order_acquire), kBattleCount);
+    start.store(true, std::memory_order_release);
+
+    for (auto& worker : workers) {
+        worker.join();
+    }
+
+    EXPECT_EQ(ok_count.load(std::memory_order_relaxed), kBattleCount);
 
     service.stop();
 }

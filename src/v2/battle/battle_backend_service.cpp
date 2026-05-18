@@ -17,16 +17,24 @@
 namespace {
 
 struct BattleManager {
-    std::unordered_map<std::string, std::unique_ptr<v2::ecs::World>> battles_;
+    struct BattleEntry {
+        explicit BattleEntry(std::unique_ptr<v2::ecs::World> initial_world)
+            : world(std::move(initial_world)) {}
+
+        std::unique_ptr<v2::ecs::World> world;
+        std::mutex mutex;
+    };
+
+    std::unordered_map<std::string, std::shared_ptr<BattleEntry>> battles_;
     std::mutex mutex_;
 
-    v2::ecs::World* find(const std::string& battle_id) {
+    std::shared_ptr<BattleEntry> find(const std::string& battle_id) {
         auto it = battles_.find(battle_id);
-        return it != battles_.end() ? it->second.get() : nullptr;
+        return it != battles_.end() ? it->second : nullptr;
     }
 
     void insert(const std::string& battle_id, std::unique_ptr<v2::ecs::World> world) {
-        battles_[battle_id] = std::move(world);
+        battles_[battle_id] = std::make_shared<BattleEntry>(std::move(world));
     }
 
     void erase(const std::string& battle_id) {
@@ -154,30 +162,34 @@ private:
         std::int64_t score = doc.value("score", 0);
         std::uint32_t submitted_frame = doc.value("submitted_frame", 0);
 
-        std::lock_guard<std::mutex> lock(battle_manager_.mutex_);
-
-        auto* world = battle_manager_.find(battle_id);
-        if (world == nullptr) {
+        std::shared_ptr<BattleManager::BattleEntry> battle;
+        {
+            std::lock_guard<std::mutex> lock(battle_manager_.mutex_);
+            battle = battle_manager_.find(battle_id);
+        }
+        if (battle == nullptr) {
             return make_error(-2003, "battle_not_found");
         }
+        std::lock_guard<std::mutex> battle_lock(battle->mutex);
+        auto& world = *battle->world;
 
         // Process input authoritatively
         auto input_result = battle_world_process_input(
-            *world, user_id, input_data, score, submitted_frame);
+            world, user_id, input_data, score, submitted_frame);
 
         if (!input_result.accepted) {
             return make_error(-3002, input_result.reject_reason);
         }
 
         // Advance one frame
-        auto current_frame = battle_world_frame_number(*world);
+        auto current_frame = battle_world_frame_number(world);
         auto next_frame = current_frame + 1;
         auto frame_result = battle_world_advance_frame(
-            *world, next_frame, "input:" + user_id + ":" + std::to_string(input_result.input_seq));
+            world, next_frame, "input:" + user_id + ":" + std::to_string(input_result.input_seq));
 
         // Build push events
         nlohmann::json pushes = nlohmann::json::array();
-        auto snapshot = battle_world_snapshot(*world);
+        auto snapshot = battle_world_snapshot(world);
 
         nlohmann::json frame_push{
             {"kind", "frame_advanced"},
@@ -203,16 +215,16 @@ private:
         pushes.push_back(std::move(frame_push));
 
         if (frame_result.should_finish) {
-            auto participants = battle_world_participants(*world);
+            auto participants = battle_world_participants(world);
             auto summary = battle_world_build_result_summary(
-                *world, battle_id,
-                battle_world_room_id(*world),
+                world, battle_id,
+                battle_world_room_id(world),
                 participants,
                 frame_result.finish_reason,
                 frame_result.frame_number);
 
             battle_world_set_lifecycle(
-                *world, v2::battle::BattleLifecycleState::kFinished);
+                world, v2::battle::BattleLifecycleState::kFinished);
 
             nlohmann::json finish_push{
                 {"kind", "battle_finished"},
@@ -257,21 +269,25 @@ private:
             ? v2::battle::BattleFinishReason::kUserRequested
             : v2::battle::BattleFinishReason::kFinished;
 
-        std::lock_guard<std::mutex> lock(battle_manager_.mutex_);
-
-        auto* world = battle_manager_.find(battle_id);
-        if (world == nullptr) {
+        std::shared_ptr<BattleManager::BattleEntry> battle;
+        {
+            std::lock_guard<std::mutex> lock(battle_manager_.mutex_);
+            battle = battle_manager_.find(battle_id);
+        }
+        if (battle == nullptr) {
             return make_error(-2003, "battle_not_found");
         }
+        std::lock_guard<std::mutex> battle_lock(battle->mutex);
+        auto& world = *battle->world;
 
-        auto participants = battle_world_participants(*world);
-        auto frame_number = battle_world_frame_number(*world);
+        auto participants = battle_world_participants(world);
+        auto frame_number = battle_world_frame_number(world);
         auto summary = battle_world_build_result_summary(
-            *world, battle_id, battle_world_room_id(*world),
+            world, battle_id, battle_world_room_id(world),
             participants, reason, frame_number);
 
         battle_world_set_lifecycle(
-            *world, v2::battle::BattleLifecycleState::kFinished);
+            world, v2::battle::BattleLifecycleState::kFinished);
 
         nlohmann::json push{
             {"kind", "battle_finished"},

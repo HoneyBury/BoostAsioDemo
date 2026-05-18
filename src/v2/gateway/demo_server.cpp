@@ -29,6 +29,20 @@ std::filesystem::path gateway_config_path() {
     return std::filesystem::path("config/gateway.json");
 }
 
+bool is_push_message(std::uint16_t message_id) {
+    switch (message_id) {
+        case net::protocol::kSessionKickedPush:
+        case net::protocol::kSessionResumedPush:
+        case net::protocol::kRoomStatePush:
+        case net::protocol::kBattleInputPush:
+        case net::protocol::kBattleStatePush:
+        case net::protocol::kMatchFoundPush:
+            return true;
+        default:
+            return false;
+    }
+}
+
 }  // namespace
 
 DemoServer::DemoServer(std::uint16_t port,
@@ -217,11 +231,13 @@ void DemoServer::deliver(SessionWrite write) {
     dispatch_write(
         write.envelope.session_id,
         [session, envelope = std::move(write.envelope)]() mutable {
+            const bool high_priority = !is_push_message(envelope.protocol_message_id);
             session->send(envelope.protocol_message_id,
                           envelope.request_id,
                           envelope.error_code,
                           std::move(envelope.body),
-                          envelope.flags);
+                          envelope.flags,
+                          high_priority);
         });
 }
 

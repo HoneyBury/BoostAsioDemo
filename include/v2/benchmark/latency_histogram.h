@@ -9,8 +9,11 @@
 
 namespace v2::benchmark {
 
-inline constexpr std::array<double, 14> kLatencyBucketBoundariesMs = {
-    1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 30000.0
+inline constexpr std::array<double, 20> kLatencyBucketBoundariesMs = {
+    1.0, 2.0, 5.0, 10.0, 20.0,
+    30.0, 40.0, 50.0, 75.0, 100.0,
+    150.0, 200.0, 300.0, 400.0, 500.0,
+    750.0, 1000.0, 2000.0, 5000.0, 30000.0
 };
 
 inline constexpr std::size_t kLatencyBucketCount = kLatencyBucketBoundariesMs.size() + 1;

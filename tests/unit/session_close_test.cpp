@@ -1,9 +1,14 @@
 #include "app/logging.h"
+#include "net/packet_codec.h"
 #include "net/session.h"
 
 #include <boost/asio.hpp>
 
+#include <array>
 #include <atomic>
+#include <future>
+#include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -109,4 +114,64 @@ TEST_F(SessionCloseTest, StopWithoutCloseHandlerIsSafe) {
 
     session->stop();
     EXPECT_NO_THROW(io_context.run());
+}
+
+TEST_F(SessionCloseTest, HighPriorityWritesKeepFifoBeforeQueuedPushes) {
+    asio::io_context server_io;
+    asio::io_context client_io;
+
+    tcp::acceptor acceptor(server_io, tcp::endpoint(tcp::v4(), 0));
+    const auto endpoint = acceptor.local_endpoint();
+
+    std::promise<tcp::socket> accepted_socket;
+    acceptor.async_accept(
+        [&accepted_socket](boost::system::error_code ec, tcp::socket socket) mutable {
+            ASSERT_FALSE(ec);
+            accepted_socket.set_value(std::move(socket));
+        });
+
+    tcp::socket client_socket(client_io);
+    client_socket.connect(endpoint);
+    server_io.run();
+    server_io.restart();
+
+    net::SessionOptions options;
+    options.max_pending_write_bytes = 1024 * 1024;
+    auto session = std::make_shared<net::Session>(accepted_socket.get_future().get(), options);
+
+    session->send(4006, 1, 0, "push-1");
+    session->send(2002, 2, 0, "response-1", 0, true);
+    session->send(2002, 3, 0, "response-2", 0, true);
+    session->send(4006, 4, 0, "push-2");
+
+    std::thread io_thread([&server_io]() { server_io.run(); });
+
+    auto read_packet = [&client_socket]() {
+        std::array<unsigned char, net::packet::kLengthHeaderSize> header{};
+        boost::asio::read(client_socket, boost::asio::buffer(header));
+        const auto length = net::packet::decode_length(header);
+        std::vector<char> payload(length);
+        boost::asio::read(client_socket, boost::asio::buffer(payload));
+        return net::packet::decode_payload(payload);
+    };
+
+    const auto first = read_packet();
+    const auto second = read_packet();
+    const auto third = read_packet();
+    const auto fourth = read_packet();
+
+    session->stop();
+    server_io.stop();
+    if (io_thread.joinable()) {
+        io_thread.join();
+    }
+
+    EXPECT_EQ(first.request_id, 1U);
+    EXPECT_EQ(first.body, "push-1");
+    EXPECT_EQ(second.request_id, 2U);
+    EXPECT_EQ(second.body, "response-1");
+    EXPECT_EQ(third.request_id, 3U);
+    EXPECT_EQ(third.body, "response-2");
+    EXPECT_EQ(fourth.request_id, 4U);
+    EXPECT_EQ(fourth.body, "push-2");
 }

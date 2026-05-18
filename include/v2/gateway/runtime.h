@@ -1,9 +1,15 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -43,6 +49,7 @@ public:
             SessionWriteSink& write_sink,
             BattleArchiveSink* archive_sink = nullptr)
         : actor_system_(actor_system), write_sink_(write_sink), archive_sink_(archive_sink) {}
+    ~Runtime();
 
     [[nodiscard]] v2::actor::ActorRef create_gateway_actor();
     [[nodiscard]] bool is_authenticated(const GatewayCommand& command) const;
@@ -83,6 +90,15 @@ private:
               std::uint32_t request_id,
               std::int32_t error_code,
               std::string body);
+    void broadcast_to_room(const std::string& room_id,
+                           std::uint16_t message_id,
+                           std::string body);
+    [[nodiscard]] bool should_emit_battle_frame_push(const std::string& room_id,
+                                                     std::uint64_t frame_number);
+    [[nodiscard]] bool battle_route_offload_enabled();
+    void enqueue_battle_route_task(std::function<void()> task);
+    void start_battle_route_workers();
+    void stop_battle_route_workers();
 
     v2::runtime::ActorSystem& actor_system_;
     SessionWriteSink& write_sink_;
@@ -102,6 +118,15 @@ private:
     std::unordered_map<std::string, v2::runtime::ScheduleHandle> pending_battle_timeout_;
     std::unordered_set<std::string> leaderboard_settlement_keys_;
     std::uint64_t next_battle_id_ = 1;
+    std::uint32_t battle_frame_push_every_ = 0;
+    std::uint32_t battle_route_worker_count_ = 0;
+    std::unordered_map<std::string, std::uint64_t> last_emitted_battle_frame_;
+    std::mutex battle_frame_push_mutex_;
+    std::mutex battle_route_mutex_;
+    std::condition_variable battle_route_cv_;
+    std::deque<std::function<void()>> battle_route_tasks_;
+    std::vector<std::thread> battle_route_workers_;
+    std::atomic<bool> battle_route_stopping_{false};
     BattleArchiveSink* archive_sink_ = nullptr;
     std::unique_ptr<GatewayServiceBridge> bridge_;
     SchemaValidator schema_validator_;

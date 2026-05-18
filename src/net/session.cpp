@@ -7,6 +7,7 @@
 #include "net/packet_fragment.h"
 
 #include <atomic>
+#include <algorithm>
 #include <utility>
 
 namespace net {
@@ -83,6 +84,7 @@ void Session::send_batch(std::vector<PacketMessage> messages) {
         self->write_queue_.push_back(PendingWrite{
             .message = messages.back(),
             .packet = std::move(combined),
+            .high_priority = false,
         });
 
         self->check_backpressure();
@@ -312,10 +314,23 @@ void Session::enqueue_write(PacketMessage message, bool high_priority) {
         if (self->queued_write_bytes_ > self->peak_write_bytes_) {
             self->peak_write_bytes_ = self->queued_write_bytes_;
         }
+        PendingWrite pending{
+            .message = std::move(message),
+            .packet = std::move(packet_bytes),
+            .high_priority = high_priority,
+        };
         if (high_priority && write_in_progress) {
-            self->write_queue_.push_front(PendingWrite{std::move(message), std::move(packet_bytes)});
+            auto search_begin = self->write_queue_.begin();
+            if (search_begin != self->write_queue_.end()) {
+                ++search_begin;
+            }
+            auto insert_at = std::find_if(
+                search_begin,
+                self->write_queue_.end(),
+                [](const PendingWrite& queued) { return !queued.high_priority; });
+            self->write_queue_.insert(insert_at, std::move(pending));
         } else {
-            self->write_queue_.push_back(PendingWrite{std::move(message), std::move(packet_bytes)});
+            self->write_queue_.push_back(std::move(pending));
         }
 
         self->check_backpressure();
@@ -354,7 +369,7 @@ void Session::do_write() {
         socket_,
         asio::buffer(write_queue_.front().packet),
         asio::bind_executor(strand_,
-                            [self](const error_code& ec, std::size_t bytes_transferred) {
+                            [self](const error_code& ec, std::size_t /*bytes_transferred*/) {
                                 if (ec) {
                                     self->handle_close(ec);
                                     return;

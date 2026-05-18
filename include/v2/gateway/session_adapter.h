@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <mutex>
 
 #include "v2/actor/actor_ref.h"
 #include "v2/gateway/gateway_actor.h"
@@ -23,6 +24,7 @@ private:
     v2::runtime::ActorSystem& actor_system_;
     v2::actor::ActorRef gateway_actor_;
     std::vector<SessionWrite> outbox_;
+    std::mutex outbox_mutex_;
     DownstreamSessionWriteSink* downstream_ = nullptr;
 };
 

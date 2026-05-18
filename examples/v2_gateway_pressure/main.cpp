@@ -105,6 +105,8 @@ struct BenchResult {
     std::size_t failed_clients = 0;
     std::size_t rejected_clients = 0;
     std::uint64_t total_messages = 0;
+    std::uint64_t response_messages = 0;
+    std::uint64_t push_messages = 0;
     double elapsed_seconds = 0.0;
     double throughput_msg_per_sec = 0.0;
     double latency_p50_ms = 0.0;
@@ -128,6 +130,10 @@ public:
         completed_clients_.fetch_add(1, std::memory_order_relaxed);
         completed_packets_.fetch_add(msgs, std::memory_order_relaxed);
         try_stop();
+    }
+
+    void record_push_message() {
+        push_packets_.fetch_add(1, std::memory_order_relaxed);
     }
 
     void on_client_rejected() {
@@ -164,6 +170,7 @@ public:
     [[nodiscard]] std::size_t rejected_clients()  const { return rejected_clients_.load(std::memory_order_relaxed); }
     [[nodiscard]] std::size_t failed_clients()    const { return failed_clients_.load(std::memory_order_relaxed); }
     [[nodiscard]] std::size_t completed_packets() const { return completed_packets_.load(std::memory_order_relaxed); }
+    [[nodiscard]] std::size_t push_packets() const { return push_packets_.load(std::memory_order_relaxed); }
     [[nodiscard]] std::size_t done_clients() const {
         return completed_clients_.load(std::memory_order_relaxed) +
                rejected_clients_.load(std::memory_order_relaxed) +
@@ -193,6 +200,7 @@ private:
     std::atomic<std::size_t> rejected_clients_{0};
     std::atomic<std::size_t> failed_clients_{0};
     std::atomic<std::size_t> completed_packets_{0};
+    std::atomic<std::size_t> push_packets_{0};
     std::atomic<bool> finished_{false};
     std::atomic<bool> time_expired_{false};
     std::atomic<bool> global_completion_{false};
@@ -475,6 +483,7 @@ private:
         if (pkt.message_id == net::protocol::kBattleInputPush) {
             ++received_battle_inputs_;
             throughput_->record();
+            controller_->record_push_message();
             if (battle_finished_) {
                 controller_->mark_global_completion();
                 finish();
@@ -488,6 +497,7 @@ private:
         if (pkt.message_id == net::protocol::kBattleInputResponse) {
             ++completed_messages_;
             throughput_->record();
+            battle_input_in_flight_ = false;
 
             auto now = std::chrono::steady_clock::now();
             auto us = std::chrono::duration_cast<std::chrono::microseconds>(now - send_timestamp_).count();
@@ -574,11 +584,12 @@ private:
     void schedule_next() {
         if (config_.send_interval.count() > 0) {
             auto self = shared_from_this();
-            send_timer_.expires_after(config_.send_interval);
+            send_timer_.expires_after(next_send_delay());
             send_timer_.async_wait([self](const error_code& ec) {
                 if (ec) return;
                 self->send_next_message();
             });
+            wait_for_next_message();
         } else {
             send_next_message();
         }
@@ -591,6 +602,10 @@ private:
                 finish();
                 return;
             }
+            if (battle_input_in_flight_) {
+                return;
+            }
+            battle_input_in_flight_ = true;
             send_timestamp_ = std::chrono::steady_clock::now();
             send_packet(net::protocol::kBattleInputRequest,
                         "move:" + std::to_string(client_index_) + "," +
@@ -599,6 +614,22 @@ private:
             send_timestamp_ = std::chrono::steady_clock::now();
             send_packet(net::protocol::kEchoRequest, "bench_echo_" + std::to_string(completed_messages_));
         }
+    }
+
+    std::chrono::milliseconds next_send_delay() noexcept {
+        auto delay = config_.send_interval;
+        if (config_.scenario == BenchScenario::kBattle &&
+            completed_messages_ == 0 &&
+            config_.send_interval.count() > 0) {
+            const auto group_size = std::max<std::size_t>(2, config_.room_group_size);
+            const auto group_index = client_index_ / group_size;
+            const auto room_count = std::max<std::size_t>(
+                1, (config_.client_count + group_size - 1) / group_size);
+            const auto phase_ms = static_cast<int>(
+                (group_index * static_cast<std::size_t>(config_.send_interval.count())) / room_count);
+            delay += std::chrono::milliseconds(phase_ms);
+        }
+        return delay;
     }
 
     bool maybe_enter_battle(const net::packet::DecodedPacket& pkt) {
@@ -662,11 +693,8 @@ private:
         if (kind == "frame_advanced") {
             ++received_battle_inputs_;
             throughput_->record();
+            controller_->record_push_message();
             touch_progress();
-            if (!battle_finished_ && !controller_->global_completion()) {
-                schedule_next();
-                return true;
-            }
             return false;
         }
 
@@ -920,6 +948,7 @@ private:
     bool in_battle_ = false;
     bool battle_loop_started_ = false;
     bool battle_finished_ = false;
+    bool battle_input_in_flight_ = false;
     std::size_t battle_start_retry_attempts_ = 0;
     std::size_t battle_start_error_retries_ = 0;
     std::size_t connect_retry_attempts_ = 0;
@@ -952,6 +981,8 @@ nlohmann::json to_json(const BenchResult& r) {
         {"failed_clients", r.failed_clients},
         {"rejected_clients", r.rejected_clients},
         {"total_messages", r.total_messages},
+        {"response_messages", r.response_messages},
+        {"push_messages", r.push_messages},
         {"elapsed_seconds", r.elapsed_seconds},
         {"throughput_msg_per_sec", r.throughput_msg_per_sec},
         {"latency_p50_ms", r.latency_p50_ms},
@@ -1174,6 +1205,8 @@ int main(int argc, char* argv[]) {
     result.failed_clients = controller->failed_clients();
     result.rejected_clients = controller->rejected_clients();
     result.total_messages = throughput.total_count();
+    result.response_messages = controller->completed_packets();
+    result.push_messages = controller->push_packets();
     result.elapsed_seconds = static_cast<double>(elapsed.count()) / 1'000'000.0;
     result.throughput_msg_per_sec = result.elapsed_seconds > 0.0
         ? static_cast<double>(result.total_messages) / result.elapsed_seconds

@@ -171,11 +171,11 @@ N1 开始，性能证据统一按下面几类归档：
 
 - `capacity` 失败可以作为边界证据归档，但不能冒充 baseline 通过线。
 - 2h/8h soak 仍需要固定 runner 或独占机器；默认 bounded soak 只用于回归守门。
-- `battle-500-30s` 当前用于验证 500 并发业务闭环和同步 backend route 的可持续容量，
-  默认输入间隔为 200ms，release gate 为 rejected=0、failed=0、forced_timeout=false、
-  total_messages>=20000、p99<=500ms。该门禁反映当前单 gateway acceptor/core0 与同步
-  backend route 架构的事实边界；若后续完成异步 gateway route 或真实多 core session
-  分流，再把 p99 目标重新收紧到 250ms。
+- `battle-500-30s` 当前用于验证 500 并发业务闭环和 gateway/battle backend route 的
+  可持续容量，默认输入间隔为 200ms，release gate 为 rejected=0、failed=0、
+  forced_timeout=false、total_messages>=20000、p99<=500ms。2026-05-19 的架构专项已
+  证明 response/push 出站优先级隔离是当前 P99 收口的关键路径；若后续完成真实多 core
+  session 分流，再把 p99 目标重新收紧到 250ms。
 
 推荐 N1 固定 runner 命令：
 
@@ -211,15 +211,47 @@ python ./scripts/collect_v2_perf_baseline.py \
   --build-dir ./build/release \
   --run-preset baseline \
   --repetitions 1 \
-  --backend-pool-size 1
+  --backend-pool-size 8
 ```
 
-`--backend-pool-size` 会设置 gateway 进程的 `V2_BACKEND_CONNECTION_POOL_SIZE` 并写入 `summary.json.topology.backend_connection_pool_size` 与 `report.md`。当前稳定默认值为 `1`；显式放大连接池属于性能实验项，必须单独记录报告，不得作为 release baseline 默认值。
+`--backend-pool-size` 会设置 gateway 进程的 `V2_BACKEND_CONNECTION_POOL_SIZE` 并写入 `summary.json.topology.backend_connection_pool_size` 与 `report.md`。当前稳定默认值与 gateway 代码默认一致，为 `8`；显式放大连接池属于性能实验项，必须单独记录报告，不得作为 release baseline 默认值。
 
-本机 P1 实验结论：
+本机 P1 收束结论（2026-05-19）：
 
-- `backend_pool_size=1`：baseline 单轮通过，`echo-1000` p99 20ms，`battle-100` p99 200ms，rejected/failed/forced_timeout 均为 0。
-- `backend_pool_size=8`：smoke 中 battle 场景出现 backend_error/rejected，说明多连接池会放大当前 backend connection 生命周期和熔断交互的波动，不进入默认优化。
+- 已修正 latency histogram 桶粒度，新增 30/40/75/150/300/400/750ms 等边界；`echo-10000-30s` 在 `runtime/perf/p1-capacity-battle-lock/` 中三轮 P99=40ms，不再被粗桶误报为贴近 50ms gate。
+- 已将 battle backend 从全局 `BattleManager` 锁改为 battle entry 级锁；`ServiceBusIntegrity.BattleBackendAllowsParallelInputsForDifferentBattles` 验证不同 battle 的输入可并行通过后端。
+- 已修正 `v2_gateway_pressure` 的 battle 压测模型：同一客户端仅允许一个 battle input in-flight，等待下一次发送期间持续读取 push，并拆分 `response_messages` 与 `push_messages`，避免把业务 push 吞吐误读为请求响应吞吐。
+- 已为 gateway `SessionLookup` 增加 room -> session 反向索引，battle state 广播改为按房间成员遍历，避免每次 push 扫描全量连接。
+- `runtime/perf/p1-business-capacity-read-during-delay/` 显示 SDK full-flow business path 3 并发通过、battle backend errors/timeouts 为 0、平均 backend latency 约 1.5ms；但 `battle-500-30s` 在当前单 TCP 连接承载 response 与高频 battle state push 的模型下 P99 仍为 750-1000ms。
+
+因此 P1 结论不是继续调参，而是将剩余风险明确升级为后续架构项：500 battle 客户端下，当前同步 gateway route + 同连接 response/push 复用会产生客户端可见队头阻塞。要把 `battle-500-30s` P99 稳定压到 500ms 以下，需要进入异步后端路由、response/push 通道隔离或 battle state push 降频/聚合专项。
+
+### 1.9 Gateway Route 与 Response/Push 隔离专项（2026-05-19）
+
+本轮专项针对 P1 遗留的 `battle-500-30s` P99 750-1000ms 问题，按“push 降频、battle route worker、response/push 出站隔离”逐步拆解。结论是：push 降频可以降低出站噪声，battle route worker 可以解除 gateway handler 同步等待，但真正让 P99 达标的是 response 高优先级出站队列，避免普通 battle state push 队头阻塞客户端可见 response。
+
+实现与开关：
+
+- `net::Session::send(..., high_priority=true)` 现在会把 response/error 插入到当前正在写出的包之后、普通 push 之前，并保持多个高优先级 response 之间 FIFO。
+- `v2::io::IoSession::send` 透传 `high_priority`，`DemoServer::deliver` 将非 push 消息视为高优先级，`kSessionKickedPush`、`kSessionResumedPush`、`kRoomStatePush`、`kBattleInputPush`、`kBattleStatePush`、`kMatchFoundPush` 保持普通优先级。
+- `V2_BATTLE_FRAME_PUSH_EVERY` / `--battle-frame-push-every` 用于 battle `frame_advanced` 降频；`battle_finished` 不降频，避免业务闭环丢结束事件。
+- `V2_BATTLE_ROUTE_WORKERS` / `--battle-route-workers` 用于 battle input route worker 实验。当前验证值为 4；16 workers 在本机反而退化，不能作为生产默认。
+
+专项证据：
+
+| 产物 | 参数 | 结果 |
+|---|---|---|
+| `runtime/perf/gateway-arch-route-workers4-push5-r2/` | route workers=4，push_every=5 | 业务闭环通过，battle-500 rejected=0、failed=0，但 P99=750ms |
+| `runtime/perf/gateway-arch-route-workers4-push10/` | route workers=4，push_every=10 | push 量继续下降，battle-500 仍 P99=750ms |
+| `runtime/perf/gateway-arch-route-workers16-push10/` | route workers=16，push_every=10 | 线程竞争放大，battle-500 P99=1000ms，不采用 |
+| `runtime/perf/gateway-arch-priority-route4-push10/` | response 高优先级，route workers=4，push_every=10 | Release gates 全通过；battle-500 connected=500、messages=20335、P50=300ms、P90=300ms、P99=400ms、rejected=0、failed=0 |
+
+验证：
+
+- `build/release/tests/unit/project_unit_tests --gtest_filter='SessionCloseTest.HighPriorityWritesKeepFifoBeforeQueuedPushes'`
+- `build/release/tests/v2/project_v2_unit_tests --gtest_filter='V2ConnectedFlowTest.*:LatencyHistogramTest.*'`
+- `build/release/tests/v2/project_v2_integration_tests --gtest_filter='ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughBattleBackend:ServiceBusIntegrity.BattleBackendAllowsParallelInputsForDifferentBattles'`
+- `python3 scripts/collect_v2_perf_baseline.py --build-dir build/release --run-preset business-capacity --repetitions 1 --include-business-flow --business-flow-clients 3 --battle-frame-push-every 10 --battle-route-workers 4 --output-root runtime/perf/gateway-arch-priority-route4-push10`
 
 ### 1.9 首轮 smoke 数据（2026-05-16，Windows）
 
@@ -539,13 +571,36 @@ python3 scripts/collect_docker_production_perf_snapshot.py
 
 | 项目 | 当前状态 | 下一步证据入口 |
 |---|---|---|
-| 2h/8h soak RSS/fd/CPU/P99 波动 | 未定版 | `verify_production_evidence_gate.py` 显式启用 long soak，在固定 runner 归档 summary/report |
-| 5K/10K echo 容量上限 | 已发现退化点，未作为通过线 | `collect_release_baseline.py --perf-preset capacity --perf-repetitions 3` |
-| battle-500 容量 | 已发现 rejected 与 P99 退化 | capacity profile + battle专项复测 |
+| 2h/8h soak RSS/fd/CPU/P99 波动 | 本机已跑 `verify_stability_soak.py --soak-profile long` 架构型 long profile；真实 wall-clock 2h/8h 仍未定版 | `verify_production_evidence_gate.py` 显式启用 long/overnight soak，在固定 runner 归档 summary/report |
+| 5K/10K echo 容量上限 | 2026-05-18 本机 P0 capacity 三轮通过；10K echo 连接失败为 0，但 P99=50ms 贴近 gate | `collect_release_baseline.py --perf-preset capacity --perf-repetitions 3` 多轮复测 |
+| battle-500 容量 | 2026-05-19 架构专项已完成 response/push 出站优先级隔离、battle route worker 闭环修复和 battle frame push 降频实测；`runtime/perf/gateway-arch-priority-route4-push10/` 中 business-capacity 全通过，battle-500 P99=400ms、rejected=0、failed=0 | 固定 runner 多轮复测；下一步再评估真实多 core session 分流并把目标从 500ms 收紧到 250ms |
 | 1/2/4 核线性扩容 | 仅 4 核 baseline 已沉淀 | 固定机器分别设置 `--io-cores 1/2/4` 后归档报告 |
 | Prometheus P99 histogram/summary | 当前 `/metrics` 未导出 route latency histogram | H4 观测增强，新增可 scrape 的 route latency histogram/summary |
 
-### 7.4 P3 业务闭环性能采集入口
+### 7.4 P0 本机生产候选实测（2026-05-18）
+
+本轮在当前 macOS / OrbStack 开发机器的 `build/release` 上完成 P0 实测收束。该数据可以作为本机生产候选证据，但仍不替代独占固定 runner 的 2h/8h wall-clock soak。
+
+| 入口 | 产物 | 结果 |
+|---|---|---|
+| Release baseline 三轮 | `runtime/validation/p0-release-baseline-summary.json`、`runtime/perf/release-baseline/` | PASS；echo-100/1000、battle-20/100 release gate 全部通过 |
+| Capacity 三轮 | `runtime/validation/p0-capacity-local-summary.json`、`runtime/perf/p0-capacity-local/` | PASS；echo-1K/5K/10K 与 battle-100/500 全部通过 |
+| Business capacity 三轮 | `runtime/perf/p0-business-capacity-local-r2/summary.json`、`report.md` | PASS；SDK full-flow business path 通过，3 并发客户端耗时 5.64s |
+| Long soak profile | `runtime/validation/p0-long-soak-local-summary.json`、`runtime/perf/v2-stability-soak/` | PASS；I/O accept、WriteBehind、backend recovery 与 arch baseline long profile 通过 |
+| SDK full-flow 修复验证 | `runtime/validation/p0-sdk-full-flow-after-rank-fix-summary.json` | PASS；leaderboard 自动 settlement 改用 rank 精确验证，避免容量压测零分榜单污染 top20 后误判 |
+
+关键容量观察：
+
+| 场景 | 连接/客户端 | P99 | 吞吐 | failed/rejected | 结论 |
+|---|---:|---:|---:|---:|---|
+| echo-5000-30s | 5,000 | 20ms | 55,020 msg/s | 0 / 0 | 通过 |
+| echo-10000-30s | 10,000 | 50ms | 49,588 msg/s | 0 / 0 | 通过但贴近 50ms gate |
+| battle-500-30s | 500 | 500ms | 980 msg/s | 0 / 0 | 通过但贴近 500ms gate |
+| business-capacity battle-500-30s | 500 | 500ms | 977 msg/s | 0 / 0 | 通过但贴近 500ms gate |
+
+本轮修复了一个业务容量验证缺口：在 battle/leaderboard 压测后，排行榜可能包含大量 `bench_user_*` 零分项，SDK full-flow 如果要求 Alice/Bob 同时出现在 top20 会误判自动 settlement 失败。当前示例改为通过 `leaderboard_rank(alice_id/bob_id)` 精确验证自动结算是否写入。
+
+### 7.5 P3 业务闭环性能采集入口
 
 P3 之后，新增业务路径的性能证据入口为：
 

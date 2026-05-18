@@ -81,6 +81,7 @@ private:
     struct PendingWrite {
         PacketMessage message;
         std::string packet;
+        bool high_priority = false;
     };
 
     tcp::socket socket_;

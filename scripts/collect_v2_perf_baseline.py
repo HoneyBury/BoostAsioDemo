@@ -953,6 +953,18 @@ def main() -> int:
         default=0,
         help="Override V2_BACKEND_CONNECTION_POOL_SIZE for explicit backend pool experiments.",
     )
+    parser.add_argument(
+        "--battle-frame-push-every",
+        type=int,
+        default=0,
+        help="Override V2_BATTLE_FRAME_PUSH_EVERY for battle state push downsampling experiments.",
+    )
+    parser.add_argument(
+        "--battle-route-workers",
+        type=int,
+        default=0,
+        help="Override V2_BATTLE_ROUTE_WORKERS for battle input backend route offload experiments.",
+    )
     parser.add_argument("--output-root", default="")
     args = parser.parse_args()
 
@@ -1035,6 +1047,10 @@ def main() -> int:
         }
         if args.backend_pool_size > 0:
             gateway_env["V2_BACKEND_CONNECTION_POOL_SIZE"] = str(args.backend_pool_size)
+        if args.battle_frame_push_every > 0:
+            gateway_env["V2_BATTLE_FRAME_PUSH_EVERY"] = str(args.battle_frame_push_every)
+        if args.battle_route_workers > 0:
+            gateway_env["V2_BATTLE_ROUTE_WORKERS"] = str(args.battle_route_workers)
         managed.append(ManagedProcess("v2_gateway_demo", executables["gateway"], gateway_args, log_dir, gateway_env))
         wait_tcp_port("127.0.0.1", args.gateway_port)
         wait_tcp_port("127.0.0.1", args.http_port)
@@ -1060,7 +1076,9 @@ def main() -> int:
                 "http_port": args.http_port,
                 "io_cores": args.io_cores,
                 "battle_max_frames": battle_max_frames,
-                "backend_connection_pool_size": args.backend_pool_size or int(os.environ.get("V2_BACKEND_CONNECTION_POOL_SIZE", "1")),
+                "backend_connection_pool_size": args.backend_pool_size or int(os.environ.get("V2_BACKEND_CONNECTION_POOL_SIZE", "8")),
+                "battle_frame_push_every": args.battle_frame_push_every or int(os.environ.get("V2_BATTLE_FRAME_PUSH_EVERY", "1")),
+                "battle_route_workers": args.battle_route_workers or int(os.environ.get("V2_BATTLE_ROUTE_WORKERS", "0")),
             },
             "cases": [],
             "case_aggregates": [],

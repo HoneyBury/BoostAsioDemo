@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -42,7 +44,9 @@ public:
     }
 
     void set_session_room(SessionId session_id, const std::string& room_id) {
+        erase_session_room(session_id);
         rooms_by_session_id_[session_id] = room_id;
+        sessions_by_room_id_[room_id].push_back(session_id);
     }
 
     void set_player(const std::string& user_id, v2::actor::ActorRef ref) {
@@ -55,7 +59,7 @@ public:
 
     void erase_session(SessionId session_id) {
         users_by_session_id_.erase(session_id);
-        rooms_by_session_id_.erase(session_id);
+        erase_session_room(session_id);
     }
 
     void erase_session_user(SessionId session_id) {
@@ -63,6 +67,18 @@ public:
     }
 
     void erase_session_room(SessionId session_id) {
+        auto room_it = rooms_by_session_id_.find(session_id);
+        if (room_it != rooms_by_session_id_.end()) {
+            auto sessions_it = sessions_by_room_id_.find(room_it->second);
+            if (sessions_it != sessions_by_room_id_.end()) {
+                auto& sessions = sessions_it->second;
+                sessions.erase(std::remove(sessions.begin(), sessions.end(), session_id),
+                               sessions.end());
+                if (sessions.empty()) {
+                    sessions_by_room_id_.erase(sessions_it);
+                }
+            }
+        }
         rooms_by_session_id_.erase(session_id);
     }
 
@@ -118,12 +134,17 @@ public:
 
     [[nodiscard]] const auto& session_users() const { return users_by_session_id_; }
     [[nodiscard]] const auto& session_rooms() const { return rooms_by_session_id_; }
+    [[nodiscard]] std::vector<SessionId> sessions_in_room(const std::string& room_id) const {
+        auto it = sessions_by_room_id_.find(room_id);
+        return it != sessions_by_room_id_.end() ? it->second : std::vector<SessionId>{};
+    }
     [[nodiscard]] const auto& players() const { return players_by_user_id_; }
     [[nodiscard]] const auto& rooms() const { return rooms_by_room_id_; }
 
 private:
     std::unordered_map<SessionId, std::string> users_by_session_id_;
     std::unordered_map<SessionId, std::string> rooms_by_session_id_;
+    std::unordered_map<std::string, std::vector<SessionId>> sessions_by_room_id_;
     std::unordered_map<std::string, v2::actor::ActorRef> players_by_user_id_;
     std::unordered_map<std::string, v2::actor::ActorRef> rooms_by_room_id_;
 };

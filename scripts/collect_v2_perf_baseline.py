@@ -775,8 +775,8 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
             "",
             "## Backend Metrics Snapshot",
             "",
-            "| Service | Requests | Successes | Errors | Timeouts | Avg latency us | Samples |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| Service | Requests | Successes | Errors | Timeouts | Avg latency us | P99 latency us | Samples |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ])
         for service in ("login", "room", "battle", "matchmaking", "leaderboard"):
             metric = backend_metrics.get(service)
@@ -789,6 +789,7 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
                 f"{fmt_number(metric.get('total_errors'))} | "
                 f"{fmt_number(metric.get('total_timeouts'))} | "
                 f"{fmt_number(metric.get('avg_latency_us'))} | "
+                f"{fmt_number(metric.get('p99_latency_us'))} | "
                 f"{fmt_number(metric.get('latency_sample_count'))} |"
             )
 

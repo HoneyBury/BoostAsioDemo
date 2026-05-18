@@ -61,14 +61,14 @@ groups:
           description: "Leaderboard failures may indicate Redis degradation or leaderboard backend issues. Verify redis-cli ping and leaderboard logs."
 
       - alert: BoostGatewayHighRouteLatency
-        expr: max({__name__=~"gateway_backend_.*_avg_latency_us"}) > 200000
+        expr: max({__name__=~"gateway_backend_.*_p99_latency_us"}) > 200000
         for: 5m
         labels:
           severity: warning
           component: backend-routing
         annotations:
-          summary: "Backend route latency is elevated"
-          description: "Gateway diagnostics-derived backend average latency exceeded 200ms. Use /metrics/json and /metrics/diagnostics/json to identify the degraded backend path."
+          summary: "Backend route P99 latency is elevated"
+          description: "Gateway backend route P99 latency exceeded 200ms. Use /metrics/json, /metrics/diagnostics/json, and gateway_backend_route_latency_us_bucket to identify the degraded backend path."
 
       - alert: BoostGatewayRedisExporterDown
         expr: up{job="redis-exporter"} == 0

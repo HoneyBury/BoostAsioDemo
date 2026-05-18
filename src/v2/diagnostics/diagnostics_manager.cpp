@@ -86,6 +86,12 @@ std::string metrics_to_json(const v2::gateway::BackendMetricsSnapshot& m) {
            json_uint64(m.latency_sample_count > 0
                            ? m.total_latency_us / m.latency_sample_count
                            : 0) +
+           ",\"p50_latency_us\":" +
+           json_uint64(v2::gateway::backend_latency_percentile_us(m, 0.50)) +
+           ",\"p90_latency_us\":" +
+           json_uint64(v2::gateway::backend_latency_percentile_us(m, 0.90)) +
+           ",\"p99_latency_us\":" +
+           json_uint64(v2::gateway::backend_latency_percentile_us(m, 0.99)) +
            "}";
 }
 

@@ -201,7 +201,7 @@ Prometheus 告警：
 
 - 后端服务没有 HTTP `/metrics`，不得配置 Prometheus 直接 scrape 后端 TCP 端口。
 - gateway `/health` 不是业务 ready，生产发布后必须叠加 SDK full-flow、P6 production evidence 或固定 runner 证据。
-- P99 告警需要 latency histogram/summary 或外部性能采集；当前默认告警不伪造不存在的 P99 指标。
+- N2 起 gateway `/metrics` 已导出 backend route latency histogram 和 per-service P50/P90/P99 gauge；P99 告警使用 `gateway_backend_*_p99_latency_us`，容量和长稳结论仍以固定 runner 性能报告为准。
 - RSS/fd 告警需要 process exporter 或等价 agent；默认 Compose 没有启用该 exporter。
 - cAdvisor 属于可选 `host-observability` profile，只有在宿主允许挂载 `/sys`、`/var/run`、`/var/lib/docker` 等目录时才启用。
 - 启用该 profile 时，额外使用 `env/monitoring/prometheus.host-observability.yml` 在 `127.0.0.1:9091` 提供隔离的容器 runtime metrics scrape，不污染默认 Prometheus target 状态。

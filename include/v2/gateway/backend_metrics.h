@@ -2,11 +2,32 @@
 
 #include "v2/service/service_id.h"
 
+#include <array>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <mutex>
 #include <unordered_map>
 
 namespace v2::gateway {
+
+inline constexpr std::array<std::uint64_t, 15> kBackendLatencyBucketUpperBoundsUs{
+    1'000,
+    2'000,
+    5'000,
+    10'000,
+    20'000,
+    50'000,
+    100'000,
+    200'000,
+    500'000,
+    1'000'000,
+    2'000'000,
+    5'000'000,
+    10'000'000,
+    30'000'000,
+    std::numeric_limits<std::uint64_t>::max(),
+};
 
 struct BackendMetricsSnapshot {
     std::uint64_t total_requests = 0;
@@ -17,7 +38,34 @@ struct BackendMetricsSnapshot {
     std::uint64_t total_degraded = 0;
     std::uint64_t total_latency_us = 0;
     std::uint64_t latency_sample_count = 0;
+    std::array<std::uint64_t, kBackendLatencyBucketUpperBoundsUs.size()> latency_bucket_counts{};
 };
+
+inline std::uint64_t backend_latency_percentile_us(
+    const BackendMetricsSnapshot& snapshot,
+    double percentile) {
+    if (snapshot.latency_sample_count == 0) {
+        return 0;
+    }
+    if (percentile <= 0.0) {
+        percentile = 0.0;
+    } else if (percentile > 1.0) {
+        percentile = 1.0;
+    }
+
+    const auto target = static_cast<std::uint64_t>(
+        std::ceil(static_cast<double>(snapshot.latency_sample_count) * percentile));
+    const auto rank = target == 0 ? std::uint64_t{1} : target;
+
+    std::uint64_t cumulative = 0;
+    for (std::size_t i = 0; i < snapshot.latency_bucket_counts.size(); ++i) {
+        cumulative += snapshot.latency_bucket_counts[i];
+        if (cumulative >= rank) {
+            return kBackendLatencyBucketUpperBoundsUs[i];
+        }
+    }
+    return kBackendLatencyBucketUpperBoundsUs.back();
+}
 
 class BackendMetrics {
 public:
@@ -56,6 +104,12 @@ public:
         auto& c = counters_[service];
         c.total_latency_us += latency_us;
         ++c.latency_sample_count;
+        for (std::size_t i = 0; i < kBackendLatencyBucketUpperBoundsUs.size(); ++i) {
+            if (latency_us <= kBackendLatencyBucketUpperBoundsUs[i]) {
+                ++c.latency_bucket_counts[i];
+                break;
+            }
+        }
     }
 
     [[nodiscard]] BackendMetricsSnapshot snapshot(

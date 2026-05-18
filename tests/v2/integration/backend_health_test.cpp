@@ -64,6 +64,27 @@ TEST(V2BackendHealthTest, MetricsCountersAfterSuccessfulRoute) {
     backend->stop();
 }
 
+TEST(V2BackendHealthTest, BackendMetricsLatencyBucketsExposePercentiles) {
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
+
+    metrics->record_latency(v2::service::ServiceId::kBattle, 1'500);
+    metrics->record_latency(v2::service::ServiceId::kBattle, 40'000);
+    metrics->record_latency(v2::service::ServiceId::kBattle, 700'000);
+
+    auto snap = metrics->snapshot(v2::service::ServiceId::kBattle);
+    EXPECT_EQ(snap.latency_sample_count, 3U);
+    EXPECT_EQ(snap.total_latency_us, 741'500U);
+    EXPECT_EQ(v2::gateway::backend_latency_percentile_us(snap, 0.50), 50'000U);
+    EXPECT_EQ(v2::gateway::backend_latency_percentile_us(snap, 0.90), 1'000'000U);
+    EXPECT_EQ(v2::gateway::backend_latency_percentile_us(snap, 0.99), 1'000'000U);
+
+    std::uint64_t bucket_total = 0;
+    for (const auto count : snap.latency_bucket_counts) {
+        bucket_total += count;
+    }
+    EXPECT_EQ(bucket_total, 3U);
+}
+
 TEST(V2BackendHealthTest, MetricsCountersAfterUnavailable) {
     auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
 

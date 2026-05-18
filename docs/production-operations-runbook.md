@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | gateway 可用性 | `up{job="gateway"}`、`/ready` | 最基础的 scrape 与 readiness |
 | backend 错误率 | `gateway_backend_*_errors_total`、`gateway_backend_*_timeouts_total` | 当前后端 RED 指标事实源 |
-| backend route latency | `gateway_backend_*_avg_latency_us` | 这是平均值趋势，不是 histogram P99 |
+| backend route latency | `gateway_backend_*_p99_latency_us`、`gateway_backend_route_latency_us_bucket`、`gateway_backend_*_avg_latency_us` | P99 gauge 和 histogram bucket 是告警主口径，avg 保留作趋势辅助 |
 | 业务闭环成功率 | `gateway_login_success_total`、`gateway_room_join_success_total`、`gateway_battle_start_success_total` | 覆盖 login/room/battle 核心链路 |
 | Redis 相关异常 | `gateway_backend_leaderboard_*` + `redis_exporter` | 目前通过 leaderboard 路径代理 Redis 异常 |
 | 资源风险 | `process_resident_memory_bytes`、`process_open_fds`、`container_memory_working_set_bytes` | 依赖 optional process exporter / cAdvisor |
@@ -21,11 +21,11 @@
 
 - `BoostGatewayScrapeDown`：gateway scrape 中断
 - `BoostGatewayBackendErrors` / `BoostGatewayBackendTimeouts`：后端路由失败
-- `BoostGatewayHighRouteLatency`：backend average route latency 超 200ms
+- `BoostGatewayHighRouteLatency`：backend route P99 latency 超 200ms
 - `BoostGatewayBusinessFlowFailure`：login / room / battle 成功计数 10 分钟不推进
 - `BoostGatewayHighActiveSessions`：活跃连接逼近当前容量线
 
-注意：在 route latency histogram/summary 没有进入默认 `/metrics` 前，Prometheus 还不能给出严格的 route P99 告警。当前 N2 的延迟 SLO 仍以 `avg_latency_us` 趋势、diagnostics JSON 和性能基线脚本共同判断。
+N2 起，gateway `/metrics` 默认导出 `gateway_backend_route_latency_us_bucket/_sum/_count` 和 `gateway_backend_<service>_p50/p90/p99_latency_us`。Prometheus 告警使用 P99 gauge；Grafana 同时展示 P99 gauge 和 `histogram_quantile()` 趋势。性能基线脚本仍是容量和长稳结论的事实源。
 
 ## 入口
 

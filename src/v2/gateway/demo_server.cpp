@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <utility>
 
 namespace v2::gateway {
@@ -262,6 +263,10 @@ std::optional<std::uint32_t> DemoServer::session_io_core(SessionId session_id) c
     return it->second;
 }
 
+GatewayServiceBridge* DemoServer::service_bridge() const noexcept {
+    return runtime_.service_bridge();
+}
+
 std::vector<DemoServerIoCoreSnapshot> DemoServer::io_core_snapshot() const {
     std::vector<DemoServerIoCoreSnapshot> snapshots;
     const auto core_count = io_core_count();
@@ -339,6 +344,16 @@ std::string DemoServer::diagnostics_json() const {
     for (const auto& [service_key, snap] : snapshot.backend_metrics) {
         const auto avg_latency_us =
             snap.latency_sample_count > 0 ? (snap.total_latency_us / snap.latency_sample_count) : 0;
+        nlohmann::json latency_buckets = nlohmann::json::array();
+        for (std::size_t i = 0; i < snap.latency_bucket_counts.size(); ++i) {
+            const auto upper_bound = kBackendLatencyBucketUpperBoundsUs[i];
+            latency_buckets.push_back({
+                {"le_us", upper_bound == std::numeric_limits<std::uint64_t>::max()
+                              ? nlohmann::json("+Inf")
+                              : nlohmann::json(upper_bound)},
+                {"count", snap.latency_bucket_counts[i]},
+            });
+        }
         backend_metrics[service_key] = {
             {"total_requests", snap.total_requests},
             {"total_successes", snap.total_successes},
@@ -349,6 +364,10 @@ std::string DemoServer::diagnostics_json() const {
             {"total_latency_us", snap.total_latency_us},
             {"latency_sample_count", snap.latency_sample_count},
             {"avg_latency_us", avg_latency_us},
+            {"p50_latency_us", backend_latency_percentile_us(snap, 0.50)},
+            {"p90_latency_us", backend_latency_percentile_us(snap, 0.90)},
+            {"p99_latency_us", backend_latency_percentile_us(snap, 0.99)},
+            {"latency_buckets", std::move(latency_buckets)},
         };
     }
     doc["backend_metrics"] = std::move(backend_metrics);
@@ -448,6 +467,36 @@ net::HttpMetricsSnapshot DemoServer::metrics_snapshot() const {
         add_counter((prefix + "successes_total").c_str(), "Backend successes", metrics.total_successes);
         add_counter((prefix + "errors_total").c_str(), "Backend errors", metrics.total_errors);
         add_counter((prefix + "timeouts_total").c_str(), "Backend timeouts", metrics.total_timeouts);
+        add_gauge((prefix + "avg_latency_us").c_str(),
+                  "Backend average route latency in microseconds",
+                  metrics.latency_sample_count > 0
+                      ? metrics.total_latency_us / metrics.latency_sample_count
+                      : 0);
+        add_gauge((prefix + "p50_latency_us").c_str(),
+                  "Backend route latency p50 upper bound in microseconds",
+                  backend_latency_percentile_us(metrics, 0.50));
+        add_gauge((prefix + "p90_latency_us").c_str(),
+                  "Backend route latency p90 upper bound in microseconds",
+                  backend_latency_percentile_us(metrics, 0.90));
+        add_gauge((prefix + "p99_latency_us").c_str(),
+                  "Backend route latency p99 upper bound in microseconds",
+                  backend_latency_percentile_us(metrics, 0.99));
+        prom += "# HELP gateway_backend_route_latency_us Backend route latency histogram in microseconds\n";
+        prom += "# TYPE gateway_backend_route_latency_us histogram\n";
+        std::uint64_t cumulative = 0;
+        for (std::size_t i = 0; i < metrics.latency_bucket_counts.size(); ++i) {
+            cumulative += metrics.latency_bucket_counts[i];
+            const auto upper_bound = kBackendLatencyBucketUpperBoundsUs[i];
+            const auto le = upper_bound == std::numeric_limits<std::uint64_t>::max()
+                                ? std::string("+Inf")
+                                : std::to_string(upper_bound);
+            prom += "gateway_backend_route_latency_us_bucket{service=\"" + svc +
+                    "\",le=\"" + le + "\"} " + std::to_string(cumulative) + "\n";
+        }
+        prom += "gateway_backend_route_latency_us_sum{service=\"" + svc + "\"} " +
+                std::to_string(metrics.total_latency_us) + "\n";
+        prom += "gateway_backend_route_latency_us_count{service=\"" + svc + "\"} " +
+                std::to_string(metrics.latency_sample_count) + "\n";
     }
 
     snap.prometheus_text = prom;

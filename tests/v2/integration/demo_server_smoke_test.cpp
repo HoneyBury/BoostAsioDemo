@@ -437,3 +437,48 @@ TEST(V2DemoServerSmokeTest, ReadyJsonFailsWhenConfiguredBackendUnavailable) {
     }
     EXPECT_TRUE(found_bridge_check);
 }
+
+TEST(V2DemoServerSmokeTest, MetricsExposeBackendRouteLatencyHistogram) {
+    app::logging::init("project_tests");
+
+    auto io_engine = std::make_unique<v2::io::AsioIoEngine>(1);
+    v2::gateway::DemoServer server(
+        0,
+        {},
+        v2::gateway::DemoServerOptions{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = 1,
+            },
+        },
+        std::move(io_engine));
+
+    auto* bridge = server.service_bridge();
+    ASSERT_NE(bridge, nullptr);
+    auto metrics = bridge->get_metrics();
+    ASSERT_NE(metrics, nullptr);
+    metrics->record_request(v2::service::ServiceId::kLogin);
+    metrics->record_success(v2::service::ServiceId::kLogin);
+    metrics->record_latency(v2::service::ServiceId::kLogin, 1'500);
+    metrics->record_latency(v2::service::ServiceId::kLogin, 40'000);
+    metrics->record_latency(v2::service::ServiceId::kLogin, 700'000);
+
+    const auto snapshot = server.metrics_snapshot();
+    EXPECT_NE(snapshot.prometheus_text.find("gateway_backend_login_avg_latency_us"),
+              std::string::npos);
+    EXPECT_NE(snapshot.prometheus_text.find("gateway_backend_login_p99_latency_us 1000000"),
+              std::string::npos);
+    EXPECT_NE(snapshot.prometheus_text.find(
+                  "gateway_backend_route_latency_us_bucket{service=\"login\",le=\"1000000\"} 3"),
+              std::string::npos);
+    EXPECT_NE(snapshot.prometheus_text.find("gateway_backend_route_latency_us_sum{service=\"login\"} 741500"),
+              std::string::npos);
+    EXPECT_NE(snapshot.prometheus_text.find("gateway_backend_route_latency_us_count{service=\"login\"} 3"),
+              std::string::npos);
+
+    const auto diagnostics = nlohmann::json::parse(snapshot.diagnostics_json_text);
+    const auto& login = diagnostics["backend_metrics"]["login"];
+    EXPECT_EQ(login["p50_latency_us"], 50'000);
+    EXPECT_EQ(login["p99_latency_us"], 1'000'000);
+    ASSERT_TRUE(login["latency_buckets"].is_array());
+}

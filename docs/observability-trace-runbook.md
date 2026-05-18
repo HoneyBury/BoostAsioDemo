@@ -69,4 +69,4 @@ P5 子产物：
 
 ## 延迟指标边界
 
-当前 Prometheus 默认导出 backend RED counters 和 gateway 运行指标，route latency 以 diagnostics JSON 的 `avg_latency_us` / `latency_sample_count` 和性能采集报告为准。Prometheus histogram/summary 尚未作为默认 scrape 指标上线；容量、P99 和波动分析仍以 `collect_v2_perf_baseline.py --include-business-flow`、release baseline 和固定 runner soak 归档为事实源。
+当前 Prometheus 默认导出 backend RED counters、gateway 运行指标和 gateway-observed backend route latency。route latency 包含 `gateway_backend_route_latency_us_bucket/_sum/_count`、`gateway_backend_<service>_p50/p90/p99_latency_us` 和兼容保留的 `avg_latency_us`。线上告警以 P99 gauge / histogram bucket 为主；容量、P99 波动和长稳结论仍以 `collect_v2_perf_baseline.py --include-business-flow`、release baseline 和固定 runner soak 归档为事实源。

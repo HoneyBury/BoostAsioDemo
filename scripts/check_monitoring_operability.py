@@ -27,7 +27,6 @@ REQUIRED_PROMETHEUS_TARGETS = {
 }
 
 LEGACY_QUERY_TOKENS = {
-    "backend_route_",
     "backend_login_healthy_instances",
     "backend_room_healthy_instances",
     "backend_battle_healthy_instances",
@@ -59,7 +58,8 @@ REQUIRED_DASHBOARD_METRICS = {
     "gateway_backend_.*_requests_total",
     "gateway_backend_.*_errors_total",
     "gateway_backend_.*_timeouts_total",
-    "gateway_backend_.*_avg_latency_us",
+    "gateway_backend_.*_p99_latency_us",
+    "gateway_backend_route_latency_us_bucket",
     "redis_connected_clients",
     "redis_memory_used_bytes",
     "container_memory_working_set_bytes",
@@ -181,6 +181,12 @@ def validate_alerts(checks: list[dict[str, Any]]) -> None:
         )
     add_check(
         checks,
+        "alerts:no-legacy-token:backend_route",
+        "backend_route_" not in alerts.replace("gateway_backend_route_latency_us", ""),
+        "alert rules do not reference legacy backend_route metrics outside the current gateway latency histogram",
+    )
+    add_check(
+        checks,
         "alerts:leaderboard-redis-proxy",
         "gateway_backend_leaderboard_errors_total" in alerts
         and "Redis" in alerts,
@@ -189,8 +195,8 @@ def validate_alerts(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "alerts:route-latency-slo",
-        "gateway_backend_.*_avg_latency_us" in alerts or "gateway_backend_login_avg_latency_us" in alerts,
-        "alert rules include a backend route latency SLO signal based on current avg latency metrics",
+        "gateway_backend_.*_p99_latency_us" in alerts or "gateway_backend_route_latency_us_bucket" in alerts,
+        "alert rules include a backend route latency P99 SLO signal based on current gateway metrics",
     )
     add_check(
         checks,
@@ -239,6 +245,12 @@ def validate_dashboard(checks: list[dict[str, Any]]) -> None:
             token not in joined,
             f"dashboard does not reference legacy or nonexistent metric token {token}",
         )
+    add_check(
+        checks,
+        "grafana:no-legacy-token:backend_route",
+        "backend_route_" not in joined.replace("gateway_backend_route_latency_us", ""),
+        "dashboard does not reference legacy backend_route metrics outside the current gateway latency histogram",
+    )
 
 
 def validate_docs(checks: list[dict[str, Any]]) -> None:

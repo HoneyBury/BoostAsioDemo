@@ -75,6 +75,7 @@ public:
     [[nodiscard]] std::uint32_t io_core_count() const;
     [[nodiscard]] std::optional<std::uint32_t> acceptor_core_id() const noexcept;
     [[nodiscard]] std::optional<std::uint32_t> session_io_core(SessionId session_id) const;
+    [[nodiscard]] GatewayServiceBridge* service_bridge() const noexcept;
     [[nodiscard]] std::vector<DemoServerIoCoreSnapshot> io_core_snapshot() const;
     [[nodiscard]] DemoServerDiagnostics diagnostics() const;
     [[nodiscard]] std::string diagnostics_json() const;

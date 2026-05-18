@@ -41,6 +41,8 @@ REQUIRED_ALERTS = {
     "BoostGatewayBackendErrors",
     "BoostGatewayBackendTimeouts",
     "BoostGatewayLeaderboardBackendErrors",
+    "BoostGatewayHighRouteLatency",
+    "BoostGatewayBusinessFlowFailure",
     "BoostGatewayRedisExporterDown",
     "BoostGatewayRedisMemoryHigh",
     "BoostGatewayRateLimitSpike",
@@ -57,6 +59,7 @@ REQUIRED_DASHBOARD_METRICS = {
     "gateway_backend_.*_requests_total",
     "gateway_backend_.*_errors_total",
     "gateway_backend_.*_timeouts_total",
+    "gateway_backend_.*_avg_latency_us",
     "redis_connected_clients",
     "redis_memory_used_bytes",
     "container_memory_working_set_bytes",
@@ -185,6 +188,18 @@ def validate_alerts(checks: list[dict[str, Any]]) -> None:
     )
     add_check(
         checks,
+        "alerts:route-latency-slo",
+        "gateway_backend_.*_avg_latency_us" in alerts or "gateway_backend_login_avg_latency_us" in alerts,
+        "alert rules include a backend route latency SLO signal based on current avg latency metrics",
+    )
+    add_check(
+        checks,
+        "alerts:business-flow-slo",
+        "gateway_login_success_total" in alerts and "gateway_room_join_success_total" in alerts and "gateway_battle_start_success_total" in alerts,
+        "alert rules include business-flow success counters for login/room/battle",
+    )
+    add_check(
+        checks,
         "alerts:optional-process-exporter-labeled",
         "optional-process" in alerts
         and "process_resident_memory_bytes" in alerts
@@ -266,6 +281,12 @@ def validate_docs(checks: list[dict[str, Any]]) -> None:
         "docs:host-observability-prometheus",
         "prometheus.host-observability.yml" in env_readme or "9091" in deployment,
         "docs explain the isolated Prometheus scrape path for optional host observability",
+    )
+    add_check(
+        checks,
+        "docs:slo",
+        "SLI" in runbook and "SLO" in runbook,
+        "operations runbook documents SLI/SLO expectations",
     )
     for phrase in (
         "backend down",

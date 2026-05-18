@@ -33,6 +33,8 @@ on:
           - smoke
           - short
           - medium
+          - long
+          - overnight
       baseline_profile:
         description: "Architecture gate profile"
         required: true

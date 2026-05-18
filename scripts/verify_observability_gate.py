@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -180,15 +181,26 @@ def main() -> int:
     build_dir = args.build_dir.resolve()
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     summary: dict[str, object] = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(build_dir),
         "configuration": args.configuration,
         "include_otel_collector": args.include_otel_collector,
         "include_runtime_http": args.include_runtime_http,
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
+        "overall_pass": False,
         "passed": False,
         "failed_category": "",
         "failed_step": "",
         "steps": [],
+        "artifacts": {
+            "summary_path": str(summary_path),
+            "runtime_http_summary_path": str(summary_path.parent / "gateway-observability-runtime-summary.json"),
+        },
     }
 
     try:
@@ -287,7 +299,12 @@ def main() -> int:
         summary["failed_category"] = str(failed.get("category", "unknown"))
         summary["failed_step"] = str(failed.get("name", "unknown"))
     else:
+        summary["overall_pass"] = True
         summary["passed"] = True
+    summary["duration_seconds"] = round(
+        sum(float(step.get("duration_seconds", 0.0)) for step in summary["steps"] if isinstance(step, dict)),
+        3,
+    )
 
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")

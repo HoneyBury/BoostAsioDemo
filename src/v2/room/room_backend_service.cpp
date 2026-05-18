@@ -1,6 +1,7 @@
 #include "v2/room/room_backend_service.h"
 #include "v2/service/backend_server.h"
 #include "v2/service/envelope_adapter.h"
+#include "v2/service/error_codes.h"
 
 #include <nlohmann/json.hpp>
 #include "app/audit_log.h"
@@ -50,10 +51,10 @@ struct RoomStateManager {
     }
 };
 
-v2::service::BackendEnvelope make_error(int code, const std::string& reason) {
+v2::service::BackendEnvelope make_error(v2::service::ServiceErrorCode code, const std::string& reason) {
     v2::service::BackendEnvelope resp;
     resp.kind = v2::service::MessageKind::kError;
-    resp.error_code = code;
+    resp.error_code = static_cast<std::int32_t>(code);
     nlohmann::json body{{"status", "error"}, {"reason", reason}};
     resp.payload = body.dump();
     return resp;
@@ -114,7 +115,7 @@ private:
         auto decoded = v2::service::decode_handler_payload(request);
         if (!decoded.has_value() || !decoded->payload.is_object() ||
             !decoded->payload.contains("user_id") || !decoded->payload.contains("room_id")) {
-            return make_error(-1004, "invalid_json");
+            return make_error(v2::service::ServiceErrorCode::kInvalidRequest, "invalid_json");
         }
         const auto& doc = decoded->payload;
 
@@ -122,13 +123,13 @@ private:
         std::string room_id = doc["room_id"].get<std::string>();
 
         if (user_id.empty() || room_id.empty()) {
-            return make_error(-1004, "empty_fields");
+            return make_error(v2::service::ServiceErrorCode::kInvalidRequest, "empty_fields");
         }
 
         std::lock_guard<std::mutex> lock(room_manager_.mutex_);
 
         if (room_manager_.find(room_id) != nullptr) {
-            return make_error(-2002, "room_already_exists");
+            return make_error(v2::service::ServiceErrorCode::kRejected, "room_already_exists");
         }
 
         RoomState room;
@@ -150,7 +151,7 @@ private:
         auto decoded = v2::service::decode_handler_payload(request);
         if (!decoded.has_value() || !decoded->payload.is_object() ||
             !decoded->payload.contains("user_id") || !decoded->payload.contains("room_id")) {
-            return make_error(-1004, "invalid_json");
+            return make_error(v2::service::ServiceErrorCode::kInvalidRequest, "invalid_json");
         }
         const auto& doc = decoded->payload;
 
@@ -161,7 +162,7 @@ private:
 
         auto* room = room_manager_.find(room_id);
         if (room == nullptr) {
-            return make_error(-2003, "room_not_found");
+            return make_error(v2::service::ServiceErrorCode::kRejected, "room_not_found");
         }
 
         if (room_manager_.find_member(*room, user_id) != nullptr) {
@@ -186,7 +187,7 @@ private:
         auto decoded = v2::service::decode_handler_payload(request);
         if (!decoded.has_value() || !decoded->payload.is_object() ||
             !decoded->payload.contains("user_id") || !decoded->payload.contains("room_id")) {
-            return make_error(-1004, "invalid_json");
+            return make_error(v2::service::ServiceErrorCode::kInvalidRequest, "invalid_json");
         }
         const auto& doc = decoded->payload;
 
@@ -198,12 +199,12 @@ private:
 
         auto* room = room_manager_.find(room_id);
         if (room == nullptr) {
-            return make_error(-2003, "room_not_found");
+            return make_error(v2::service::ServiceErrorCode::kRejected, "room_not_found");
         }
 
         auto* member = room_manager_.find_member(*room, user_id);
         if (member == nullptr) {
-            return make_error(-2005, "not_in_room");
+            return make_error(v2::service::ServiceErrorCode::kRejected, "not_in_room");
         }
 
         member->ready = ready;
@@ -219,7 +220,7 @@ private:
         const v2::service::BackendEnvelope& request) {
         auto doc = nlohmann::json::parse(request.payload, nullptr, false);
         if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("room_id")) {
-            return make_error(-1004, "invalid_json");
+            return make_error(v2::service::ServiceErrorCode::kInvalidRequest, "invalid_json");
         }
 
         std::string user_id = doc["user_id"].get<std::string>();
@@ -229,23 +230,23 @@ private:
 
         auto* room = room_manager_.find(room_id);
         if (room == nullptr) {
-            return make_error(-2003, "room_not_found");
+            return make_error(v2::service::ServiceErrorCode::kRejected, "room_not_found");
         }
 
         if (user_id != room->owner_user_id) {
-            return make_error(-2006, "not_room_owner");
+            return make_error(v2::service::ServiceErrorCode::kRejected, "not_room_owner");
         }
 
         if (!room->active_battle_id.empty()) {
-            return make_error(-2004, "battle_already_started");
+            return make_error(v2::service::ServiceErrorCode::kRejected, "battle_already_started");
         }
 
         if (room->members.size() < 2) {
-            return make_error(-3001, "not_enough_players");
+            return make_error(v2::service::ServiceErrorCode::kRejected, "not_enough_players");
         }
 
         if (!room_manager_.all_members_ready(*room)) {
-            return make_error(-2007, "not_all_ready");
+            return make_error(v2::service::ServiceErrorCode::kRejected, "not_all_ready");
         }
 
         // Generate battle_id and record it on the room
@@ -283,7 +284,7 @@ private:
         const v2::service::BackendEnvelope& request) {
         auto doc = nlohmann::json::parse(request.payload, nullptr, false);
         if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("room_id")) {
-            return make_error(-1004, "invalid_json");
+            return make_error(v2::service::ServiceErrorCode::kInvalidRequest, "invalid_json");
         }
 
         std::string user_id = doc["user_id"].get<std::string>();
@@ -293,7 +294,7 @@ private:
 
         auto* room = room_manager_.find(room_id);
         if (room == nullptr) {
-            return make_error(-2003, "room_not_found");
+            return make_error(v2::service::ServiceErrorCode::kRejected, "room_not_found");
         }
 
         auto& members = room->members;

@@ -4,6 +4,29 @@
 
 本文档用于 P3 监控、告警与运维流程收束。当前生产监控只 scrape gateway `/metrics`；后端服务是自定义 TCP 协议，不暴露 HTTP `/metrics`。因此后端异常通过 gateway backend RED counters、Docker/systemd/Kubernetes 健康检查和业务 full-flow 共同判断。
 
+## N2 SLI / SLO 口径
+
+当前监控面采用“gateway 可 scrape 指标 + diagnostics JSON + 业务 full-flow 脚本”三层口径：
+
+| SLI | 当前来源 | 说明 |
+| --- | --- | --- |
+| gateway 可用性 | `up{job="gateway"}`、`/ready` | 最基础的 scrape 与 readiness |
+| backend 错误率 | `gateway_backend_*_errors_total`、`gateway_backend_*_timeouts_total` | 当前后端 RED 指标事实源 |
+| backend route latency | `gateway_backend_*_avg_latency_us` | 这是平均值趋势，不是 histogram P99 |
+| 业务闭环成功率 | `gateway_login_success_total`、`gateway_room_join_success_total`、`gateway_battle_start_success_total` | 覆盖 login/room/battle 核心链路 |
+| Redis 相关异常 | `gateway_backend_leaderboard_*` + `redis_exporter` | 目前通过 leaderboard 路径代理 Redis 异常 |
+| 资源风险 | `process_resident_memory_bytes`、`process_open_fds`、`container_memory_working_set_bytes` | 依赖 optional process exporter / cAdvisor |
+
+当前 SLO 约束：
+
+- `BoostGatewayScrapeDown`：gateway scrape 中断
+- `BoostGatewayBackendErrors` / `BoostGatewayBackendTimeouts`：后端路由失败
+- `BoostGatewayHighRouteLatency`：backend average route latency 超 200ms
+- `BoostGatewayBusinessFlowFailure`：login / room / battle 成功计数 10 分钟不推进
+- `BoostGatewayHighActiveSessions`：活跃连接逼近当前容量线
+
+注意：在 route latency histogram/summary 没有进入默认 `/metrics` 前，Prometheus 还不能给出严格的 route P99 告警。当前 N2 的延迟 SLO 仍以 `avg_latency_us` 趋势、diagnostics JSON 和性能基线脚本共同判断。
+
 ## 入口
 
 当前 OrbStack / Docker Compose 本机部署暴露三类运维入口：
@@ -129,6 +152,8 @@ Grafana 已通过以下文件自动配置 Prometheus 数据源和 dashboard：
 | `Accepted Sessions` | 接入速率 | 长时间为 0 但有业务预期时排查入口 |
 | `Backend Requests` | 后端请求与成功速率 | 某服务请求异常变化要看业务流 |
 | `Backend Errors / Timeouts` | 后端错误和超时 | 非 0 持续增长要排查对应 backend |
+| `Backend Avg Route Latency` | 各 backend 平均路由延迟 | 超过 200ms 持续 5 分钟要排查慢后端、网络或 Redis 依赖 |
+| `Business Flow Success` | login / room join / battle start 成功速率 | 某项长期为 0 说明业务闭环断了，不只是 scrape 还活着 |
 | `Leaderboard / Redis Dependent Errors` | 排行榜/Redis 相关失败 | 优先查 Redis 和 leaderboard backend |
 | `Rate Limit / Blocked Packets` | 限流/丢弃 | 突增可能是重试风暴或异常客户端 |
 
@@ -254,6 +279,8 @@ P5-P8 的详细边界见 `docs/observability-trace-runbook.md`、`docs/tls-mtls-
 | `BoostGatewayScrapeDown` | critical | 先确认 gateway 进程、9080 管理口和 Prometheus target |
 | `BoostGatewayBackendTimeouts` | critical | 检查 backend down、网络、CPU/RSS/fd 和 gateway diagnostics |
 | `BoostGatewayBackendErrors` | warning | 查看具体 backend counter、业务错误和后端日志 |
+| `BoostGatewayHighRouteLatency` | warning | 查看 `Backend Avg Route Latency`、`/metrics/diagnostics/json`、对应 backend 日志和 Redis 依赖 |
+| `BoostGatewayBusinessFlowFailure` | warning | 优先跑 SDK full-flow，确认 login/room/battle 是否还在推进 |
 | `BoostGatewayLeaderboardBackendErrors` | warning | 优先检查 Redis down 或 leaderboard backend 降级 |
 | `BoostGatewayRateLimitSpike` | warning | 检查客户端流量、单 IP、login 专项限流和攻击模式 |
 | `BoostGatewayHighActiveSessions` | warning | 对照容量基线，确认连接 spike 是否符合预期 |
@@ -462,6 +489,31 @@ kubectl -n boost-gateway logs deploy/leaderboard-backend --tail=300
 - 保留 gateway、五个 backend、Redis、Prometheus 和 Grafana 的发布窗口日志。
 - 记录 git commit、镜像 tag、部署方式、触发告警、恢复动作和最终验证 summary。
 - 业务错误需要同时记录 trace_id、user_id、message_id、request_id 和 backend service。
+
+## N3 部署恢复、回滚与灾备演练
+
+N3 运维演练默认先跑静态门禁，确认恢复/回滚资产没有漂移：
+
+```bash
+python3 scripts/check_production_recovery_gate.py --summary-path runtime/validation/production-recovery-summary.json
+```
+
+固定 runner 或真实环境演练建议顺序：
+
+1. 运行 `scripts/check_deploy_operability.py` 和 `scripts/check_production_recovery_gate.py`。
+2. 对 Docker Compose 执行 gateway/backend/Redis restart，或对 Kubernetes 执行 rollout restart。
+3. 观察 Prometheus targets、gateway diagnostics 和 backend errors/timeouts。
+4. 执行 SDK full-flow，确认 login、room、battle、leaderboard 业务闭环恢复。
+5. 如涉及 Redis，记录备份来源、恢复动作、RPO 风险和 leaderboard 查询结果。
+6. 如涉及回滚，记录旧/新镜像 tag、回滚命令、rollout 状态和最终验证 summary。
+
+恢复演练记录至少包含：
+
+- git commit、镜像 tag、部署方式和目标环境。
+- 故障注入方式：gateway restart、后端重启、Redis 恢复、镜像回滚、网络抖动或配置变更。
+- 触发告警、异常指标、日志片段和恢复动作。
+- RTO、RPO、是否有数据一致性风险。
+- 最终验证 summary：`production-recovery-summary.json`、SDK full-flow、Docker snapshot 或 K8s full-flow。
 
 ## 当前边界
 

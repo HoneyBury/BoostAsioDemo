@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -41,18 +42,35 @@ SOAK_PROFILES = {
         "actors": "2000",
         "actor_limit": "10000",
         "battles": "100",
+        "expected_window": "bounded-smoke",
     },
     "short": {
         "iterations": "5000",
         "actors": "5000",
         "actor_limit": "50000",
         "battles": "250",
+        "expected_window": "15m-30m",
     },
     "medium": {
         "iterations": "10000",
         "actors": "10000",
         "actor_limit": "100000",
         "battles": "500",
+        "expected_window": "30m-60m",
+    },
+    "long": {
+        "iterations": "20000",
+        "actors": "20000",
+        "actor_limit": "200000",
+        "battles": "1000",
+        "expected_window": "2h",
+    },
+    "overnight": {
+        "iterations": "40000",
+        "actors": "40000",
+        "actor_limit": "400000",
+        "battles": "2000",
+        "expected_window": "8h",
     },
 }
 
@@ -164,18 +182,32 @@ def main() -> int:
     root = Path(__file__).resolve().parent.parent
     build_dir = args.build_dir.resolve()
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
+    soak_profile = SOAK_PROFILES[args.soak_profile]
     summary: dict[str, object] = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(build_dir),
         "configuration": args.configuration,
         "baseline_profile": args.baseline_profile,
         "soak_profile": args.soak_profile,
+        "expected_window": soak_profile.get("expected_window"),
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
+        "overall_pass": False,
         "passed": False,
         "failed_category": "",
         "failed_step": "",
         "steps": [],
+        "artifacts": {
+            "summary_path": str(summary_path),
+            "arch_baseline_output_root": str(root / "runtime" / "perf" / "v2-stability-soak"),
+        },
     }
-    soak_profile = SOAK_PROFILES[args.soak_profile]
+    if args.soak_profile in {"long", "overnight"}:
+        summary["artifacts"]["notes"] = "This profile is intended for fixed runners with expanded timeouts and dedicated machine access."
 
     try:
         if not args.skip_build:
@@ -242,6 +274,11 @@ def main() -> int:
         return 1
 
     summary["passed"] = True
+    summary["overall_pass"] = True
+    summary["duration_seconds"] = round(
+        sum(float(step.get("duration_seconds", 0.0)) for step in summary["steps"] if isinstance(step, dict)),
+        3,
+    )
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print("stability soak completed.")

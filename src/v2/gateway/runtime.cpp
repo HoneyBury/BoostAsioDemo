@@ -55,6 +55,18 @@ RateLimiter::Config load_rate_limiter_config() {
     return config;
 }
 
+std::string backend_error_reason(const GatewayServiceBridge::BackendRoutingResult& result,
+                                 std::string fallback) {
+    if (result.response_payload.empty()) {
+        return fallback;
+    }
+    auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+    if (doc.is_discarded()) {
+        return result.response_payload;
+    }
+    return doc.value("reason", std::move(fallback));
+}
+
 std::string build_replay_payload(const v2::battle::BattleSettlementPreparedMsg& settlement) {
     nlohmann::json doc;
     doc["battle_id"] = settlement.battle_id;
@@ -454,11 +466,18 @@ bool Runtime::handle(const GatewayCommand& command) {
                          reason);
                     return true;
                 }
+                auto error_code = net::protocol::ErrorCode::kRoomBackendUnavailable;
+                if (result.error == v2::service::ServiceErrorCode::kRejected) {
+                    error_code = net::protocol::ErrorCode::kInvalidRoomId;
+                }
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
                      command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
-                     "backend_error");
+                     static_cast<std::int32_t>(error_code),
+                     backend_error_reason(result,
+                                          result.error == v2::service::ServiceErrorCode::kRejected
+                                              ? "room_join_rejected"
+                                              : "backend_error"));
                 return true;
             }
 
@@ -555,11 +574,18 @@ bool Runtime::handle(const GatewayCommand& command) {
                          reason);
                     return true;
                 }
+                auto error_code = net::protocol::ErrorCode::kRoomBackendUnavailable;
+                if (result.error == v2::service::ServiceErrorCode::kRejected) {
+                    error_code = net::protocol::ErrorCode::kAuthRequired;
+                }
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
                      command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
-                     "backend_error");
+                     static_cast<std::int32_t>(error_code),
+                     backend_error_reason(result,
+                                          result.error == v2::service::ServiceErrorCode::kRejected
+                                              ? "room_ready_rejected"
+                                              : "backend_error"));
                 return true;
             }
 
@@ -716,11 +742,19 @@ bool Runtime::handle(const GatewayCommand& command) {
                                                   std::move(room_body_str));
 
                 if (!room_result.success) {
+                    auto error_code = net::protocol::ErrorCode::kRoomBackendUnavailable;
+                    if (room_result.error == v2::service::ServiceErrorCode::kRejected) {
+                        error_code = net::protocol::ErrorCode::kBattleNotStarted;
+                    }
                     emit(net::protocol::kErrorResponse,
                          command.session_id,
                          command.request_id,
-                         static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
-                         "backend_error");
+                         static_cast<std::int32_t>(error_code),
+                         backend_error_reason(
+                             room_result,
+                             room_result.error == v2::service::ServiceErrorCode::kRejected
+                                 ? "room_start_battle_rejected"
+                                 : "backend_error"));
                     return true;
                 }
 

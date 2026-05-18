@@ -179,11 +179,27 @@ Python wrapper 会优先读取 `BOOST_GATEWAY_SDK_LIBRARY` 指定的 native libr
 分发验证入口：
 
 ```bash
+python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/default --skip-build
 python3 scripts/check_sdk_distribution.py --build-dir build/default
 python3 scripts/verify_sdk_package_consumer.py --build-dir build/default
 python3 scripts/verify_sdk_business_flow.py --build-dir build/default
 python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default
 ```
+
+`verify_sdk_enterprise_delivery.py` 是 N5 客户端交付总门禁，会依次验证 SDK 分发、外部 CMake consumer、in-process 业务闭环和真实 gateway full-flow。正式交付给客户端团队前优先归档这份 summary。
+
+## 生产客户端接入清单
+
+| 项目 | 要求 |
+| --- | --- |
+| 版本 | 记录 `BOOST_GATEWAY_SDK_VERSION` 或 `gsdk_version()`，Python/C# 必须通过主版本校验后再创建 client |
+| 连接 | 每个玩家会话持有独立 `SdkClient`；不建议多个业务线程并发调用同一个 client |
+| 登录 | 登录成功后启动 heartbeat；登录失败要记录 `error_code`、`error_message` 和 gateway 地址 |
+| 重连 | 使用 `disconnect()` -> `connect()` -> `login()`；重连状态由客户端调度器管理，不在 callback 内阻塞 |
+| Push | `on_push` 内只做快速分发，避免递归调用同一个 client 的同步 API |
+| 断线 | `on_disconnect` 表示 heartbeat 发现异常断开；主动 `disconnect()` 不触发该回调 |
+| 日志 | 至少包含 player id、room id、request step、error code、retry count、reconnect attempt、sdk version |
+| 排障 | native 加载失败先检查 `BOOST_GATEWAY_SDK_LIBRARY`、动态库平台后缀、SDK/Gateway 版本矩阵 |
 
 SDK 依赖:
 - Boost.Asio (TCP 网络, 头文件)

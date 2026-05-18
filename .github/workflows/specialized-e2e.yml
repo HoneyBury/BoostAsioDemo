@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: "Runner label"
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","raft-ha"]'
         required: true
-        default: "ubuntu-latest"
+        default: '"ubuntu-latest"'
       build_preset:
         description: "CMake configure preset"
         required: true
@@ -48,7 +48,7 @@ permissions:
 
 jobs:
   specialized-e2e:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner || '"ubuntu-latest"') }}
 
     steps:
       - name: Checkout
@@ -77,6 +77,7 @@ jobs:
             scripts/check_fixed_runner_environment.py
             --profile specialized-e2e
             --build-dir "${{ inputs.build_dir }}"
+            --summary-path runtime/validation/fixed-runner-preflight-summary.json
           )
           if [ "${{ inputs.include_redis_live }}" = "true" ]; then
             args+=(--require-redis)
@@ -112,8 +113,16 @@ jobs:
         if: always()
         shell: bash
         run: |
-          if [ -f runtime/validation/specialized-e2e-summary.json ]; then
-            python scripts/render_validation_summary.py runtime/validation/specialized-e2e-summary.json --title "Specialized E2E" >> "$GITHUB_STEP_SUMMARY"
+          summaries=()
+          for path in \
+            runtime/validation/fixed-runner-preflight-summary.json \
+            runtime/validation/specialized-e2e-summary.json; do
+            if [ -f "$path" ]; then
+              summaries+=("$path")
+            fi
+          done
+          if [ "${#summaries[@]}" -gt 0 ]; then
+            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload specialized E2E summary
@@ -121,5 +130,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: specialized-e2e-${{ inputs.runner }}
-          path: runtime/validation/specialized-e2e-summary.json
+          path: |
+            runtime/validation/fixed-runner-preflight-summary.json
+            runtime/validation/specialized-e2e-summary.json
           if-no-files-found: warn

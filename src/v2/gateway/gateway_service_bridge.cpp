@@ -7,13 +7,21 @@
 #include "v3/cluster/consistent_hash.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <mutex>
 
 namespace v2::gateway {
 
 namespace {
 
-constexpr std::size_t kBackendConnectionPoolSize = 8;
+std::size_t backend_connection_pool_size() {
+    const char* raw = std::getenv("V2_BACKEND_CONNECTION_POOL_SIZE");
+    if (raw == nullptr || raw[0] == '\0') {
+        return 8;
+    }
+    const auto parsed = std::strtoul(raw, nullptr, 10);
+    return parsed > 0 ? static_cast<std::size_t>(parsed) : 8U;
+}
 
 struct SpanExportGuard {
     v2::tracing::Span span;
@@ -334,7 +342,7 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
     if (target.from_cluster) {
         auto& pool = slot.cluster_connection_pools[target.connection_key];
         auto& next = slot.cluster_next_connection_index[target.connection_key];
-        if (pool.size() < kBackendConnectionPoolSize) {
+        if (pool.size() < backend_connection_pool_size()) {
             pool.push_back(std::move(conn));
             stored = pool.back().get();
             next = pool.empty() ? 0 : next % pool.size();
@@ -348,7 +356,7 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
             next = (next + 1) % pool.size();
         }
     } else {
-        if (slot.connection_pool.size() < kBackendConnectionPoolSize) {
+        if (slot.connection_pool.size() < backend_connection_pool_size()) {
             slot.connection_pool.push_back(std::move(conn));
             stored = slot.connection_pool.back().get();
             slot.next_connection_index %= slot.connection_pool.size();
@@ -459,8 +467,13 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
     result.correlation_id = response->correlation_id;
 
     if (response->kind == v2::service::MessageKind::kError) {
-        slot.breaker.on_failure();
         result.error = static_cast<v2::service::ServiceErrorCode>(response->error_code);
+        result.response_payload = std::move(response->payload);
+        if (result.error == v2::service::ServiceErrorCode::kRejected) {
+            slot.breaker.on_success();
+        } else {
+            slot.breaker.on_failure();
+        }
         record_route_result(target, result);
         return result;
     }

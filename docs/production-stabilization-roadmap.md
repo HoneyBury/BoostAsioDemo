@@ -1,8 +1,8 @@
 # 生产稳定化与交付闭环路线图
 
-更新时间：2026-05-17
+更新时间：2026-05-18
 
-本文档记录 v3.3.2 之后生产稳定化与交付闭环阶段的规划和完成状态。当前阶段已经完成 P0-P6 收束；后续继续推进时，以 `docs/production-candidate-hardening-plan.md` 作为新的阶段规划事实源。
+本文档记录 v3.3.2 之后生产稳定化与交付闭环阶段的规划和完成状态。当前阶段已经完成 P0-P8 生产业务闭环接入收束；后续继续推进时，本文档新增的“生产数据沉淀与风险燃尽”作为下一阶段规划事实源。
 
 ## 阶段目标
 
@@ -15,6 +15,211 @@
 - 哪些模块已经进入默认 release/CI 流水线，哪些仍需要固定 runner 或真实依赖环境。
 - Redis、Operator、OTel、SDK full-flow、runtime HTTP 观测、长稳 soak 和容量压测是否有持续证据。
 - SDK 是否具备生产客户端接入所需的线程模型、心跳、重连、错误诊断和多语言封装边界。
+
+## 下一阶段：生产数据沉淀与风险燃尽
+
+本阶段不继续扩展新的功能模块，重点从“功能和闭环已经能跑”转为“生产环境下能长期稳定、可观测、可回滚、可交付”。所有任务都应尽量接入现有 release / production evidence / business closure 验证入口，并形成可归档的 summary、报告或 runbook 更新。
+
+### N0：固定 Runner 与证据自动化常态化
+
+目标：把 P0-P8 的验证入口从“可手动运行”推进为“可持续沉淀证据”。
+
+任务：
+
+- 整理 release candidate、production resilience、production evidence、P5-P8 business closure、Redis live、raft-ha、OTel runtime、Operator kind 和 K8s full-flow 的固定 runner 运行矩阵。
+- 统一 summary 输出字段，至少包含 `overall_pass`、环境信息、构建目录、profile、失败分类、关键 artifact 路径和耗时。
+- 将定时运行、手动参数、runner label、依赖预检和 artifact retention 写入固定 runner 文档。
+- 对“环境缺失”“外部依赖不可达”“业务逻辑失败”进行清晰分类，避免误判生产能力。
+- 在文档中维护证据索引，记录每类能力最后一次通过时间、运行环境和对应产物。
+
+交付物：
+
+- 更新后的 `docs/fixed-runner-playbook.md`
+- 更新后的 `docs/production-evidence-runner.md`
+- 更新后的 `docs/reliability-matrix.md`
+- 固定 runner evidence summary 样例
+
+验收标准：
+
+- 固定 runner 可以按周产出 Redis live、raft-ha、OTel runtime、Operator kind、K8s full-flow 和 P5-P8 business closure 证据。
+- 失败时能判断是环境问题、依赖问题还是代码回归。
+- 关键证据能被 release checklist 或 current-state 引用。
+
+### N1：长稳压测与容量基线
+
+目标：把性能判断从 smoke 和短测推进到可比较的生产容量事实。
+
+任务：
+
+- 在固定机器上执行 2h / 8h soak，记录 RSS、fd、CPU、错误率、连接数、P50/P90/P99 和业务成功率。
+- 补齐 5K / 10K echo、battle-500、SDK full-flow 并发和 leaderboard 写入路径的容量测试。
+- 将性能退化阈值固化到报告中，明确吞吐、P99、错误率、RSS/fd 增长的阻断标准。
+- 对已知容量退化点建立复测路径，例如连接建立失败、battle rejected、P99 超 500ms。
+- 区分默认生产配置、实验参数、Redis on/off、OTel on/off 和后端连接池参数对性能的影响。
+
+交付物：
+
+- 更新后的 `docs/performance-baseline.md`
+- 长稳 summary 与容量 summary
+- 性能退化阈值说明
+
+验收标准：
+
+- 至少有一套固定机器 2h soak 数据。
+- 5K / 10K 和 battle-500 的结果能稳定复现或明确标注瓶颈。
+- 性能报告能支持“是否可投产”和“需要多少机器”的判断。
+
+### N2：生产监控 SLO 与告警闭环
+
+目标：把当前 Prometheus / Grafana / OTel 能力推进为可运维的 SLO 体系。
+
+任务：
+
+- 梳理 gateway route latency、业务成功率、错误率、连接池、后端路由错误、Redis 可用性和 SDK full-flow 成功率指标。
+- 评估并实现 route latency histogram / summary，避免只靠单点快照判断延迟。
+- 对后端 metrics 选择明确路线：HTTP exporter、sidecar exporter 或 gateway 聚合指标；在完成前不误宣称后端已有 HTTP metrics。
+- 扩展 Prometheus alerts，覆盖错误率、P99、gateway readiness、Redis 不可达、backend routing error、RSS/fd 异常和业务闭环失败。
+- 将告警触发、排查、恢复和验证步骤写入运维 runbook。
+
+交付物：
+
+- 更新后的 `env/monitoring/prometheus-alerts.yml`
+- 更新后的 Grafana dashboard
+- 更新后的 `docs/production-operations-runbook.md`
+- 监控静态校验和运行验证摘要
+
+验收标准：
+
+- 人工制造 backend down、Redis down 或 gateway 错误率上升时，指标和告警能体现。
+- 关键业务链路具备 SLI/SLO 描述。
+- 运维 runbook 能指导定位和恢复。
+
+### N3：部署恢复、回滚与灾备演练
+
+目标：证明系统在真实部署形态下可以恢复、回滚和继续服务。
+
+当前收束状态：已补 `scripts/check_production_recovery_gate.py`，并接入
+`scripts/verify_production_resilience_gate.py` 的默认步骤。该 gate 默认静态验证
+Docker Compose、Kubernetes、Redis PVC/volume、rollout/rollback、runbook 和
+SDK full-flow 恢复证据；真实 Docker/K8s 演练仍应在固定 runner 或生产预演环境显式执行。
+
+任务：
+
+- [x] 在 OrbStack / Docker Compose 和 K8s 路径分别固化部署、健康检查、发布后验证和回滚证据。
+- [x] 建立 Redis 备份恢复、后端重启、gateway rolling restart、配置 reload、镜像回滚和网络抖动的演练矩阵。
+- [x] 固化生产服务器目录结构、环境变量边界、配置文件路径、密钥挂载和日志采集策略到部署/运维 runbook。
+- [x] 对 K8s 补齐 resource requests/limits、PDB、HPA、readiness/liveness 语义和 rollout/rollback 静态证据。
+- [x] 将每类演练的 RTO、失败现象和恢复验证写入报告模板。
+- [ ] 在固定 runner 或真实预演环境执行 Docker/K8s 实操恢复演练并归档 summary。
+
+交付物：
+
+- 更新后的 `docs/production-deployment-runbook.md`
+- 更新后的 `docs/production-operations-runbook.md`
+- `scripts/check_production_recovery_gate.py`
+- K8s / Docker recovery summary
+- 备份恢复演练记录
+
+验收标准：
+
+- `python3 scripts/check_production_recovery_gate.py` 通过，并写出 `runtime/validation/production-recovery-summary.json`。
+- Docker Compose 和 K8s 都有发布后 SDK full-flow 验证入口。
+- 关键故障恢复有可执行步骤、RTO/RPO 记录和验证命令。
+- 回滚流程不依赖口头经验；固定 runner 实操演练作为后续证据持续沉淀。
+
+### N4：传输安全与配置治理升级
+
+目标：将 TLS/mTLS、配置治理和生产变更流程从边界说明推进到可灰度验证。
+
+任务：
+
+- [x] 明确当前 plain TCP 默认边界、TLS/mTLS 可选 profile 和上线前置条件。
+- [x] 接入 TLS/mTLS profile 边界验证入口，并通过 N4 聚合门禁归档。
+- [x] 补充证书生成、加载、轮转、过期告警和回滚策略。
+- [x] 统一热重载、重启生效和环境变量配置的分类文档，明确生产变更审批和回滚方式。
+- [x] 对配置变更增加 drift check，避免 Docker、Helm、K8s 和本地配置互相漂移。
+- [ ] backend 服务端 TLS listener、Secret 挂载和 TLS profile 下 SDK full-flow 实操仍作为后续上线前置条件，不计入默认 plain TCP 生产链路。
+
+交付物：
+
+- 更新后的 `docs/tls-mtls-runbook.md`
+- 更新后的 `docs/production-configuration-runbook.md`
+- TLS/mTLS profile 验证摘要
+- 配置漂移检查规则
+- `scripts/check_transport_config_governance.py`
+
+验收标准：
+
+- `python3 scripts/check_transport_config_governance.py --summary-path runtime/validation/n4-transport-config-governance-summary.json` 通过。
+- TLS/mTLS 是否可上线有明确证据，不停留在占位配置；当前结论是默认生产仍为 plain TCP，TLS transport 上线仍需 backend listener/Secret/SDK full-flow 证据。
+- 每个生产配置项都能判断修改入口、生效方式和回滚方式。
+- 配置漂移能被脚本或 release gate 发现。
+
+### N5：SDK 企业交付与客户端兼容矩阵
+
+目标：让 SDK 具备客户端团队可稳定接入、升级和排障的交付质量。
+
+任务：
+
+- [x] 固化 C++、C ABI、Python、C# 的版本兼容矩阵和 native library 加载诊断。
+- [x] 完善 SDK 错误码、超时、heartbeat、reconnect、disconnect callback 和 push 分发语义。
+- [x] 为 C++、Python、C# 保留真实 gateway full-flow example，并接入 N5 聚合门禁。
+- [x] 增加 SDK package consumer matrix，覆盖安装、链接、运行、版本不匹配和错误诊断。
+- [x] 明确客户端接入建议，包括线程模型、回调线程、资源释放、并发限制和生产日志字段。
+- [ ] 正式 wheel/NuGet 签名与多平台包仓库发布仍为后续客户端发布专项。
+
+交付物：
+
+- 更新后的 `sdk/docs/README.md`
+- 更新后的 `sdk/docs/compatibility.md`
+- SDK full-flow / package consumer summary
+- Python/C# 生产接入示例说明
+- `scripts/verify_sdk_enterprise_delivery.py`
+
+验收标准：
+
+- 客户端能按文档独立完成安装、连接、登录、进房、战斗、排行榜、重连和排障。
+- 版本不匹配和 native 加载失败能给出清晰错误。
+- `python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/release --skip-build` 通过，并归档 distribution、package consumer、business-flow、real gateway full-flow 子 summary。
+- SDK 行为与真实服务端业务链路保持同步。
+
+### N6：gRPC / 协议演进 PoC 与生产取舍
+
+目标：在不影响默认 TCP 主链的前提下，用实测决定 generated gRPC transport 是否值得进入后续主线。
+
+任务：
+
+- [x] 基于现有 v3 proto 契约建立 N6 PoC 决策门禁，限定在独立 profile 或示例中，不替换默认 TCP 主链。
+- [x] 使用 TCP gateway + BackendEnvelope release baseline 作为当前对照基线；generated gRPC benchmark 缺失时结论保持实验保留。
+- [x] 明确兼容迁移策略，避免一次性替换主链导致生产风险。
+- [x] 将结论沉淀到 ADR，给出继续推进、保留实验或暂停的判定条件。
+- [ ] 真实 generated gRPC transport profile、SDK full-flow 和 benchmark 仍未进入默认生产链路，作为后续独立 PoC 专项。
+
+交付物：
+
+- 更新后的 `docs/v3-proto-grpc-adr.md`
+- `scripts/check_v3_grpc_poc_decision.py`
+- N6 PoC decision summary
+- TCP baseline 对照和迁移风险清单
+
+验收标准：
+
+- `python3 scripts/check_v3_grpc_poc_decision.py --build-dir build/release` 通过。
+- gRPC 是否进入下一阶段有数据支撑；当前结论是保留实验，不进入默认生产链路。
+- 默认生产主链不因 PoC 引入不稳定性。
+- 协议演进路径和回退策略清晰。
+
+## 下一阶段推荐执行顺序
+
+1. N0 固定 Runner 与证据自动化常态化。
+2. N1 长稳压测与容量基线。
+3. N2 生产监控 SLO 与告警闭环。
+4. N3 部署恢复、回滚与灾备演练。
+5. N4 传输安全与配置治理升级。
+6. N5 SDK 企业交付与客户端兼容矩阵。
+7. N6 gRPC / 协议演进 PoC 与生产取舍。
+
+推荐先从 N0 和 N1 开始，因为它们会直接暴露当前系统在真实生产环境下的波动、容量边界和回归风险；N2-N5 再围绕这些事实完善观测、部署、配置和客户端交付；N6 放在最后，避免在主链稳定前引入新的传输复杂度。
 
 ## 当前判断
 

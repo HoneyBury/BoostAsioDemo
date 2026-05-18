@@ -1,8 +1,40 @@
 # 固定 Runner 执行手册
 
+更新时间：2026-05-18（N0）
+
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
 P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs/production-evidence-runner.md`。
+
+## N0 统一约定
+
+从 N0 开始，固定 runner 相关 summary 统一要求：
+
+- JSON 顶层包含 `summary_version=2`
+- 统一包含 `overall_pass`、`passed`、`failed_category`、`failed_step`
+- 统一包含 `environment`，至少记录 `platform`、`python`、`host`
+- 统一包含 `artifacts`，指向 summary、report 或子 summary 路径
+- workflow step summary 统一通过 `scripts/render_validation_summary.py` 渲染，不再只上传 artifact
+
+失败归因约定：
+
+- `preflight`：runner 环境缺失，例如 Redis、Docker/kind、端口绑定能力、构建目录异常
+- `build`：构建失败或目标缺失
+- `specialized` / `stability` / `data_recovery` / `observability` / `release_baseline`：业务门禁或专项测试回归
+- `configuration`：workflow 输入组合本身非法，例如没有选择任何有效步骤
+
+## 固定 Runner 证据索引
+
+| 能力 | 推荐频率 | 推荐 runner | 关键 summary / 产物 |
+| --- | --- | --- | --- |
+| Release baseline | 每周 1 次 | `self-hosted,release-baseline` | `runtime/validation/fixed-runner-preflight-summary.json`、`runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json`、`runtime/perf/release-baseline/report.md` |
+| Specialized E2E default | 每周 2 次 | `self-hosted,raft-ha` 或通用 runner | `runtime/validation/fixed-runner-preflight-summary.json`、`runtime/validation/specialized-e2e-summary.json` |
+| Redis live / raft-ha | 每周 1 次 | `self-hosted,redis-live` / `self-hosted,raft-ha` | `runtime/validation/specialized-e2e-summary.json` |
+| Production resilience | 每周 1 次 | `self-hosted,production-resilience` | `runtime/validation/p5-fixed-runner-preflight-summary.json`、`runtime/validation/production-resilience-summary.json` |
+| Production evidence | 每周 1 次 | `self-hosted,production-evidence` | `runtime/validation/fixed-runner-preflight-summary.json`、`runtime/validation/production-evidence-summary.json` |
+| Observability runtime | 每周 1 次 | `self-hosted,observability` | `runtime/validation/observability-gate-summary.json`、`runtime/validation/gateway-observability-runtime-summary.json` |
+| P5-P8 business closure | 每周 1 次 | `self-hosted,business-closure` | `runtime/validation/p5-p8-business-closure-summary.json` |
+| K8s / Operator kind | 每周 1 次 | `self-hosted,operator-kind` | `runtime/validation/p5-control-plane-kind-summary.json`、`runtime/validation/p7-k8s-full-flow-summary.json` |
 
 ## Runner 标签建议
 

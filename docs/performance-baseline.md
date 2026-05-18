@@ -1,5 +1,7 @@
 # v2.0.2 性能基线报告
 
+更新时间：2026-05-18（N1）
+
 > 基准版本: `develop` (v2.0.1 + v2.0.2 B1-B3 测量基础设施)
 > 测量日期: 2026-05-12
 > 测量工具: `v2_gateway_pressure` (新增), `LatencyHistogram`, `ThroughputTracker`
@@ -150,6 +152,38 @@ pwsh ./scripts/collect_v2_perf_baseline.ps1 `
 - `rss_kb_per_connected_client` 与 `handles_per_connected_client`
 
 `collect_release_baseline.py` 在启用性能采集时会把 `performance_summary_path` 和 `performance_report_path` 写入 release summary，方便从 `runtime/validation/release-baseline-summary.json` 直接追溯性能证据。
+
+### 1.7 N1 证据索引
+
+N1 开始，性能证据统一按下面几类归档：
+
+| 类型 | 入口 | 关键产物 | 用途 |
+|---|---|---|---|
+| baseline | `collect_release_baseline.py --perf-preset baseline --perf-repetitions 3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json`、`runtime/perf/release-baseline/report.md` | 生产通过线、趋势比较 |
+| capacity | `collect_release_baseline.py --perf-preset capacity --perf-repetitions 3` | 同上 | 发现 5K/10K echo、battle-500 等边界退化点 |
+| bounded soak | `verify_stability_soak.py --soak-profile smoke|short|medium` | `runtime/validation/*stability-soak-summary.json`、`runtime/perf/v2-stability-soak/**` | 固定 runner 上的稳定性回归检查 |
+| long soak | `verify_stability_soak.py --soak-profile long|overnight` | 同上 | 对应 2h / 8h 长稳入口，需要固定 runner 与扩展 timeout |
+| business-flow perf | `collect_v2_perf_baseline.py --include-business-flow` | `summary.json.business_flow`、`business-flow-summary.json` | 业务闭环路径的性能与成功率证据 |
+| business-capacity | `collect_v2_perf_baseline.py --run-preset business-capacity --include-business-flow --business-flow-clients 3` | `summary.json`、`report.md`、`business-flow-summary.json` | 在容量路径上同时记录业务闭环吞吐与后端 diagnostics |
+| docker production snapshot | `collect_docker_production_perf_snapshot.py` | `runtime/perf/docker-production-snapshot/summary.json`、`report.md` | 部署健康、空载资源、观测链路状态 |
+
+注意：
+
+- `capacity` 失败可以作为边界证据归档，但不能冒充 baseline 通过线。
+- 2h/8h soak 仍需要固定 runner 或独占机器；默认 bounded soak 只用于回归守门。
+- `battle-500-30s` 当前用于验证 500 并发业务闭环和同步 backend route 的可持续容量，
+  默认输入间隔为 200ms，release gate 为 rejected=0、failed=0、forced_timeout=false、
+  total_messages>=20000、p99<=500ms。该门禁反映当前单 gateway acceptor/core0 与同步
+  backend route 架构的事实边界；若后续完成异步 gateway route 或真实多 core session
+  分流，再把 p99 目标重新收紧到 250ms。
+
+推荐 N1 固定 runner 命令：
+
+```bash
+python3 scripts/verify_stability_soak.py --build-dir build/release --soak-profile long --baseline-profile release --skip-build --summary-path runtime/validation/n1-long-soak-summary.json
+python3 scripts/verify_stability_soak.py --build-dir build/release --soak-profile overnight --baseline-profile release --skip-build --summary-path runtime/validation/n1-overnight-soak-summary.json
+python3 scripts/collect_v2_perf_baseline.py --build-dir build/release --run-preset business-capacity --repetitions 3 --include-business-flow --business-flow-clients 3 --output-root runtime/perf/n1-business-capacity
+```
 
 ### 1.7 Docker 生产栈采样入口
 

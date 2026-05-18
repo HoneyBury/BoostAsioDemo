@@ -507,6 +507,32 @@ TEST(V2BackendRoutingTest, BackendReturnsError) {
     backend.stop();
 }
 
+TEST(V2BackendRoutingTest, GatewayServiceBridgePreservesErrorPayload) {
+    app::logging::init("project_tests");
+
+    BackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = backend.port,
+        },
+        std::nullopt, std::nullopt,
+        std::nullopt, std::nullopt, metrics);
+
+    auto result = bridge.route(v2::service::ServiceId::kLogin,
+                               "reject_empty",
+                               "");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.error, v2::service::ServiceErrorCode::kInvalidRequest);
+    EXPECT_EQ(result.response_payload, "rejected");
+
+    bridge.shutdown();
+    backend.stop();
+}
+
 // ─── S2: DemoServer + GatewayServiceBridge tests ──────────────────
 
 #define SKIP_IF_V2_RUNTIME_UNAVAILABLE(server_ptr, startup_error)          \

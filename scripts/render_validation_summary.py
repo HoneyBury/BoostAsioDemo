@@ -74,6 +74,23 @@ def render_release_gates(summary: dict[str, Any]) -> list[str]:
     return lines
 
 
+def render_artifacts(summary: dict[str, Any]) -> list[str]:
+    artifacts = summary.get("artifacts")
+    if not isinstance(artifacts, dict) or not artifacts:
+        return []
+
+    lines = [
+        "### Artifacts",
+        "",
+        "| Name | Path |",
+        "| --- | --- |",
+    ]
+    for name, value in sorted(artifacts.items()):
+        lines.append(f"| `{name}` | `{value}` |")
+    lines.append("")
+    return lines
+
+
 def render_checks(checks: list[Any]) -> list[str]:
     if not checks:
         return []
@@ -106,12 +123,33 @@ def render_summary(path: Path, title: str | None) -> str:
     lines = [f"## {heading}", ""]
     lines.extend([
         f"- Path: `{path}`",
-        f"- Passed: **{status_icon(summary.get('passed'))}**",
+        f"- Passed: **{status_icon(summary.get('overall_pass', summary.get('passed')))}**",
     ])
-    for key in ("failed_category", "failed_step", "preset", "perf_preset", "soak_profile", "baseline_profile"):
+    for key in (
+        "summary_version",
+        "failed_category",
+        "failed_step",
+        "profile",
+        "preset",
+        "perf_preset",
+        "soak_profile",
+        "baseline_profile",
+        "duration_seconds",
+    ):
         value = summary.get(key)
         if value not in (None, ""):
             lines.append(f"- {key}: `{value}`")
+    environment = summary.get("environment")
+    if isinstance(environment, dict) and environment:
+        platform = environment.get("platform")
+        python_version = environment.get("python")
+        host = environment.get("host")
+        lines.append(
+            "- environment: "
+            f"`platform={platform or 'unknown'}` "
+            f"`python={python_version or 'unknown'}` "
+            f"`host={host or 'unknown'}`"
+        )
     lines.append("")
 
     steps = summary.get("steps")
@@ -123,6 +161,7 @@ def render_summary(path: Path, title: str | None) -> str:
     if isinstance(checks, list):
         lines.extend(render_checks(checks))
 
+    lines.extend(render_artifacts(summary))
     lines.extend(render_release_gates(summary))
     return "\n".join(lines).rstrip() + "\n"
 

@@ -27,6 +27,13 @@
 - P5 长稳/故障/回滚：`scripts/verify_production_resilience_gate.py` 聚合固定 runner 预检、stability soak、data recovery、Redis/Raft/Operator specialized E2E，并可显式追加 Redis live、Operator kind、runtime HTTP observability、release/capacity baseline；默认入口保持有界，summary 写入 `runtime/validation/production-resilience-summary.json`。
 - P6 生产证据聚合：`scripts/verify_production_evidence_gate.py` 将 stability soak、P3 data recovery、Redis/Raft/Operator specialized E2E、生产候选完整性审核与可选 release/capacity baseline 聚合为一个固定 runner 入口；默认模式保持有界，长稳、Redis live、Operator kind、settlement replay、capacity baseline 通过显式参数启用。本机 P6 收束验证已覆盖 Release 构建、Redis live、Operator kind 和 3 轮 Release baseline，交付记录见 `docs/releases/v3.3.2-p6-production-evidence.md`。
 - P2 固定 runner 证据：`.github/workflows/production-evidence.yml` 已支持 JSON runner 输入、preflight summary 归档、Redis/kind 真实依赖、runtime HTTP observability、release baseline 和 capacity baseline 的手动固定 runner 场景；配置说明见 `docs/production-evidence-runner.md`。
+- N0 固定 runner 常态化：`release-baseline.yml`、`specialized-e2e.yml` 已补齐 JSON runner、preflight summary 归档和统一 Step Summary 渲染；`check_fixed_runner_environment.py`、`render_validation_summary.py` 与各聚合 gate summary 已统一到 `summary_version=2`、`overall_pass`、`failed_category`、`environment`、`artifacts` 契约。本地收束证据见 `runtime/validation/n0-release-baseline-preflight-summary.json`、`runtime/validation/n0-specialized-preflight-summary.json`、`runtime/validation/n0-specialized-raft-ha-summary.json`。
+- N1 性能证据索引：`docs/performance-baseline.md` 已补 baseline / capacity / bounded soak / long soak / business-flow perf / business-capacity / docker snapshot 统一归档口径，`verify_stability_soak.py` 新增 `long` / `overnight` profile，`collect_v2_perf_baseline.py` 新增 `business-capacity` 与 `business_flow_clients` 入口，作为后续 2h/8h soak、5K/10K capacity、battle-500 与业务并发复测事实源；当前仍保留“固定 runner 实测数据待继续沉淀”的边界，不把短样本误宣称为生产上限。
+- N2 监控 SLO：Prometheus alerts 已新增 `BoostGatewayHighRouteLatency`、`BoostGatewayBusinessFlowFailure`，Grafana dashboard 已新增 route latency 与 business-flow success 面板；`docs/production-operations-runbook.md` 已明确 SLI/SLO 口径和告警响应流程。本地收束验证见 `runtime/validation/monitoring-operability-summary.json` 与 `runtime/validation/n2-observability-summary.json`。
+- N3 部署恢复/回滚：`scripts/check_production_recovery_gate.py` 已补默认有界静态门禁，覆盖 Docker Compose、Kubernetes rollout/rollback、Redis volume/PVC、RTO/RPO、SDK full-flow 恢复验证和运维记录模板，并接入 `scripts/verify_production_resilience_gate.py` 默认步骤；真实 Docker/K8s 演练仍由固定 runner 或预演环境持续归档。
+- N4 传输安全与配置治理：`scripts/check_transport_config_governance.py` 已聚合 TLS/mTLS profile 边界和配置漂移检查；K8s gateway ConfigMap 已补齐 `feature_flags`、`tls`、`security_policy`，默认生产结论仍是 plain TCP，TLS transport 上线需要 backend listener/Secret/SDK full-flow 额外证据。
+- N5 SDK 企业交付：`scripts/verify_sdk_enterprise_delivery.py` 已聚合 SDK distribution、package consumer、in-process business-flow 和真实 gateway full-flow；`sdk/docs/compatibility.md` 已补 C++/C ABI/Python/C# 客户端兼容矩阵，`sdk/docs/README.md` 已补生产客户端接入清单。
+- N6 gRPC/proto 取舍：`scripts/check_v3_grpc_poc_decision.py` 已补 v3 proto/gRPC PoC 决策门禁，验证 schema/transport contract、CMake target、TCP baseline 对照和 ADR 边界；当前结论是 generated gRPC 保留实验，不进入默认生产链路。
 - P3 监控运维：Prometheus 已加载 `env/monitoring/prometheus-alerts.yml`，Grafana dashboard 已对齐当前 gateway `/metrics` 真实指标，`scripts/check_monitoring_operability.py` 会阻断后端 HTTP scrape、旧指标名和 runbook 漂移；运维流程见 `docs/production-operations-runbook.md`。
 - P4 SDK 企业级封装：C++ SDK heartbeat 已实作，disconnect callback 可由 heartbeat failure 触发；C ABI 暴露 heartbeat 控制，Python/C# wrapper 增加 native 版本校验和加载/分配诊断；SDK business-flow 与 full-flow client 验证覆盖 login、room、ready、battle、push、reconnect、heartbeat。
 - H0-H5 生产候选硬化：`scripts/check_production_hardening_gate.py` 聚合固定 runner 定时入口、长稳/容量/K8s/观测/SDK 企业接入证据；`production-resilience.yml` 与 `production-evidence.yml` 已具备 weekly schedule 和 runner fallback。
@@ -41,7 +48,7 @@
 
 ## 当前阶段结论
 
-生产稳定化、交付闭环和生产业务闭环接入阶段已经完成当前规划的 P0-P8 收束。当前主线具备生产候选所需的默认有界 gate、固定 runner 入口、部署/运维/SDK 文档、监控告警静态校验、P5 resilience gate、P6 production evidence gate、P5-P8 business closure gate 和生产候选完整性审核。
+生产稳定化、交付闭环、生产业务闭环接入以及 N0-N6 生产数据沉淀与风险燃尽阶段已经完成当前规划收束。当前主线具备生产候选所需的默认有界 gate、固定 runner 入口、部署/运维/SDK 文档、监控告警静态校验、P5 resilience gate、P6 production evidence gate、P5-P8 business closure gate、N3 recovery gate、N4 transport/config governance gate、N5 SDK enterprise delivery gate、N6 gRPC PoC decision gate 和生产候选完整性审核。
 
 当前默认可执行入口：
 
@@ -49,13 +56,19 @@
 2. P5 resilience：`python3 scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build`
 3. P6 production evidence：`python3 scripts/verify_production_evidence_gate.py --build-dir build/default --skip-build`
 4. P5-P8 business closure：`python3 scripts/verify_p5_p8_business_closure.py --build-dir build/default --skip-build`
-5. 生产候选审核：`python3 scripts/check_production_candidate_audit.py`
+5. N4 transport/config governance：`python3 scripts/check_transport_config_governance.py`
+6. N5 SDK enterprise delivery：`python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/default --skip-build`
+7. N6 gRPC PoC decision：`python3 scripts/check_v3_grpc_poc_decision.py --build-dir build/default`
+8. 生产候选审核：`python3 scripts/check_production_candidate_audit.py`
 
 ## 下一阶段优先级
 
-下一阶段不再扩功能，建议进入“生产数据沉淀与风险燃尽”：
+当前“生产数据沉淀与风险燃尽”以 `docs/production-stabilization-roadmap.md` 的 N0-N6 为事实源，默认有界收束已经完成；长稳 2h/8h、10K 固定机器容量、真实 gRPC transport profile 等继续作为固定 runner 或后续专项持续沉淀。
 
-1. 固定 runner 常态化：按周归档 Redis live、raft-ha、OTel runtime、Operator kind、K8s full-flow 和 P5-P8 business closure。
-2. 长稳与容量：补 2h/8h soak、5K/10K echo、battle-500、RSS/fd/CPU/P99 曲线和退化阈值。
-3. 真实云端演练：在预发 K8s 或云主机上跑 Docker/K8s full-flow、回滚、备份恢复和监控告警链路。
-4. 后续专项：Prometheus route latency histogram/summary、backend exporter、generated gRPC transport PoC、默认 TLS transport 上线评估。
+1. N0 固定 Runner 与证据自动化常态化。
+2. N1 长稳压测与容量基线。
+3. N2 生产监控 SLO 与告警闭环。
+4. N3 部署恢复、回滚与灾备演练。
+5. N4 传输安全与配置治理升级。
+6. N5 SDK 企业交付与客户端兼容矩阵。
+7. N6 gRPC / 协议演进 PoC 与生产取舍。

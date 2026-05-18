@@ -217,11 +217,11 @@ void Session::do_read_body() {
 
                                     const auto trace_id = g_trace_id_counter.fetch_add(1, std::memory_order_relaxed);
 
-                                    LOG_INFO("Session {} received message {} with {} bytes body [trace={}]",
-                                             self->remote_endpoint(),
-                                             packet.message_id,
-                                             packet.body.size(),
-                                             trace_id);
+                                    LOG_DEBUG("Session {} received message {} with {} bytes body [trace={}]",
+                                              self->remote_endpoint(),
+                                              packet.message_id,
+                                              packet.body.size(),
+                                              trace_id);
 
                                     const PacketMessage message{
                                         .message_id = packet.message_id,

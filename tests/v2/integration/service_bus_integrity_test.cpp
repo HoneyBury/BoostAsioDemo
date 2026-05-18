@@ -821,6 +821,53 @@ TEST(ServiceBusIntegrity, GatewayBridgeCircuitBreakerHalfOpenProbeRecovers) {
     EXPECT_EQ(handled_requests.load(), 4);
 }
 
+TEST(ServiceBusIntegrity, GatewayBridgeBusinessRejectDoesNotOpenCircuit) {
+    std::atomic<int> handled_requests{0};
+    v2::service::BackendServer::HandlerMap handlers;
+    handlers["room_start_battle"] = [&](const v2::service::BackendEnvelope&) {
+        ++handled_requests;
+        v2::service::BackendEnvelope resp;
+        resp.kind = v2::service::MessageKind::kError;
+        resp.error_code = static_cast<std::int32_t>(
+            v2::service::ServiceErrorCode::kRejected);
+        resp.payload = R"({"status":"error","reason":"not_all_ready"})";
+        return resp;
+    };
+    v2::service::BackendServer server(0, std::move(handlers));
+    server.start();
+
+    v2::gateway::GatewayServiceBridge bridge(
+        std::nullopt,
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = server.local_port(),
+            .timeout = std::chrono::milliseconds(50),
+            .connect_timeout = std::chrono::milliseconds(100),
+        });
+    bridge.configure_circuit_breaker(
+        v2::service::ServiceId::kRoom,
+        v2::service::CircuitBreakerOptions{
+            .failure_threshold = 2,
+            .timeout = std::chrono::milliseconds(30),
+            .half_open_max_requests = 1,
+        });
+
+    for (int i = 0; i < 5; ++i) {
+        const auto result = bridge.route(
+            v2::service::ServiceId::kRoom,
+            "room_start_battle",
+            R"({"user_id":"alice","room_id":"room_1"})");
+        EXPECT_FALSE(result.success);
+        EXPECT_EQ(result.error, v2::service::ServiceErrorCode::kRejected);
+        EXPECT_NE(result.response_payload.find("not_all_ready"), std::string::npos);
+    }
+
+    bridge.shutdown();
+    server.stop();
+
+    EXPECT_EQ(handled_requests.load(), 5);
+}
+
 TEST(ServiceBusIntegrity, ServiceErrorCodeClientMapping) {
     using v2::service::ServiceErrorCode;
     // Verify all service error codes have defined to_client_error mappings

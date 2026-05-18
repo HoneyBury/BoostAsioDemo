@@ -110,7 +110,7 @@ public:
 #endif
         }
         acceptor_.bind(endpoint);
-        acceptor_.listen();
+        acceptor_.listen(boost::asio::socket_base::max_listen_connections);
     }
 
     void async_accept(std::function<void(std::unique_ptr<IoSession>)> on_accept) override {
@@ -133,6 +133,12 @@ public:
                 }
                 on_accept(std::make_shared<net::Session>(std::move(socket), session_options_));
             });
+    }
+
+    void close() override {
+        boost::system::error_code ec;
+        acceptor_.cancel(ec);
+        acceptor_.close(ec);
     }
 
     [[nodiscard]] std::uint16_t local_port() const override {
@@ -163,19 +169,23 @@ public:
 
     void async_accept(
         std::function<void(std::unique_ptr<IoSession>)> on_accept) override {
-        auto core_id = engine_->current_core_id();
-        auto index = core_id.has_value()
-                         ? static_cast<std::size_t>(*core_id) % acceptors_.size()
-                         : std::size_t{0};
-        acceptors_[index]->async_accept(std::move(on_accept));
+        std::scoped_lock lock(mutex_);
+        wrapped_accept_handler_ = std::move(on_accept);
+        if (wrapped_accept_started_) {
+            return;
+        }
+        wrapped_accept_started_ = true;
+        arm_wrapped_acceptors_locked();
     }
 
     void async_accept_native(NativeSessionAcceptHandler on_accept) override {
-        auto core_id = engine_->current_core_id();
-        auto index = core_id.has_value()
-                         ? static_cast<std::size_t>(*core_id) % acceptors_.size()
-                         : std::size_t{0};
-        acceptors_[index]->async_accept_native(std::move(on_accept));
+        std::scoped_lock lock(mutex_);
+        native_accept_handler_ = std::move(on_accept);
+        if (native_accept_started_) {
+            return;
+        }
+        native_accept_started_ = true;
+        arm_native_acceptors_locked();
     }
 
     [[nodiscard]] std::uint16_t local_port() const override {
@@ -198,9 +208,95 @@ public:
 
     [[nodiscard]] bool is_multi_core() const noexcept override { return true; }
 
+    void close() override {
+        std::scoped_lock lock(mutex_);
+        closing_ = true;
+        wrapped_accept_handler_ = nullptr;
+        native_accept_handler_ = nullptr;
+        for (auto& acceptor : acceptors_) {
+            if (acceptor) {
+                acceptor->close();
+            }
+        }
+    }
+
 private:
+    void arm_wrapped_acceptor(std::size_t index) {
+        auto loop = std::make_shared<std::function<void()>>();
+        *loop = [this, index, loop]() {
+            acceptors_[index]->async_accept(
+                [this, loop](std::unique_ptr<IoSession> session) {
+                    std::function<void(std::unique_ptr<IoSession>)> handler;
+                    {
+                        std::scoped_lock lock(mutex_);
+                        if (closing_) {
+                            return;
+                        }
+                        handler = wrapped_accept_handler_;
+                    }
+                    if (handler) {
+                        handler(std::move(session));
+                    }
+                    {
+                        std::scoped_lock lock(mutex_);
+                        if (closing_) {
+                            return;
+                        }
+                    }
+                    (*loop)();
+                });
+        };
+        (*loop)();
+    }
+
+    void arm_native_acceptor(std::size_t index) {
+        auto loop = std::make_shared<std::function<void()>>();
+        *loop = [this, index, loop]() {
+            acceptors_[index]->async_accept_native(
+                [this, loop](std::shared_ptr<net::Session> session) {
+                    NativeSessionAcceptHandler handler;
+                    {
+                        std::scoped_lock lock(mutex_);
+                        if (closing_) {
+                            return;
+                        }
+                        handler = native_accept_handler_;
+                    }
+                    if (handler) {
+                        handler(std::move(session));
+                    }
+                    {
+                        std::scoped_lock lock(mutex_);
+                        if (closing_) {
+                            return;
+                        }
+                    }
+                    (*loop)();
+                });
+        };
+        (*loop)();
+    }
+
+    void arm_wrapped_acceptors_locked() {
+        for (std::size_t index = 0; index < acceptors_.size(); ++index) {
+            arm_wrapped_acceptor(index);
+        }
+    }
+
+    void arm_native_acceptors_locked() {
+        for (std::size_t index = 0; index < acceptors_.size(); ++index) {
+            arm_native_acceptor(index);
+        }
+    }
+
     std::vector<std::unique_ptr<IoAcceptor>> acceptors_;
     AsioIoEngine* engine_ = nullptr;
+    std::mutex mutex_;
+    std::function<void(std::unique_ptr<IoSession>)> wrapped_accept_handler_;
+    NativeSessionAcceptHandler native_accept_handler_;
+    bool wrapped_accept_started_ = false;
+    bool native_accept_started_ = false;
+    bool closing_ = false;
 };
 
 }  // namespace

@@ -25,6 +25,9 @@
 | P3 SDK 安装消费 | `python scripts/verify_sdk_package_consumer.py --build-dir <build-dir>` | SDK 可安装到临时 prefix，外部 CMake 项目可 `find_package(boost_gateway_sdk)` 并链接 `boost_gateway::sdk` |
 | P4 SDK 业务闭环 | `python scripts/verify_sdk_business_flow.py --build-dir <build-dir>` | SDK C++ 业务 API 跑通 login、echo、room、ready、battle、reconnect、heartbeat、push 与多客户端闭环 |
 | P4 SDK 示例联调 | `python scripts/verify_sdk_full_flow_client.py --build-dir <build-dir>` | 启动真实 login/room/battle/matchmaking/leaderboard 后端、`v2_gateway_demo` 和 `sdk_full_flow_client`，验证 SDK full-flow 覆盖新增业务路径与 backend metrics |
+| N4 传输安全/配置治理 | `python scripts/check_transport_config_governance.py` | TLS/mTLS profile 边界和 Docker/K8s/Helm 配置漂移检查通过；默认生产仍明确为 plain TCP |
+| N5 SDK 企业交付 | `python scripts/verify_sdk_enterprise_delivery.py --build-dir <build-dir> --skip-build` | SDK distribution、package consumer、business-flow 和真实 gateway full-flow 全部通过 |
+| N6 gRPC PoC 取舍 | `python scripts/check_v3_grpc_poc_decision.py --build-dir <build-dir>` | v3 proto/transport contract、CMake target、TCP baseline 对照和 ADR 取舍通过；generated gRPC 不进入默认主链 |
 
 ## 2. R4 契约状态
 
@@ -135,6 +138,9 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 | 专项 E2E 失败 | 若变更涉及 Redis/Raft/Operator，对应专项必须先修复或明确标记为外部环境缺失 |
 | 数据恢复门禁失败 | 先修复 replay/result/snapshot、WriteBehind flush/drain、Redis 降级或 Raft committed restart replay 中的失败项 |
 | P6 生产证据聚合失败 | 先查看 `runtime/validation/production-evidence-summary.json` 的 `failed_category` / `failed_step`，再修复对应 stability、data recovery、specialized 或 release baseline 子 summary |
+| N4 传输/配置治理失败 | 先查看 `runtime/validation/n4-transport-config-governance-summary.json`，修复 TLS 边界误判或 Docker/K8s/Helm 配置漂移 |
+| N5 SDK 企业交付失败 | 先查看 `runtime/validation/n5-sdk-enterprise-delivery-summary.json`，区分 distribution、package consumer、business-flow 或真实 full-flow 失败 |
+| N6 gRPC PoC 取舍失败 | 先查看 `runtime/validation/n6-v3-grpc-poc-decision-summary.json`；不得绕过 ADR 直接把 generated gRPC 接入默认生产链路 |
 
 ## 6. 发布记录模板
 

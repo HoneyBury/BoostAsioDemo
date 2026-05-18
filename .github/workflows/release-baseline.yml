@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: "Runner label"
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","release-baseline"]'
         required: true
-        default: "ubuntu-latest"
+        default: '"ubuntu-latest"'
       configure_preset:
         description: "CMake configure preset"
         required: true
@@ -45,7 +45,7 @@ permissions:
 
 jobs:
   release-baseline:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner || '"ubuntu-latest"') }}
 
     steps:
       - name: Checkout
@@ -66,6 +66,7 @@ jobs:
           python scripts/check_fixed_runner_environment.py
           --profile release-baseline
           --build-dir ${{ inputs.build_dir }}
+          --summary-path runtime/validation/fixed-runner-preflight-summary.json
 
       - name: Configure
         run: cmake --preset ${{ inputs.configure_preset }}
@@ -86,6 +87,7 @@ jobs:
         run: |
           summaries=()
           for path in \
+            runtime/validation/fixed-runner-preflight-summary.json \
             runtime/validation/release-baseline-summary.json \
             runtime/validation/release-r4-contract-summary.json \
             runtime/perf/release-baseline/summary.json; do
@@ -103,6 +105,7 @@ jobs:
         with:
           name: release-baseline-${{ inputs.runner }}-${{ inputs.perf_preset }}
           path: |
+            runtime/validation/fixed-runner-preflight-summary.json
             runtime/validation/release-baseline-summary.json
             runtime/perf/release-baseline/**
             runtime/perf/v2-arch-baseline/**

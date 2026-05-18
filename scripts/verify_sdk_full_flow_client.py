@@ -18,6 +18,31 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def write_temp_gateway_config(
+    path: Path,
+    http_port: int,
+    login_port: int,
+    room_port: int,
+    battle_port: int,
+    match_port: int,
+    leaderboard_port: int,
+) -> None:
+    document = {
+        "gateway": {
+            "http_management_port": http_port,
+        },
+        "backends": {
+            "login": {"host": "127.0.0.1", "port": login_port},
+            "room": {"host": "127.0.0.1", "port": room_port},
+            "battle": {"host": "127.0.0.1", "port": battle_port},
+            "match": {"host": "127.0.0.1", "port": match_port},
+            "leaderboard": {"host": "127.0.0.1", "port": leaderboard_port},
+        },
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+
+
 def run_command(name: str, command: list[str], checks: list[dict[str, Any]]) -> bool:
     started = time.monotonic()
     result = subprocess.run(command, cwd=REPO_ROOT, text=True, capture_output=True)
@@ -213,8 +238,16 @@ def main() -> int:
     processes: list[tuple[str, subprocess.Popen[str]]] = []
     try:
         base_env = os.environ.copy()
-        no_config = str(REPO_ROOT / "runtime/validation/sdk-full-flow-no-config.json")
-
+        temp_gateway_config = REPO_ROOT / "runtime/validation/sdk-full-flow-temp-gateway.json"
+        write_temp_gateway_config(
+            temp_gateway_config,
+            http_port=http_port,
+            login_port=login_port,
+            room_port=room_port,
+            battle_port=battle_port,
+            match_port=match_port,
+            leaderboard_port=leaderboard_port,
+        )
         backend_specs = [
             ("login", login_backend, login_port, {"SERVICE_PORT": str(login_port)}),
             ("room", room_backend, room_port, {"SERVICE_PORT": str(room_port)}),
@@ -225,7 +258,6 @@ def main() -> int:
         for name, executable, port, extra_env in backend_specs:
             env = dict(base_env)
             env.update(extra_env)
-            env["CONFIG_PATH"] = no_config
             proc = start_process(name, [str(executable)], env, checks)
             if proc is not None:
                 processes.append((name, proc))
@@ -245,7 +277,7 @@ def main() -> int:
                 return write_summary(args.summary_path, checks, failed)
 
         gateway_env = dict(base_env)
-        gateway_env["CONFIG_PATH"] = no_config
+        gateway_env["CONFIG_PATH"] = str(temp_gateway_config)
         gateway_proc = start_process(
             "gateway",
             [
@@ -295,6 +327,9 @@ def main() -> int:
     finally:
         for name, proc in reversed(processes):
             terminate_process(name, proc, checks)
+        temp_gateway_config = REPO_ROOT / "runtime/validation/sdk-full-flow-temp-gateway.json"
+        if temp_gateway_config.exists():
+            temp_gateway_config.unlink()
 
     failed = [check for check in checks if not check["passed"]]
     return write_summary(args.summary_path, checks, failed)

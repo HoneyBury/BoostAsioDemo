@@ -281,6 +281,37 @@ TEST(V2DemoServerSmokeTest, DemoServerReportsConfiguredIoCoreCount) {
     EXPECT_EQ(server.io_core_count(), 2U);
 }
 
+TEST(V2DemoServerSmokeTest, DemoServerUsesMultiCoreAcceptorWhenNotPinned) {
+    app::logging::init("project_tests");
+
+    try {
+        auto io_engine = std::make_unique<v2::io::AsioIoEngine>(4);
+        v2::gateway::DemoServer server(0, {}, {}, std::move(io_engine));
+        server.start();
+
+        EXPECT_EQ(server.io_core_count(), 4U);
+        EXPECT_EQ(server.acceptor_core_id(), 0U);
+
+        TestClient client;
+        client.connect(server.local_port());
+        const auto login = client.exchange(net::protocol::kLoginRequest, 61, "multi_user|token:multi_user|MultiUser");
+        EXPECT_EQ(login.message_id, net::protocol::kLoginResponse);
+
+        const auto snapshots = server.io_core_snapshot();
+        ASSERT_EQ(snapshots.size(), 4U);
+        std::uint64_t accepted_total = 0;
+        for (const auto& snapshot : snapshots) {
+            accepted_total += snapshot.accepted_sessions;
+        }
+        EXPECT_EQ(accepted_total, 1U);
+
+        client.close();
+        server.stop();
+    } catch (const std::exception& ex) {
+        GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
+    }
+}
+
 TEST(V2DemoServerSmokeTest, DemoServerTracksPinnedAcceptorCoreAndSessionSnapshot) {
     app::logging::init("project_tests");
 

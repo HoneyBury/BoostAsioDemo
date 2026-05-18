@@ -112,6 +112,7 @@ struct BenchResult {
     double latency_p99_ms = 0.0;
     double latency_min_ms = 0.0;
     double latency_max_ms = 0.0;
+    std::array<std::size_t, v2::benchmark::kLatencyBucketCount> latency_bucket_counts{};
 };
 
 // ---------------------------------------------------------------------------
@@ -209,6 +210,7 @@ public:
                std::size_t idx,
                v2::benchmark::ThroughputTracker* throughput,
                std::shared_ptr<std::vector<std::shared_ptr<std::atomic<std::size_t>>>> room_done = nullptr,
+               std::shared_ptr<std::vector<std::shared_ptr<std::atomic<std::size_t>>>> room_ready = nullptr,
                std::shared_ptr<std::atomic<std::uint64_t>> progress_tick = nullptr)
         : strand_(asio::make_strand(io)),
           resolver_(strand_), socket_(strand_), send_timer_(strand_),
@@ -217,12 +219,13 @@ public:
           user_id_("bench_user_" + std::to_string(idx)),
           throughput_(throughput),
           room_done_counters_(std::move(room_done)),
+          room_ready_counters_(std::move(room_ready)),
           progress_tick_(std::move(progress_tick)) {}
 
     void start() {
         auto self = shared_from_this();
         const auto stagger = std::chrono::milliseconds(
-            static_cast<int>((client_index_ % 8) * 20));
+            static_cast<int>(client_index_ * 5));
         send_timer_.expires_after(stagger);
         send_timer_.async_wait([self](const error_code& ec) {
             if (ec) {
@@ -231,7 +234,7 @@ public:
             self->resolver_.async_resolve(
                 self->config_.host, std::to_string(self->config_.port),
                 [self](const error_code& resolve_ec, const tcp::resolver::results_type& eps) {
-                    if (resolve_ec) { self->fail(); return; }
+                    if (resolve_ec) { self->fail("resolve", resolve_ec); return; }
                     self->do_connect(eps);
                 });
         });
@@ -250,9 +253,41 @@ private:
     void do_connect(const tcp::resolver::results_type& eps) {
         auto self = shared_from_this();
         asio::async_connect(socket_, eps, [self](const error_code& ec, const tcp::endpoint&) {
-            if (ec) { self->fail(); return; }
+            if (ec) {
+                self->retry_connect_or_fail(ec);
+                return;
+            }
             self->send_login();
         });
+    }
+
+    void retry_connect_or_fail(const error_code& ec) {
+        if (connect_retry_attempts_ >= kMaxConnectRetries ||
+            controller_->time_expired() ||
+            controller_->global_completion()) {
+            fail("connect", ec);
+            return;
+        }
+
+        ++connect_retry_attempts_;
+        LOG_WARN("pressure client {} connect attempt {} failed: {}; retrying",
+                 user_id_, connect_retry_attempts_, ec.message());
+        error_code ignored;
+        socket_.close(ignored);
+        resolver_.async_resolve(
+            config_.host, std::to_string(config_.port),
+            [self = shared_from_this()](const error_code& resolve_ec,
+                                        const tcp::resolver::results_type& eps) {
+                if (resolve_ec) {
+                    self->fail("resolve", resolve_ec);
+                    return;
+                }
+                const auto delay = bounded_retry_delay(
+                    self->connect_retry_attempts_, std::chrono::milliseconds(100));
+                self->schedule_delayed(delay, [self, eps]() {
+                    self->do_connect(eps);
+                });
+            });
     }
 
     void send_login() {
@@ -270,7 +305,7 @@ private:
         auto self = shared_from_this();
         asio::async_write(socket_, asio::buffer(outbound_packet_),
             [self](const error_code& ec, std::size_t) {
-                if (ec) { self->fail(); return; }
+                if (ec) { self->fail("write", ec); return; }
                 self->read_header();
             });
     }
@@ -284,7 +319,7 @@ private:
         asio::async_read(socket_, asio::buffer(read_header_),
             [self](const error_code& ec, std::size_t) {
                 self->read_pending_ = false;
-                if (ec) { self->fail(); return; }
+                if (ec) { self->fail("read_header", ec); return; }
                 self->expected_body_length_ = net::packet::decode_length(self->read_header_);
                 self->read_body_.assign(self->expected_body_length_, '\0');
                 self->read_body();
@@ -295,7 +330,7 @@ private:
         auto self = shared_from_this();
         asio::async_read(socket_, asio::buffer(read_body_),
             [self](const error_code& ec, std::size_t) {
-                if (ec) { self->fail(); return; }
+                if (ec) { self->fail("read_body", ec); return; }
                 auto packet = net::packet::decode_payload(self->read_body_);
                 self->dispatch(packet);
             });
@@ -310,6 +345,10 @@ private:
         if (pkt.message_id == net::protocol::kErrorResponse) {
             LOG_WARN("pressure client {} received error: code={} body={}",
                      user_id_, pkt.error_code, pkt.body);
+            if (config_.scenario == BenchScenario::kBattle && handle_recoverable_battle_error(pkt)) {
+                wait_for_next_message();
+                return;
+            }
             if (config_.scenario == BenchScenario::kBattle &&
                 pkt.error_code == static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted)) {
                 battle_finished_ = true;
@@ -372,9 +411,7 @@ private:
             if (is_room_owner()) {
                 send_packet(net::protocol::kRoomCreateRequest, room_name_for_client());
             } else {
-                schedule_delayed(std::chrono::milliseconds(20 * client_index_), [this]() {
-                    send_packet(net::protocol::kRoomJoinRequest, room_name_for_client());
-                });
+                schedule_room_join_when_created();
             }
             return;
         }
@@ -392,16 +429,16 @@ private:
         }
 
         if (pkt.message_id == net::protocol::kRoomStatePush) {
-            LOG_INFO("pressure client {} room_state push: {}", user_id_, pkt.body);
+            LOG_DEBUG("pressure client {} room_state push: {}", user_id_, pkt.body);
             if (!battle_start_requested_ &&
                 is_room_owner() &&
                 room_state_all_ready(pkt.body)) {
-                LOG_INFO("pressure client {} detected all-ready room state, scheduling battle start",
-                         user_id_);
+                LOG_DEBUG("pressure client {} detected all-ready room state, scheduling battle start",
+                          user_id_);
                 battle_start_requested_ = true;
                 schedule_delayed(std::chrono::milliseconds(50), [this]() {
-                    LOG_INFO("pressure client {} sending battle start for room {}",
-                             user_id_, room_name_for_client());
+                    LOG_DEBUG("pressure client {} sending battle start for room {}",
+                              user_id_, room_name_for_client());
                     send_packet(net::protocol::kBattleStartRequest, room_name_for_client());
                 });
             }
@@ -411,6 +448,9 @@ private:
 
         if (pkt.message_id == net::protocol::kRoomReadyResponse) {
             ++ready_count_;
+            if (const auto ready_counter = room_ready_counter()) {
+                ready_counter->fetch_add(1, std::memory_order_relaxed);
+            }
             maybe_schedule_battle_start_retry();
             wait_for_next_message();
             return;
@@ -418,8 +458,8 @@ private:
 
         if (pkt.message_id == net::protocol::kBattleStartResponse ||
             pkt.message_id == net::protocol::kBattleStatePush) {
-            LOG_INFO("pressure client {} battle-start related msg={} body={}",
-                     user_id_, pkt.message_id, pkt.body);
+            LOG_DEBUG("pressure client {} battle-start related msg={} body={}",
+                      user_id_, pkt.message_id, pkt.body);
             const bool scheduled_send = maybe_enter_battle(pkt);
             if (battle_finished_ || controller_->global_completion()) {
                 finish();
@@ -471,6 +511,60 @@ private:
         LOG_WARN("pressure client {} ignoring unexpected battle-flow msg={} body={}",
                  user_id_, pkt.message_id, pkt.body);
         wait_for_next_message();
+    }
+
+    bool handle_recoverable_battle_error(const net::packet::DecodedPacket& pkt) {
+        const auto is_room_backend_error =
+            pkt.error_code == static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable);
+        const auto room_not_ready =
+            pkt.body == "room_not_found" ||
+            pkt.body == "not_all_ready" ||
+            pkt.body == "not_enough_players";
+        const auto already_started = pkt.body == "battle_already_started";
+
+        if (!is_room_backend_error && !room_not_ready && !already_started) {
+            return false;
+        }
+
+        if (!in_room_) {
+            if (pkt.body != "room_not_found") {
+                return false;
+            }
+            schedule_room_join_when_created();
+            return true;
+        }
+
+        if (is_room_owner() && !in_battle_ && (room_not_ready || already_started)) {
+            if (already_started) {
+                battle_start_requested_ = true;
+            } else if (battle_start_error_retries_ >= kMaxBattleStartErrorRetries) {
+                return false;
+            } else {
+                ++battle_start_error_retries_;
+                battle_start_requested_ = false;
+            }
+            const auto delay = already_started
+                ? std::chrono::milliseconds(100)
+                : bounded_retry_delay(battle_start_error_retries_, std::chrono::milliseconds(100));
+            schedule_delayed(delay, [this]() {
+                maybe_schedule_battle_start_retry();
+            });
+            return true;
+        }
+
+        if (!is_room_owner() && !in_battle_ && (room_not_ready || already_started)) {
+            if (passive_wait_retries_ >= kMaxPassiveBattleWaitRetries) {
+                return false;
+            }
+            ++passive_wait_retries_;
+            battle_start_requested_ = false;
+            schedule_delayed(bounded_retry_delay(passive_wait_retries_, std::chrono::milliseconds(100)), [this]() {
+                wait_for_next_message();
+            });
+            return true;
+        }
+
+        return false;
     }
 
     // -------------------------------------------------------------------
@@ -647,27 +741,43 @@ private:
         return (*room_done_counters_)[group_index];
     }
 
+    [[nodiscard]] std::shared_ptr<std::atomic<std::size_t>> room_ready_counter() const {
+        if (!room_ready_counters_) {
+            return nullptr;
+        }
+        const auto group_index = room_group_index();
+        if (group_index >= room_ready_counters_->size()) {
+            return nullptr;
+        }
+        return (*room_ready_counters_)[group_index];
+    }
+
     void maybe_schedule_battle_start_retry() {
         if (!is_room_owner() || battle_start_requested_ || in_battle_ || battle_finished_) {
             return;
         }
 
+        const auto ready_counter = room_ready_counter();
+        const auto ready_clients = ready_counter
+            ? ready_counter->load(std::memory_order_relaxed)
+            : ready_count_;
         const auto joined_counter = room_join_counter();
         const auto joined_clients = joined_counter
             ? joined_counter->load(std::memory_order_relaxed)
             : config_.room_group_size;
 
-        if (joined_clients >= config_.room_group_size) {
+        if (joined_clients >= config_.room_group_size &&
+            ready_clients >= config_.room_group_size) {
             battle_start_requested_ = true;
             schedule_delayed(std::chrono::milliseconds(150), [this]() {
-                LOG_INFO("pressure client {} sending delayed battle start for room {}",
-                         user_id_, room_name_for_client());
+                LOG_DEBUG("pressure client {} sending delayed battle start for room {}",
+                          user_id_, room_name_for_client());
                 send_packet(net::protocol::kBattleStartRequest, room_name_for_client());
             });
             return;
         }
 
-        if (battle_start_retry_attempts_ >= 50) {
+        if (battle_start_retry_attempts_ >= kMaxBattleStartWaitRetries) {
             LOG_WARN("pressure client {} timed out waiting for grouped battle start in room {}",
                      user_id_, room_name_for_client());
             finish_rejected();
@@ -678,6 +788,43 @@ private:
         schedule_delayed(std::chrono::milliseconds(100), [this]() {
             maybe_schedule_battle_start_retry();
         });
+    }
+
+    void schedule_room_join_when_created() {
+        if (is_room_owner() || in_room_ || finished_.load(std::memory_order_relaxed)) {
+            return;
+        }
+
+        const auto joined_counter = room_join_counter();
+        const auto joined_clients = joined_counter
+            ? joined_counter->load(std::memory_order_relaxed)
+            : 0U;
+        if (joined_clients > 0) {
+            const auto stagger_ms = std::min<std::size_t>(room_group_index() * 2, 500);
+            schedule_delayed(std::chrono::milliseconds(stagger_ms), [this]() {
+                send_packet(net::protocol::kRoomJoinRequest, room_name_for_client());
+            });
+            return;
+        }
+
+        if (join_wait_attempts_ >= kMaxRoomCreateWaitRetries) {
+            LOG_WARN("pressure client {} timed out waiting for room creation in room {}",
+                     user_id_, room_name_for_client());
+            finish_rejected();
+            return;
+        }
+
+        ++join_wait_attempts_;
+        schedule_delayed(std::chrono::milliseconds(50), [this]() {
+            schedule_room_join_when_created();
+        });
+    }
+
+    static std::chrono::milliseconds bounded_retry_delay(std::size_t attempt,
+                                                         std::chrono::milliseconds base) {
+        const auto multiplier = std::min<std::size_t>(attempt, 8);
+        return std::min(std::chrono::milliseconds(base.count() * static_cast<int>(multiplier)),
+                        std::chrono::milliseconds(1000));
     }
 
     void touch_progress() {
@@ -721,9 +868,14 @@ private:
         controller_->on_client_rejected();
     }
 
-    void fail() {
+    void fail(std::string_view stage = "unknown", error_code ec = {}) {
         if (finished_.exchange(true, std::memory_order_relaxed)) {
             return;
+        }
+        if (ec) {
+            LOG_WARN("pressure client {} failed at {}: {}", user_id_, stage, ec.message());
+        } else {
+            LOG_WARN("pressure client {} failed at {}", user_id_, stage);
         }
         if (config_.scenario == BenchScenario::kBattle &&
             (battle_finished_ || controller_->global_completion())) {
@@ -769,13 +921,23 @@ private:
     bool battle_loop_started_ = false;
     bool battle_finished_ = false;
     std::size_t battle_start_retry_attempts_ = 0;
+    std::size_t battle_start_error_retries_ = 0;
+    std::size_t connect_retry_attempts_ = 0;
+    std::size_t join_wait_attempts_ = 0;
+    std::size_t passive_wait_retries_ = 0;
     std::size_t ready_count_ = 0;
     std::size_t received_battle_inputs_ = 0;
     bool battle_start_requested_ = false;
     bool read_pending_ = false;
     std::atomic<bool> finished_{false};
     std::shared_ptr<std::vector<std::shared_ptr<std::atomic<std::size_t>>>> room_done_counters_;
+    std::shared_ptr<std::vector<std::shared_ptr<std::atomic<std::size_t>>>> room_ready_counters_;
     std::shared_ptr<std::atomic<std::uint64_t>> progress_tick_;
+    static constexpr std::size_t kMaxRoomCreateWaitRetries = 600;
+    static constexpr std::size_t kMaxBattleStartWaitRetries = 300;
+    static constexpr std::size_t kMaxBattleStartErrorRetries = 12;
+    static constexpr std::size_t kMaxPassiveBattleWaitRetries = 20;
+    static constexpr std::size_t kMaxConnectRetries = 8;
 };
 
 // ---------------------------------------------------------------------------
@@ -797,6 +959,8 @@ nlohmann::json to_json(const BenchResult& r) {
         {"latency_p99_ms", r.latency_p99_ms},
         {"latency_min_ms", r.latency_min_ms},
         {"latency_max_ms", r.latency_max_ms},
+        {"latency_buckets_ms", v2::benchmark::kLatencyBucketBoundariesMs},
+        {"latency_bucket_counts", r.latency_bucket_counts},
     };
 }
 
@@ -872,8 +1036,12 @@ int main(int argc, char* argv[]) {
     auto room_done_counters =
         std::make_shared<std::vector<std::shared_ptr<std::atomic<std::size_t>>>>();
     room_done_counters->reserve(room_group_count);
+    auto room_ready_counters =
+        std::make_shared<std::vector<std::shared_ptr<std::atomic<std::size_t>>>>();
+    room_ready_counters->reserve(room_group_count);
     for (std::size_t i = 0; i < room_group_count; ++i) {
         room_done_counters->push_back(std::make_shared<std::atomic<std::size_t>>(0));
+        room_ready_counters->push_back(std::make_shared<std::atomic<std::size_t>>(0));
     }
     auto progress_tick = std::make_shared<std::atomic<std::uint64_t>>(0);
 
@@ -939,7 +1107,7 @@ int main(int argc, char* argv[]) {
 
     for (std::size_t i = 0; i < config.client_count; ++i) {
         auto client = std::make_shared<LoadClient>(
-            io, controller, config, i, &throughput, room_done_counters, progress_tick);
+            io, controller, config, i, &throughput, room_done_counters, room_ready_counters, progress_tick);
         clients.push_back(client);
         client->start();
     }
@@ -1037,6 +1205,7 @@ int main(int argc, char* argv[]) {
     result.latency_p99_ms = lat_snap.p99_ms;
     result.latency_min_ms = lat_snap.min_ms;
     result.latency_max_ms = lat_snap.max_ms;
+    result.latency_bucket_counts = lat_snap.bucket_counts;
 
     const auto result_json = to_json(result).dump();
 

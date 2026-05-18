@@ -38,6 +38,12 @@ TLS profile 边界检查：
 python3 scripts/check_tls_profile.py --generate-dev-certs
 ```
 
+N4 传输安全与配置治理聚合门禁：
+
+```bash
+python3 scripts/check_transport_config_governance.py --generate-dev-certs --summary-path runtime/validation/n4-transport-config-governance-summary.json
+```
+
 P5-P8 聚合入口会自动运行该检查：
 
 ```bash
@@ -51,6 +57,21 @@ python3 scripts/verify_p5_p8_business_closure.py --build-dir build/default --ski
 - gateway bridge 按 `security_policy.require_tls` 和 `v3_tls_enabled` 控制 TLS。
 - backend connection 在传入 `tls_config` 时具备 TLS handshake 路径。
 - 证书生成器和证书可读性正常。
+- 配置治理门禁能发现 Docker/K8s/Helm 与生产配置事实源之间的漂移。
+
+`scripts/verify_production_resilience_gate.py` 也会运行 N4 聚合门禁，默认写出 `runtime/validation/p5-transport-config-governance-summary.json`，用于发布前归档。
+
+## 证书轮换与回滚
+
+生产证书轮换建议使用灰度发布：
+
+1. 在 Secret Manager、Kubernetes Secret 或 Vault 中发布新 CA/server/client 证书，记录指纹与过期时间。
+2. 先运行 `scripts/check_tls_profile.py --generate-dev-certs` 验证本地 profile 没有误打开默认 TLS。
+3. 在预发或固定 runner 上打开 `security_policy.require_tls=true` 与 `feature_flags.v3_tls_enabled` 灰度比例，运行 SDK full-flow。
+4. 观察连接失败率、backend TLS handshake 错误、leaderboard mTLS 拒绝数和证书过期告警。
+5. 回滚时先关闭 `v3_tls_enabled`，必要时回退 Secret 版本并滚动重启 gateway/backend。
+
+当前仓库仍没有 backend 服务端 TLS listener 的生产实现，因此证书轮换流程是上线前置流程，不是默认生产链路的启用说明。
 
 ## 上线要求
 

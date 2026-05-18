@@ -1,8 +1,20 @@
 # 生产证据固定 Runner 配置说明
 
-日期：2026-05-17
+日期：2026-05-18
 
 本文档用于收束 P2：把 P6 生产证据从本地手动命令推进到可归档的固定 runner 流水线。默认 PR/Release 仍保持有界 smoke，真实依赖、长项和容量数据必须在固定 runner 上显式开启。
+
+## N0 Summary 契约
+
+固定 runner 相关 summary 统一要求如下：
+
+- 顶层使用 `summary_version=2`
+- `overall_pass` 用于表示统一口径的通过/失败；`passed` 继续兼容历史脚本
+- `failed_category` 用于区分 `preflight`、`build`、`specialized`、`stability`、`data_recovery`、`observability`、`release_baseline`、`configuration`
+- `environment` 记录 `platform`、`python`、`host`
+- `artifacts` 明确列出子 summary、性能 summary、性能报告等路径
+
+GitHub Actions Step Summary 统一通过 `scripts/render_validation_summary.py` 渲染，避免不同 workflow 的输出格式继续漂移。
 
 ## Runner 标签
 
@@ -64,3 +76,12 @@ python scripts/check_fixed_runner_environment.py \
 - 启用 runtime observability 时归档 `runtime/validation/p2-observability-runtime-summary.json` 与 `runtime/validation/gateway-observability-runtime-summary.json`
 
 通过标准是所有启用项 summary 的 `passed=true`。容量专项如果用于发现上限，可以允许性能 gate 失败，但必须在发布说明中标注它是容量边界证据，不得把失败 capacity 结果声明为生产基线通过。
+
+## 推荐运行矩阵
+
+| 阶段 | 建议运行项 | 目标 |
+| --- | --- | --- |
+| 每周例行 | bounded default + runtime observability | 确认默认生产证据链和 HTTP 观测没有回归 |
+| Redis / kind 例行 | Redis live + Operator kind | 持续沉淀真实依赖场景证据 |
+| 性能例行 | release baseline + capacity baseline | 沉淀 baseline/capacity 趋势和退化点 |
+| 发布前 | Redis + kind + runtime observability + release baseline | 形成完整生产候选 evidence |

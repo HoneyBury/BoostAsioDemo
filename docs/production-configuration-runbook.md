@@ -185,8 +185,20 @@ docker compose -f env/docker/docker-compose.yml up -d --no-build --force-recreat
 配置治理校验：
 
 ```bash
-python3 scripts/check_config_governance.py
+python3 scripts/check_config_governance.py --summary-path runtime/validation/config-governance-summary.json
 ```
+
+## Config Drift 规则
+
+发布前必须把配置漂移当成阻断项处理。`scripts/check_config_governance.py` 会检查：
+
+- `config/environments/<env>/*.json` 是否齐全、可解析、端口和 `service.config_version` 是否符合约定。
+- Docker Compose 是否挂载统一配置目录，并为每个服务注入 `/app/config/environments/docker/<service>.json`。
+- K8s gateway ConfigMap 是否保留生产 gateway 的端口、backend route、`feature_flags`、`tls` 和 `security_policy`。
+- Helm 默认值是否保持 TLS 默认关闭，gateway/backend 端口是否与生产配置一致。
+- 本 runbook 是否保留配置入口、热重载边界、发布回滚和漂移检查说明。
+
+发现漂移时不要只修改部署文件或只修改 JSON。处理顺序是：先确认 `config/environments/production/*.json` 是否仍是期望事实源，再同步 Docker/K8s/Helm 映射，最后重新生成 summary 并归档到发布记录。
 
 完整发布前建议叠加：
 

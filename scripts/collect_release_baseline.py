@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import subprocess
 import sys
 import time
@@ -85,18 +86,33 @@ def main() -> int:
     root = Path(__file__).resolve().parent.parent
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     summary: dict[str, object] = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(args.build_dir.resolve()),
         "configuration": args.configuration,
         "baseline_profile": "release",
         "perf_preset": args.perf_preset,
         "perf_repetitions": args.perf_repetitions,
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
+        "overall_pass": False,
         "passed": False,
+        "failed_category": "",
         "failed_step": "",
         "steps": [],
+        "artifacts": {
+            "summary_path": str(summary_path),
+            "r4_contract_summary_path": str(root / "runtime" / "validation" / "release-r4-contract-summary.json"),
+            "performance_summary_path": str(root / "runtime" / "perf" / "release-baseline" / "summary.json"),
+            "performance_report_path": str(root / "runtime" / "perf" / "release-baseline" / "report.md"),
+        },
     }
 
     if args.skip_r4 and args.skip_perf:
+        summary["failed_category"] = "configuration"
         summary["failed_step"] = "no release baseline steps selected"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -134,6 +150,7 @@ def main() -> int:
         steps.append(step)
         if step["status"] != "passed":
             summary["steps"] = steps
+            summary["failed_category"] = "build"
             summary["failed_step"] = str(step["name"])
             summary_path.parent.mkdir(parents=True, exist_ok=True)
             summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -185,14 +202,15 @@ def main() -> int:
             root,
             args.perf_timeout_seconds,
         ))
-        summary["performance_summary_path"] = str(perf_output / "summary.json")
-        summary["performance_report_path"] = str(perf_output / "report.md")
 
     summary["steps"] = steps
+    summary["duration_seconds"] = round(sum(float(step.get("duration_seconds", 0.0)) for step in steps), 3)
     failed = next((step for step in steps if step["status"] != "passed"), None)
     if failed is None:
+        summary["overall_pass"] = True
         summary["passed"] = True
     else:
+        summary["failed_category"] = str(failed.get("category", "release_baseline"))
         summary["failed_step"] = str(failed["name"])
 
     summary_path.parent.mkdir(parents=True, exist_ok=True)

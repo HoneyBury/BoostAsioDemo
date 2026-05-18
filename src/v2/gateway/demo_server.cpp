@@ -121,10 +121,14 @@ void DemoServer::start() {
         management_thread_ = std::make_unique<std::thread>([this]() { management_io_->run(); });
         LOG_INFO("v2 demo server HTTP management listening on :{}", *options_.http_management_port);
     }
-    acceptor_ = io_engine_->listen("0.0.0.0",
-                                   port_,
-                                   session_options_,
-                                   v2::io::IoListenOptions{.fixed_core_id = options_.acceptor_core_id});
+    v2::io::IoListenOptions listen_options{
+        .fixed_core_id = options_.acceptor_core_id,
+        .accept_policy = options_.acceptor_core_id.has_value()
+            ? v2::io::AcceptPolicy::kFixed
+            : v2::io::AcceptPolicy::kRoundRobin,
+        .reuse_port = io_engine_->num_io_cores() > 1 && !options_.acceptor_core_id.has_value(),
+    };
+    acceptor_ = io_engine_->listen("0.0.0.0", port_, session_options_, listen_options);
     LOG_INFO("v2 demo server listening on 0.0.0.0:{}", acceptor_->local_port());
     do_accept();
     start_config_watcher();
@@ -148,7 +152,9 @@ void DemoServer::stop() {
 
     {
         std::scoped_lock lock(sessions_mutex_);
-        acceptor_.reset();
+        if (acceptor_) {
+            acceptor_->close();
+        }
         for (auto& [session_id, session] : sessions_) {
             (void)session_id;
             session->close();
@@ -164,6 +170,7 @@ void DemoServer::stop() {
         }
     }
     io_engine_->stop();
+    acceptor_.reset();
 }
 
 void DemoServer::set_write_scheduler(SessionWriteScheduler scheduler) {

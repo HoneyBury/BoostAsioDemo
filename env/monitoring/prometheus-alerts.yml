@@ -60,6 +60,16 @@ groups:
           summary: "Leaderboard backend errors or timeouts detected"
           description: "Leaderboard failures may indicate Redis degradation or leaderboard backend issues. Verify redis-cli ping and leaderboard logs."
 
+      - alert: BoostGatewayHighRouteLatency
+        expr: max({__name__=~"gateway_backend_.*_avg_latency_us"}) > 200000
+        for: 5m
+        labels:
+          severity: warning
+          component: backend-routing
+        annotations:
+          summary: "Backend route latency is elevated"
+          description: "Gateway diagnostics-derived backend average latency exceeded 200ms. Use /metrics/json and /metrics/diagnostics/json to identify the degraded backend path."
+
       - alert: BoostGatewayRedisExporterDown
         expr: up{job="redis-exporter"} == 0
         for: 2m
@@ -101,6 +111,16 @@ groups:
         annotations:
           summary: "Gateway active sessions are close to capacity"
           description: "Active sessions exceeded the current production warning threshold. Compare with release/capacity baseline."
+
+      - alert: BoostGatewayBusinessFlowFailure
+        expr: rate(gateway_login_success_total[10m]) == 0 or rate(gateway_room_join_success_total[10m]) == 0 or rate(gateway_battle_start_success_total[10m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: business-flow
+        annotations:
+          summary: "Core business-flow success counters are not advancing"
+          description: "One or more core success counters for login, room join, or battle start stopped advancing. Cross-check SDK full-flow, /ready, and backend diagnostics before release."
 
   - name: boost-gateway.optional-runtime-exporters
     rules:

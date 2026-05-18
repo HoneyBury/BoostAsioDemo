@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import subprocess
 import sys
 import time
@@ -107,6 +108,7 @@ def main() -> int:
     root = Path(__file__).resolve().parent.parent
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     summary: dict[str, object] = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(args.build_dir.resolve()),
         "configuration": args.configuration,
@@ -117,10 +119,30 @@ def main() -> int:
         "include_runtime_http": args.include_runtime_http,
         "include_release_baseline": args.include_release_baseline,
         "include_capacity_baseline": args.include_capacity_baseline,
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
+        "overall_pass": False,
         "passed": False,
         "failed_category": "",
         "failed_step": "",
         "steps": [],
+        "artifacts": {
+            "summary_path": str(summary_path),
+            "preflight_summary_path": str(root / "runtime" / "validation" / "p5-fixed-runner-preflight-summary.json"),
+            "recovery_summary_path": str(root / "runtime" / "validation" / "p5-production-recovery-summary.json"),
+            "transport_config_summary_path": str(
+                root / "runtime" / "validation" / "p5-transport-config-governance-summary.json"
+            ),
+            "soak_summary_path": str(root / "runtime" / "validation" / "p5-long-soak-summary.json"),
+            "fault_recovery_summary_path": str(root / "runtime" / "validation" / "p5-fault-data-recovery-summary.json"),
+            "specialized_summary_path": str(root / "runtime" / "validation" / "p5-specialized-failure-summary.json"),
+            "runtime_http_summary_path": str(root / "runtime" / "validation" / "p5-runtime-observability-summary.json"),
+            "control_plane_summary_path": str(root / "runtime" / "validation" / "p5-control-plane-kind-summary.json"),
+            "release_baseline_summary_path": str(root / "runtime" / "validation" / "p5-release-baseline-summary.json"),
+        },
     }
 
     preflight_cmd = [
@@ -141,6 +163,30 @@ def main() -> int:
     steps = [
         run_step("P5 fixed-runner preflight", "preflight", preflight_cmd, root, 60),
     ]
+
+    recovery_cmd = [
+        sys.executable,
+        str(root / "scripts" / "check_production_recovery_gate.py"),
+        "--summary-path",
+        str(root / "runtime" / "validation" / "p5-production-recovery-summary.json"),
+    ]
+    steps.append(run_step("P5/N3 deployment recovery and rollback evidence", "recovery", recovery_cmd, root, 60))
+
+    transport_config_cmd = [
+        sys.executable,
+        str(root / "scripts" / "check_transport_config_governance.py"),
+        "--summary-path",
+        str(root / "runtime" / "validation" / "p5-transport-config-governance-summary.json"),
+    ]
+    steps.append(
+        run_step(
+            "P5/N4 transport security and config drift evidence",
+            "transport_config",
+            transport_config_cmd,
+            root,
+            90,
+        )
+    )
 
     stability_cmd = [
         sys.executable,
@@ -243,11 +289,13 @@ def main() -> int:
         steps.append(run_step("P5 release/capacity regression evidence", "release_baseline", release_cmd, root, args.step_timeout_seconds))
 
     summary["steps"] = steps
+    summary["duration_seconds"] = round(sum(float(step.get("duration_seconds", 0.0)) for step in steps), 3)
     failed = next((step for step in steps if step.get("status") != "passed"), None)
     if failed:
         summary["failed_category"] = str(failed.get("category", "unknown"))
         summary["failed_step"] = str(failed.get("name", "unknown"))
     else:
+        summary["overall_pass"] = True
         summary["passed"] = True
 
     summary_path.parent.mkdir(parents=True, exist_ok=True)

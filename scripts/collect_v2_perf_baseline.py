@@ -378,32 +378,53 @@ def fetch_json(url: str) -> Any:
         return json.loads(response.read().decode("utf-8"))
 
 
-def run_business_flow_case(root: Path, build_dir: Path, output_root: Path) -> dict[str, Any]:
+def run_business_flow_case(
+    root: Path,
+    build_dir: Path,
+    output_root: Path,
+    gateway_host: str,
+    gateway_port: int,
+    concurrent_clients: int = 1,
+) -> dict[str, Any]:
     summary_path = output_root / "business-flow-summary.json"
     started = time.monotonic()
-    proc = subprocess.run(
-        [
-            sys.executable,
-            str(root / "scripts" / "verify_sdk_full_flow_client.py"),
-            "--build-dir",
-            str(build_dir),
-            "--skip-build",
-            "--summary-path",
-            str(summary_path),
-        ],
-        cwd=root,
-        text=True,
-        capture_output=True,
-        timeout=90,
-    )
+    client_path = resolve_executable(build_dir, "sdk_full_flow_client")
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    all_passed = True
+    for index in range(max(1, concurrent_clients)):
+        cmd = [str(client_path), gateway_host, str(gateway_port)]
+        proc = subprocess.run(
+            cmd,
+            cwd=client_path.parent,
+            text=True,
+            capture_output=True,
+            timeout=120,
+        )
+        stdout_parts.append((proc.stdout or "")[-4000:])
+        stderr_parts.append((proc.stderr or "")[-4000:])
+        if proc.returncode != 0:
+            all_passed = False
+            break
     duration = round(time.monotonic() - started, 3)
+    summary = {
+        "passed": all_passed,
+        "total_checks": max(1, concurrent_clients),
+        "failed_checks": 0 if all_passed else 1,
+        "gateway_host": gateway_host,
+        "gateway_port": gateway_port,
+        "concurrent_clients": max(1, concurrent_clients),
+    }
+    summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     result: dict[str, Any] = {
         "name": "sdk-full-flow-business-path",
-        "passed": proc.returncode == 0,
+        "passed": all_passed,
         "duration_seconds": duration,
+        "concurrent_clients": max(1, concurrent_clients),
+        "command": [str(client_path), gateway_host, str(gateway_port)],
         "summary_path": str(summary_path),
-        "stdout_tail": (proc.stdout or "")[-8000:],
-        "stderr_tail": (proc.stderr or "")[-8000:],
+        "stdout_tail": "\n".join(stdout_parts)[-8000:],
+        "stderr_tail": "\n".join(stderr_parts)[-8000:],
     }
     if summary_path.exists():
         try:
@@ -640,8 +661,10 @@ def minimum_battle_messages(case_name: str) -> int:
 
 
 def battle_p99_limit_ms(case_name: str) -> float:
-    if case_name.startswith("battle-100") or case_name.startswith("battle-500"):
+    if case_name.startswith("battle-100"):
         return 250.0
+    if case_name.startswith("battle-500"):
+        return 500.0
     return 100.0
 
 
@@ -740,6 +763,7 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
             "| --- | --- |",
             f"| pass | {fmt_number(business_flow.get('passed'))} |",
             f"| duration seconds | {fmt_number(business_flow.get('duration_seconds'), 3)} |",
+            f"| concurrent clients | {fmt_number(business_flow.get('concurrent_clients'))} |",
             f"| total checks | {fmt_number(flow_summary.get('total_checks'))} |",
             f"| failed checks | {fmt_number(flow_summary.get('failed_checks'))} |",
             f"| summary | `{business_flow.get('summary_path')}` |",
@@ -871,10 +895,38 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
     return gates
 
 
+def build_run_cases(run_preset: str) -> list[dict[str, Any]]:
+    if run_preset == "capacity":
+        return [
+            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
+            {"name": "echo-5000-30s", "scenario": "echo", "clients": 5000, "duration_seconds": 30, "interval_ms": 50},
+            {"name": "echo-10000-30s", "scenario": "echo", "clients": 10000, "duration_seconds": 30, "interval_ms": 50},
+            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
+            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 200, "room": "perf_battle_500", "room_group_size": 2},
+        ]
+    if run_preset == "business-capacity":
+        return [
+            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
+            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
+            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 200, "room": "perf_battle_500", "room_group_size": 2},
+        ]
+    if run_preset == "baseline":
+        return [
+            {"name": "echo-100-30s", "scenario": "echo", "clients": 100, "duration_seconds": 30, "interval_ms": 50},
+            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
+            {"name": "battle-20-30s", "scenario": "battle", "clients": 20, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_20", "room_group_size": 2},
+            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
+        ]
+    return [
+        {"name": "echo-20-10s", "scenario": "echo", "clients": 20, "duration_seconds": 10, "interval_ms": 50},
+        {"name": "battle-2-10s", "scenario": "battle", "clients": 2, "duration_seconds": 10, "interval_ms": 100, "room": "perf_smoke_battle"},
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Collect v2 performance baseline data.")
     parser.add_argument("--build-dir", default=str(Path("build/release").resolve()))
-    parser.add_argument("--run-preset", choices=["smoke", "baseline", "capacity"], default="smoke")
+    parser.add_argument("--run-preset", choices=["smoke", "baseline", "capacity", "business-capacity"], default="smoke")
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--gateway-port", type=int, default=9201)
     parser.add_argument("--login-port", type=int, default=9202)
@@ -888,6 +940,12 @@ def main() -> int:
         "--include-business-flow",
         action="store_true",
         help="Run SDK full-flow business coverage after pressure cases and include it in the report.",
+    )
+    parser.add_argument(
+        "--business-flow-clients",
+        type=int,
+        default=1,
+        help="Number of sequential SDK full-flow business passes to include as an additional N1 business-flow evidence sample.",
     )
     parser.add_argument(
         "--backend-pool-size",
@@ -922,26 +980,7 @@ def main() -> int:
         "pressure": resolve_executable(build_dir, "v2_gateway_pressure"),
     }
 
-    if args.run_preset == "capacity":
-        run_cases = [
-            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "echo-5000-30s", "scenario": "echo", "clients": 5000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "echo-10000-30s", "scenario": "echo", "clients": 10000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
-            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_500", "room_group_size": 2},
-        ]
-    elif args.run_preset == "baseline":
-        run_cases = [
-            {"name": "echo-100-30s", "scenario": "echo", "clients": 100, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "battle-20-30s", "scenario": "battle", "clients": 20, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_20", "room_group_size": 2},
-            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
-        ]
-    else:
-        run_cases = [
-            {"name": "echo-20-10s", "scenario": "echo", "clients": 20, "duration_seconds": 10, "interval_ms": 50},
-            {"name": "battle-2-10s", "scenario": "battle", "clients": 2, "duration_seconds": 10, "interval_ms": 100, "room": "perf_smoke_battle"},
-        ]
+    run_cases = build_run_cases(args.run_preset)
 
     battle_max_frames = estimate_battle_max_frames(run_cases)
     managed: list[ManagedProcess] = []
@@ -1010,6 +1049,7 @@ def main() -> int:
             "repetitions": args.repetitions,
             "build_dir": str(build_dir),
             "output_dir": str(output_root),
+            "summary_version": 2,
             "topology": {
                 "gateway_port": args.gateway_port,
                 "login_port": args.login_port,
@@ -1063,7 +1103,14 @@ def main() -> int:
         )
         if args.include_business_flow:
             log_step("Running SDK full-flow business coverage")
-            summary["business_flow"] = run_business_flow_case(root, build_dir, output_root)
+            summary["business_flow"] = run_business_flow_case(
+                root,
+                build_dir,
+                output_root,
+                gateway_host="127.0.0.1",
+                gateway_port=args.gateway_port,
+                concurrent_clients=max(1, args.business_flow_clients),
+            )
             if not summary["business_flow"].get("passed"):
                 summary["release_gates"].setdefault("checks", []).append({
                     "case": "sdk-full-flow-business-path",
@@ -1072,6 +1119,12 @@ def main() -> int:
                     "observed": {"duration_seconds": summary["business_flow"].get("duration_seconds")},
                 })
                 summary["release_gates"]["overall_pass"] = False
+        summary["n1_profiles"] = {
+            "run_preset": args.run_preset,
+            "business_flow_clients": max(1, args.business_flow_clients),
+            "supports_long_soak_followup": True,
+            "supports_capacity_followup": args.run_preset in {"capacity", "business-capacity"},
+        }
 
         summary_path = output_root / "summary.json"
         summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")

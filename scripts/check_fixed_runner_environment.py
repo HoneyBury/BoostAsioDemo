@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import platform
 import shutil
@@ -53,6 +54,18 @@ def check_kind_cluster(required: bool, errors: list[str], warnings: list[str]) -
         else:
             warnings.append(message)
         return {"name": "kind:clusters", "required": required, "status": "failed" if required else "warning", "message": message}
+
+
+def environment_snapshot() -> dict[str, object]:
+    return {
+        "platform": platform.platform(),
+        "system": platform.system(),
+        "release": platform.release(),
+        "machine": platform.machine(),
+        "python": sys.version.split()[0],
+        "host": socket.gethostname(),
+        "cwd": os.getcwd(),
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -143,22 +156,22 @@ def main() -> int:
         })
 
     summary = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "profile": args.profile,
         "build_dir": str(args.build_dir),
         "require_redis": args.require_redis,
         "redis_endpoint": f"{args.redis_host}:{args.redis_port}",
         "require_kind": args.require_kind,
-        "platform": {
-            "system": platform.system(),
-            "release": platform.release(),
-            "machine": platform.machine(),
-            "python": sys.version.split()[0],
-        },
+        "environment": environment_snapshot(),
+        "overall_pass": not errors,
         "passed": not errors,
         "warnings": warnings,
         "errors": errors,
         "checks": checks,
+        "artifacts": {
+            "summary_path": str(summary_path),
+        },
     }
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import subprocess
 import sys
 import time
@@ -96,6 +97,7 @@ def main() -> int:
     root = Path(__file__).resolve().parent.parent
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     summary: dict[str, object] = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(args.build_dir.resolve()),
         "configuration": args.configuration,
@@ -106,10 +108,24 @@ def main() -> int:
         "include_settlement_replay": args.include_settlement_replay,
         "include_release_baseline": args.include_release_baseline,
         "include_capacity_baseline": args.include_capacity_baseline,
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
+        "overall_pass": False,
         "passed": False,
         "failed_category": "",
         "failed_step": "",
         "steps": [],
+        "artifacts": {
+            "summary_path": str(summary_path),
+            "stability_summary_path": str(root / "runtime" / "validation" / "p6-stability-soak-summary.json"),
+            "data_recovery_summary_path": str(root / "runtime" / "validation" / "p6-data-recovery-summary.json"),
+            "specialized_summary_path": str(root / "runtime" / "validation" / "p6-specialized-e2e-summary.json"),
+            "candidate_audit_summary_path": str(root / "runtime" / "validation" / "p6-candidate-audit-summary.json"),
+            "release_baseline_summary_path": str(root / "runtime" / "validation" / "p6-release-baseline-summary.json"),
+        },
     }
 
     steps: list[dict[str, object]] = []
@@ -227,11 +243,13 @@ def main() -> int:
         ))
 
     summary["steps"] = steps
+    summary["duration_seconds"] = round(sum(float(step.get("duration_seconds", 0.0)) for step in steps), 3)
     failed = next((step for step in steps if step.get("status") != "passed"), None)
     if failed:
         summary["failed_category"] = str(failed.get("category", "unknown"))
         summary["failed_step"] = str(failed.get("name", "unknown"))
     else:
+        summary["overall_pass"] = True
         summary["passed"] = True
 
     summary_path.parent.mkdir(parents=True, exist_ok=True)

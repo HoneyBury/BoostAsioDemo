@@ -62,6 +62,7 @@ public:
     virtual void async_accept(
         std::function<void(std::unique_ptr<IoSession>)> on_accept) = 0;
     virtual void async_accept_native(NativeSessionAcceptHandler on_accept) = 0;
+    virtual void close() = 0;
     [[nodiscard]] virtual std::uint16_t local_port() const = 0;
     [[nodiscard]] virtual std::uint32_t owning_core_id() const noexcept = 0;
     [[nodiscard]] virtual AcceptPolicy accept_policy() const noexcept = 0;

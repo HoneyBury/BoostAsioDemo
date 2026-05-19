@@ -80,6 +80,35 @@ def validate_source_boundary(checks: list[dict[str, Any]]) -> None:
     )
     add(
         checks,
+        "backend-server-has-tls-listener",
+        file_contains(ROOT / "src/v2/service/backend_server.cpp", "handle_tls_session")
+        and file_contains(ROOT / "include/v2/service/backend_server.h", "BackendServerOptions")
+        and file_contains(ROOT / "src/v2/login/login_backend_service.cpp", "tls_config_"),
+        "backend server supports opt-in TLS listener and login service can consume backend TLS config",
+    )
+    add(
+        checks,
+        "all-backend-examples-wire-tls-config",
+        all(
+            file_contains(ROOT / path, "set_tls_config(config.tls_config)")
+            for path in (
+                "examples/v2_room_backend/main.cpp",
+                "examples/v2_battle_backend/main.cpp",
+                "examples/v2_match_backend/main.cpp",
+                "examples/v2_leaderboard_backend/main.cpp",
+            )
+        )
+        and file_contains(ROOT / "examples/v2_login_backend/main.cpp", "options.tls_config = config.tls_config"),
+        "all backend entrypoints consume governed backend TLS config",
+    )
+    add(
+        checks,
+        "backend-tls-full-flow-test",
+        file_contains(ROOT / "tests/v2/integration/backend_routing_test.cpp", "BackendTlsListenerCompletesLoginRequest"),
+        "integration test covers backend TLS listener plus BackendConnection request/response flow",
+    )
+    add(
+        checks,
         "gateway-security-policy-gates-tls",
         file_contains(ROOT / "src/v2/gateway/gateway_service_bridge.cpp", "v3_tls_enabled")
         and file_contains(ROOT / "src/v2/gateway/gateway_service_bridge.cpp", "security_policy_->require_tls"),
@@ -97,6 +126,20 @@ def validate_source_boundary(checks: list[dict[str, Any]]) -> None:
         "certificate-generator-exists",
         (ROOT / "scripts/gen_certs.py").exists() and (ROOT / "scripts/gen_certs.sh").exists(),
         "dev certificate generator exists",
+    )
+    add(
+        checks,
+        "docker-backend-tls-profile",
+        file_contains(ROOT / "env/docker/docker-compose.yml", "BACKEND_TLS_ENABLED")
+        and file_contains(ROOT / "env/docker/docker-compose.yml", "../../certs:/app/certs:ro"),
+        "Docker Compose exposes an opt-in backend TLS profile and cert mount",
+    )
+    add(
+        checks,
+        "k8s-backend-tls-secret-profile",
+        file_contains(ROOT / "env/k8s/login-backend-deployment.yaml", "secretName: backend-tls")
+        and file_contains(ROOT / "env/k8s/login-backend-deployment.yaml", "BACKEND_TLS_ENABLED"),
+        "Kubernetes login backend has an opt-in TLS Secret mount profile",
     )
 
 

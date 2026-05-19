@@ -195,6 +195,7 @@ python3 scripts/check_config_governance.py --summary-path runtime/validation/con
 - `config/environments/<env>/*.json` 是否齐全、可解析、端口和 `service.config_version` 是否符合约定。
 - Docker Compose 是否挂载统一配置目录，并为每个服务注入 `/app/config/environments/docker/<service>.json`。
 - K8s gateway ConfigMap 是否保留生产 gateway 的端口、backend route、`feature_flags`、`tls` 和 `security_policy`。
+- Docker/K8s/Helm 是否保留 backend TLS profile 的 cert mount / Secret mount，并保持默认关闭。
 - Helm 默认值是否保持 TLS 默认关闭，gateway/backend 端口是否与生产配置一致。
 - 本 runbook 是否保留配置入口、热重载边界、发布回滚和漂移检查说明。
 
@@ -222,6 +223,7 @@ build/release/sdk/examples/sdk_full_flow_client 127.0.0.1 9201
 - gateway 监听端口、管理端口、线程数
 - backend 端口
 - backend Redis / Raft / JWT / battle 参数
+- backend TLS listener 开关、证书路径、CA 和 verify mode
 - secret
 - Prometheus / Alertmanager / Grafana provisioning
 

@@ -4,8 +4,11 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
+
+#include "v3/cluster/tls_config.h"
 
 namespace v3::cluster {
 struct RaftConfig;
@@ -73,6 +76,7 @@ public:
     // v3.0.0: Raft consensus configuration
     void set_raft_config(v3::cluster::RaftConfig config);
     [[nodiscard]] bool is_raft_leader() const;
+    void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config);
 
 private:
     class Impl;

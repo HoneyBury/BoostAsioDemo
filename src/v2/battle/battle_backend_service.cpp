@@ -78,7 +78,9 @@ public:
         handlers["battle_input"] = [this](const auto& req) { return handle_battle_input(req); };
         handlers["battle_finish"] = [this](const auto& req) { return handle_battle_finish(req); };
 
-        server_ = std::make_unique<v2::service::BackendServer>(port_, std::move(handlers));
+        server_ = std::make_unique<v2::service::BackendServer>(
+            v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
+            std::move(handlers));
         server_->start();
     }
 
@@ -92,9 +94,14 @@ public:
         return server_ ? server_->local_port() : port_;
     }
 
+    void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config) {
+        tls_config_ = std::move(tls_config);
+    }
+
 private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
+    std::optional<v3::cluster::TlsSessionConfig> tls_config_;
     BattleManager battle_manager_;
 
     v2::service::BackendEnvelope handle_battle_create(
@@ -321,5 +328,10 @@ BattleBackendService::~BattleBackendService() = default;
 void BattleBackendService::start() { impl_->start(); }
 void BattleBackendService::stop() { impl_->stop(); }
 std::uint16_t BattleBackendService::local_port() const { return impl_->local_port(); }
+
+void BattleBackendService::set_tls_config(
+    std::optional<v3::cluster::TlsSessionConfig> tls_config) {
+    impl_->set_tls_config(std::move(tls_config));
+}
 
 }  // namespace v2::battle

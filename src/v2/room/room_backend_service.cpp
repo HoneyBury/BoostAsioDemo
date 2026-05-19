@@ -90,7 +90,9 @@ public:
         handlers["room_start_battle"] = [this](const auto& req) { return handle_room_start_battle(req); };
         handlers["room_leave"] = [this](const auto& req) { return handle_room_leave(req); };
 
-        server_ = std::make_unique<v2::service::BackendServer>(port_, std::move(handlers));
+        server_ = std::make_unique<v2::service::BackendServer>(
+            v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
+            std::move(handlers));
         server_->start();
     }
 
@@ -104,10 +106,15 @@ public:
         return server_ ? server_->local_port() : port_;
     }
 
+    void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config) {
+        tls_config_ = std::move(tls_config);
+    }
+
 private:
     std::uint16_t port_;
     std::uint32_t battle_max_frames_ = 3;
     std::unique_ptr<v2::service::BackendServer> server_;
+    std::optional<v3::cluster::TlsSessionConfig> tls_config_;
     RoomStateManager room_manager_;
 
     v2::service::BackendEnvelope handle_room_create(
@@ -326,5 +333,10 @@ RoomBackendService::~RoomBackendService() = default;
 void RoomBackendService::start() { impl_->start(); }
 void RoomBackendService::stop() { impl_->stop(); }
 std::uint16_t RoomBackendService::local_port() const { return impl_->local_port(); }
+
+void RoomBackendService::set_tls_config(
+    std::optional<v3::cluster::TlsSessionConfig> tls_config) {
+    impl_->set_tls_config(std::move(tls_config));
+}
 
 }  // namespace v2::room

@@ -168,7 +168,8 @@ SDK full-flow 恢复证据；同时已补 `docs/production-recovery-drill-record
 - [x] 补充证书生成、加载、轮转、过期告警和回滚策略。
 - [x] 统一热重载、重启生效和环境变量配置的分类文档，明确生产变更审批和回滚方式。
 - [x] 对配置变更增加 drift check，避免 Docker、Helm、K8s 和本地配置互相漂移。
-- [ ] backend 服务端 TLS listener、Secret 挂载和 TLS profile 下 SDK full-flow 实操仍作为后续上线前置条件，不计入默认 plain TCP 生产链路。
+- [x] backend 服务端 TLS listener、五个 backend 入口配置接入、Docker/K8s/Helm Secret/volume profile 和 backend TLS request/response 实测已补齐。
+- [ ] TLS profile 下完整 SDK full-flow 实操仍作为后续上线前置条件，不计入默认 plain TCP 生产链路。
 
 交付物：
 
@@ -177,11 +178,12 @@ SDK full-flow 恢复证据；同时已补 `docs/production-recovery-drill-record
 - TLS/mTLS profile 验证摘要
 - 配置漂移检查规则
 - `scripts/check_transport_config_governance.py`
+- backend TLS listener 集成测试：`V2BackendRoutingTest.BackendTlsListenerCompletesLoginRequest`
 
 验收标准：
 
 - `python3 scripts/check_transport_config_governance.py --summary-path runtime/validation/n4-transport-config-governance-summary.json` 通过。
-- TLS/mTLS 是否可上线有明确证据，不停留在占位配置；当前结论是默认生产仍为 plain TCP，TLS transport 上线仍需 backend listener/Secret/SDK full-flow 证据。
+- TLS/mTLS 是否可上线有明确证据，不停留在占位配置；当前结论是默认生产仍为 plain TCP，TLS transport 上线仍需 TLS profile 下完整 SDK full-flow 证据。
 - 每个生产配置项都能判断修改入口、生效方式和回滚方式。
 - 配置漂移能被脚本或 release gate 发现。
 

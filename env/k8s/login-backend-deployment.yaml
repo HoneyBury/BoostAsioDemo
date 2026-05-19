@@ -26,6 +26,14 @@ data:
           "provider": "dev",
           "token_prefix": "token:",
           "session_timeout_ms": 3600000
+        },
+        "tls": {
+          "enabled": false,
+          "cert_chain_path": "/app/certs/server.crt",
+          "private_key_path": "/app/certs/server.key",
+          "ca_cert_path": "/app/certs/ca.crt",
+          "verify_mode": "none",
+          "min_version": "1.2"
         }
       }
     }
@@ -87,9 +95,22 @@ spec:
               value: "9202"
             - name: BOOST_LOG_LEVEL
               value: "info"
+            - name: BACKEND_TLS_ENABLED
+              value: "false"
+            - name: BACKEND_TLS_CERT_CHAIN_PATH
+              value: "/app/certs/server.crt"
+            - name: BACKEND_TLS_PRIVATE_KEY_PATH
+              value: "/app/certs/server.key"
+            - name: BACKEND_TLS_CA_CERT_PATH
+              value: "/app/certs/ca.crt"
+            - name: BACKEND_TLS_VERIFY_MODE
+              value: "none"
           volumeMounts:
             - name: config
               mountPath: /app/config
+              readOnly: true
+            - name: backend-tls-certs
+              mountPath: /app/certs
               readOnly: true
             - name: logs
               mountPath: /app/logs
@@ -118,6 +139,10 @@ spec:
         - name: config
           configMap:
             name: login-backend-config
+        - name: backend-tls-certs
+          secret:
+            secretName: backend-tls
+            optional: true
         - name: logs
           emptyDir: {}
 

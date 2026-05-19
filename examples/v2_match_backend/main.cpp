@@ -68,6 +68,7 @@ int main(int argc, char* argv[]) {
     std::signal(SIGTERM, handle_signal);
 
     v2::match::MatchmakingService service(config.port);
+    service.set_tls_config(config.tls_config);
     g_service = &service;
     if (auto raft = to_raft_config(config.raft, config.port); raft.has_value()) {
         service.set_raft_config(std::move(*raft));

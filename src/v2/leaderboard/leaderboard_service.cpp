@@ -186,7 +186,9 @@ public:
             return handle_raft_append_entries(req);
         };
 
-        server_ = std::make_unique<v2::service::BackendServer>(port_, std::move(handlers));
+        server_ = std::make_unique<v2::service::BackendServer>(
+            v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
+            std::move(handlers));
         server_->start();
 
         if (!raft_config_.node_id.empty()) {
@@ -225,9 +227,14 @@ public:
         return raft_node_ && raft_node_->is_leader();
     }
 
+    void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config) {
+        tls_config_ = std::move(tls_config);
+    }
+
 private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
+    std::optional<v3::cluster::TlsSessionConfig> tls_config_;
     SortedSet leaderboard_;
     std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb_;
     v3::cluster::RaftConfig raft_config_;
@@ -492,6 +499,11 @@ void LeaderboardService::set_raft_config(v3::cluster::RaftConfig config) {
 
 bool LeaderboardService::is_raft_leader() const {
     return impl_->is_raft_leader();
+}
+
+void LeaderboardService::set_tls_config(
+    std::optional<v3::cluster::TlsSessionConfig> tls_config) {
+    impl_->set_tls_config(std::move(tls_config));
 }
 
 }  // namespace v2::leaderboard

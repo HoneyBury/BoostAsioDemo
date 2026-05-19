@@ -2,7 +2,10 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
+
+#include "v3/cluster/tls_config.h"
 
 namespace v2::login {
 
@@ -21,6 +24,7 @@ struct LoginBackendOptions {
     std::string jwt_private_key_pem;
     std::string jwt_issuer = "boost-gateway";
     std::string jwt_audience;
+    std::optional<v3::cluster::TlsSessionConfig> tls_config;
 };
 
 class LoginBackendService {

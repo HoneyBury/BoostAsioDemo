@@ -146,6 +146,7 @@ def text(path: Path) -> str:
 def check_compose_drift(checks: list[dict[str, Any]]) -> None:
     compose = text(ROOT / "env/docker/docker-compose.yml")
     add(checks, "compose mounts governed config tree", "../../config:/app/config:ro" in compose, "gateway/backends use config tree", "drift")
+    add(checks, "compose mounts backend tls certs profile", "../../certs:/app/certs:ro" in compose and "BACKEND_TLS_ENABLED" in compose, "backend TLS profile remains opt-in", "drift")
     for service in ("gateway", "login", "room", "battle", "matchmaking", "leaderboard"):
         env_name = "matchmaking" if service == "matchmaking" else service
         binary_service = "matchmaking" if service == "matchmaking" else service
@@ -189,11 +190,20 @@ def check_k8s_drift(checks: list[dict[str, Any]]) -> None:
         "feature_flags/security_policy/tls must not drift out of k8s profile",
         "drift",
     )
+    login_manifest = text(ROOT / "env/k8s/login-backend-deployment.yaml")
+    add(
+        checks,
+        "k8s login backend tls secret profile",
+        "secretName: backend-tls" in login_manifest and "BACKEND_TLS_ENABLED" in login_manifest,
+        "login backend TLS Secret mount is explicit and default-off",
+        "drift",
+    )
 
 
 def check_helm_drift(checks: list[dict[str, Any]]) -> None:
     values = text(ROOT / "env/k8s/helm/boost-gateway/values.yaml")
     add(checks, "helm tls defaults disabled", "tls:" in values and "enabled: false" in values, "tls.enabled=false", "drift")
+    add(checks, "helm backend tls defaults disabled", "backend:" in values and "secretName: backend-tls" in values, "backend tls profile", "drift")
     add(checks, "helm gateway port matches production config", "port: 9201" in values and "mgmtPort: 9080" in values, "gateway ports", "drift")
     for service, port in SERVICES.items():
         key = "match" if service == "matchmaking" else service

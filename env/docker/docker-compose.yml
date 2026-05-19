@@ -125,9 +125,15 @@ services:
     environment:
       CONFIG_PATH: /app/config/environments/docker/login.json
       SERVICE_PORT: "9202"
+      BACKEND_TLS_ENABLED: ${BACKEND_TLS_ENABLED:-false}
+      BACKEND_TLS_CERT_CHAIN_PATH: ${BACKEND_TLS_CERT_CHAIN_PATH:-/app/certs/server.crt}
+      BACKEND_TLS_PRIVATE_KEY_PATH: ${BACKEND_TLS_PRIVATE_KEY_PATH:-/app/certs/server.key}
+      BACKEND_TLS_CA_CERT_PATH: ${BACKEND_TLS_CA_CERT_PATH:-/app/certs/ca.crt}
+      BACKEND_TLS_VERIFY_MODE: ${BACKEND_TLS_VERIFY_MODE:-none}
       BOOST_LOG_LEVEL: "info"
     volumes:
       - ../../config:/app/config:ro
+      - ../../certs:/app/certs:ro
       - login-logs:/app/logs
     restart: unless-stopped
     security_opt:
@@ -170,9 +176,15 @@ services:
     environment:
       CONFIG_PATH: /app/config/environments/docker/room.json
       SERVICE_PORT: "9302"
+      BACKEND_TLS_ENABLED: ${BACKEND_TLS_ENABLED:-false}
+      BACKEND_TLS_CERT_CHAIN_PATH: ${BACKEND_TLS_CERT_CHAIN_PATH:-/app/certs/server.crt}
+      BACKEND_TLS_PRIVATE_KEY_PATH: ${BACKEND_TLS_PRIVATE_KEY_PATH:-/app/certs/server.key}
+      BACKEND_TLS_CA_CERT_PATH: ${BACKEND_TLS_CA_CERT_PATH:-/app/certs/ca.crt}
+      BACKEND_TLS_VERIFY_MODE: ${BACKEND_TLS_VERIFY_MODE:-none}
       BOOST_LOG_LEVEL: "info"
     volumes:
       - ../../config:/app/config:ro
+      - ../../certs:/app/certs:ro
       - room-logs:/app/logs
     restart: unless-stopped
     security_opt:
@@ -215,9 +227,15 @@ services:
     environment:
       CONFIG_PATH: /app/config/environments/docker/battle.json
       SERVICE_PORT: "9303"
+      BACKEND_TLS_ENABLED: ${BACKEND_TLS_ENABLED:-false}
+      BACKEND_TLS_CERT_CHAIN_PATH: ${BACKEND_TLS_CERT_CHAIN_PATH:-/app/certs/server.crt}
+      BACKEND_TLS_PRIVATE_KEY_PATH: ${BACKEND_TLS_PRIVATE_KEY_PATH:-/app/certs/server.key}
+      BACKEND_TLS_CA_CERT_PATH: ${BACKEND_TLS_CA_CERT_PATH:-/app/certs/ca.crt}
+      BACKEND_TLS_VERIFY_MODE: ${BACKEND_TLS_VERIFY_MODE:-none}
       BOOST_LOG_LEVEL: "info"
     volumes:
       - ../../config:/app/config:ro
+      - ../../certs:/app/certs:ro
       - battle-logs:/app/logs
     restart: unless-stopped
     security_opt:
@@ -260,9 +278,15 @@ services:
     environment:
       CONFIG_PATH: /app/config/environments/docker/matchmaking.json
       SERVICE_PORT: "9304"
+      BACKEND_TLS_ENABLED: ${BACKEND_TLS_ENABLED:-false}
+      BACKEND_TLS_CERT_CHAIN_PATH: ${BACKEND_TLS_CERT_CHAIN_PATH:-/app/certs/server.crt}
+      BACKEND_TLS_PRIVATE_KEY_PATH: ${BACKEND_TLS_PRIVATE_KEY_PATH:-/app/certs/server.key}
+      BACKEND_TLS_CA_CERT_PATH: ${BACKEND_TLS_CA_CERT_PATH:-/app/certs/ca.crt}
+      BACKEND_TLS_VERIFY_MODE: ${BACKEND_TLS_VERIFY_MODE:-none}
       BOOST_LOG_LEVEL: "info"
     volumes:
       - ../../config:/app/config:ro
+      - ../../certs:/app/certs:ro
       - match-logs:/app/logs
     restart: unless-stopped
     security_opt:
@@ -307,9 +331,15 @@ services:
       SERVICE_PORT: "9305"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      BACKEND_TLS_ENABLED: ${BACKEND_TLS_ENABLED:-false}
+      BACKEND_TLS_CERT_CHAIN_PATH: ${BACKEND_TLS_CERT_CHAIN_PATH:-/app/certs/server.crt}
+      BACKEND_TLS_PRIVATE_KEY_PATH: ${BACKEND_TLS_PRIVATE_KEY_PATH:-/app/certs/server.key}
+      BACKEND_TLS_CA_CERT_PATH: ${BACKEND_TLS_CA_CERT_PATH:-/app/certs/ca.crt}
+      BACKEND_TLS_VERIFY_MODE: ${BACKEND_TLS_VERIFY_MODE:-none}
       BOOST_LOG_LEVEL: "info"
     volumes:
       - ../../config:/app/config:ro
+      - ../../certs:/app/certs:ro
       - leaderboard-logs:/app/logs
     restart: unless-stopped
     security_opt:

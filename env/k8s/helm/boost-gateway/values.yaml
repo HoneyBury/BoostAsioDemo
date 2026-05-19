@@ -77,6 +77,13 @@ monitoring:
 # ── TLS ─────────────────────────────────────────────────────────────
 tls:
   enabled: false
+  backend:
+    enabled: false
+    secretName: backend-tls
+    certChainPath: /app/certs/server.crt
+    privateKeyPath: /app/certs/server.key
+    caCertPath: /app/certs/ca.crt
+    verifyMode: none
   certManager:
     issuer: letsencrypt-prod
     secretName: gateway-tls

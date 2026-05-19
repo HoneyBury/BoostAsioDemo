@@ -59,6 +59,7 @@ public:
     explicit Impl(LoginBackendOptions options)
         : port_(options.port),
           production_auth_required_(options.production_auth_required) {
+        tls_config_ = std::move(options.tls_config);
         if (!options.jwt_secret.empty() || !options.jwt_public_key_pem.empty()) {
             jwt_validator_.emplace(v2::auth::JwtValidator::Config{
                 .secret = options.jwt_secret,
@@ -81,7 +82,9 @@ public:
         handlers["session_bind"] = [this](const auto& req) { return handle_session_bind(req); };
         handlers["session_close"] = [this](const auto& req) { return handle_session_close(req); };
 
-        server_ = std::make_unique<v2::service::BackendServer>(port_, std::move(handlers));
+        server_ = std::make_unique<v2::service::BackendServer>(
+            v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
+            std::move(handlers));
         server_->start();
     }
 
@@ -98,6 +101,7 @@ public:
 private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
+    std::optional<v3::cluster::TlsSessionConfig> tls_config_;
     BackendPlayerState state_;
     std::optional<v2::auth::JwtValidator> jwt_validator_;
     bool production_auth_required_ = false;

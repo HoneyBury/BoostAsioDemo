@@ -1849,6 +1849,49 @@ TEST(V2BackendRoutingTest, TlsConfigDisabledRoutesNormally) {
     backend.stop();
 }
 
+TEST(V2BackendRoutingTest, BackendTlsListenerCompletesLoginRequest) {
+    app::logging::init("project_tests");
+
+    v3::cluster::TlsSessionConfig tls_cfg;
+    tls_cfg.cert.cert_chain_path = "certs/server.crt";
+    tls_cfg.cert.private_key_path = "certs/server.key";
+    tls_cfg.cert.ca_cert_path = "certs/ca.crt";
+    tls_cfg.verify_mode = v3::cluster::TlsVerifyMode::kNone;
+    tls_cfg.min_version = v3::cluster::TlsSessionConfig::TlsVersion::k12;
+
+    v2::service::BackendServer server(
+        v2::service::BackendServerOptions{
+            .port = 0,
+            .tls_config = tls_cfg,
+        },
+        make_login_handlers());
+    server.start();
+    ASSERT_GT(server.local_port(), 0);
+
+    v2::service::BackendConnectionOptions opts{
+        .host = "127.0.0.1",
+        .port = server.local_port(),
+        .tls_config = tls_cfg,
+    };
+    v2::service::BackendConnection conn(opts);
+    ASSERT_TRUE(conn.connect());
+    EXPECT_TRUE(conn.is_tls_enabled());
+
+    v2::service::BackendEnvelope request;
+    request.target_service = v2::service::ServiceId::kLogin;
+    request.kind = v2::service::MessageKind::kRequest;
+    request.message_type = "login_request";
+    request.payload = "tls_user|token:tls_user";
+
+    auto response = conn.send_request(request);
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->kind, v2::service::MessageKind::kResponse);
+    EXPECT_EQ(response->payload, "login_ok:tls_user");
+
+    conn.close();
+    server.stop();
+}
+
 TEST(V2BackendRoutingTest, SecurityPolicyPerServiceDefaults) {
     // Verify SecurityPolicy per-service TLS policies are correctly configured.
     v3::cluster::SecurityPolicy policy;

@@ -352,7 +352,9 @@ public:
             return handle_raft_append_entries(req);
         };
 
-        server_ = std::make_unique<v2::service::BackendServer>(port_, std::move(handlers));
+        server_ = std::make_unique<v2::service::BackendServer>(
+            v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
+            std::move(handlers));
         server_->start();
 
         // v3.0.0: Start Raft consensus if configured.
@@ -399,6 +401,10 @@ public:
         return raft_node_ && raft_node_->is_leader();
     }
 
+    void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config) {
+        tls_config_ = std::move(tls_config);
+    }
+
     [[nodiscard]] const v3::cluster::RaftConfig& raft_config() const {
         return raft_config_;
     }
@@ -406,6 +412,7 @@ public:
 private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
+    std::optional<v3::cluster::TlsSessionConfig> tls_config_;
     MatchmakingConfig matchmaker_config_{};
     std::unique_ptr<Matchmaker> matchmaker_;
     std::mutex matches_mutex_;
@@ -677,5 +684,10 @@ std::uint16_t MatchmakingService::local_port() const { return impl_->local_port(
 void MatchmakingService::set_matchmaking_config(MatchmakingConfig config) { impl_->set_matchmaking_config(std::move(config)); }
 void MatchmakingService::set_raft_config(v3::cluster::RaftConfig config) { impl_->set_raft_config(std::move(config)); }
 bool MatchmakingService::is_raft_leader() const { return impl_->is_raft_leader(); }
+
+void MatchmakingService::set_tls_config(
+    std::optional<v3::cluster::TlsSessionConfig> tls_config) {
+    impl_->set_tls_config(std::move(tls_config));
+}
 
 }  // namespace v2::match

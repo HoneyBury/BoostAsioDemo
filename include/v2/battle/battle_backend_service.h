@@ -2,6 +2,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
+
+#include "v3/cluster/tls_config.h"
 
 namespace v2::battle {
 
@@ -13,6 +16,7 @@ public:
     void start();
     void stop();
     [[nodiscard]] std::uint16_t local_port() const;
+    void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config);
 
 private:
     class Impl;

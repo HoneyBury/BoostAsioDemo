@@ -51,6 +51,7 @@ int main(int argc, char* argv[]) {
         options.jwt_private_key_pem = config.jwt.private_key_pem;
         options.jwt_issuer = config.jwt.issuer.empty() ? "boost-gateway" : config.jwt.issuer;
         options.jwt_audience = config.jwt.audience;
+        options.tls_config = config.tls_config;
 
         v2::login::LoginBackendService service(std::move(options));
         g_service = &service;

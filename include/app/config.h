@@ -1,6 +1,7 @@
 #pragma once
 
 #include "net/tls_config.h"
+#include "v3/cluster/tls_config.h"
 
 #include <chrono>
 #include <cstdint>
@@ -102,6 +103,7 @@ struct BackendServiceConfig {
     RedisServiceConfig redis;
     RaftServiceConfig raft;
     std::optional<std::uint32_t> battle_max_frames;
+    std::optional<v3::cluster::TlsSessionConfig> tls_config;
 };
 
 enum class PressureScenario {

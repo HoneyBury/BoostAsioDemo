@@ -316,6 +316,33 @@ void fill_backend_from_store(const ConfigStore& store, BackendServiceConfig& con
     if (const auto value = store.get_uint32("battle.max_frames")) {
         config.battle_max_frames = *value;
     }
+    if (store.get_bool("tls.enabled").value_or(false)) {
+        auto tls = v3::cluster::default_tls_config();
+        if (const auto value = store.get_string("tls.cert_chain_path")) {
+            tls.cert.cert_chain_path = *value;
+        }
+        if (const auto value = store.get_string("tls.private_key_path")) {
+            tls.cert.private_key_path = *value;
+        }
+        if (const auto value = store.get_string("tls.ca_cert_path")) {
+            tls.cert.ca_cert_path = *value;
+        }
+        if (const auto value = store.get_string("tls.verify_mode")) {
+            if (*value == "none") {
+                tls.verify_mode = v3::cluster::TlsVerifyMode::kNone;
+            } else if (*value == "server") {
+                tls.verify_mode = v3::cluster::TlsVerifyMode::kServer;
+            } else if (*value == "mutual") {
+                tls.verify_mode = v3::cluster::TlsVerifyMode::kMutual;
+            }
+        }
+        if (const auto value = store.get_string("tls.min_version")) {
+            if (*value == "1.3" || *value == "tls1.3") {
+                tls.min_version = v3::cluster::TlsSessionConfig::TlsVersion::k13;
+            }
+        }
+        config.tls_config = std::move(tls);
+    }
 }
 
 void apply_backend_env_overlay(const std::string& service_name, BackendServiceConfig& config) {
@@ -337,6 +364,37 @@ void apply_backend_env_overlay(const std::string& service_name, BackendServiceCo
         config.port = read_uint16_or(env_value("LEADERBOARD_PORT"), config.port);
     }
     config.port = read_uint16_or(env_value("SERVICE_PORT"), config.port);
+    auto tls_enabled = env_value("BACKEND_TLS_ENABLED");
+    if (!tls_enabled) {
+        tls_enabled = env_value("SERVICE_TLS_ENABLED");
+    }
+    if (tls_enabled && parse_bool(*tls_enabled).value_or(false)) {
+        auto tls = config.tls_config.value_or(v3::cluster::default_tls_config());
+        if (const auto value = env_value("BACKEND_TLS_CERT_CHAIN_PATH")) {
+            tls.cert.cert_chain_path = *value;
+        }
+        if (const auto value = env_value("BACKEND_TLS_PRIVATE_KEY_PATH")) {
+            tls.cert.private_key_path = *value;
+        }
+        if (const auto value = env_value("BACKEND_TLS_CA_CERT_PATH")) {
+            tls.cert.ca_cert_path = *value;
+        }
+        if (const auto value = env_value("BACKEND_TLS_VERIFY_MODE")) {
+            if (*value == "none") {
+                tls.verify_mode = v3::cluster::TlsVerifyMode::kNone;
+            } else if (*value == "server") {
+                tls.verify_mode = v3::cluster::TlsVerifyMode::kServer;
+            } else if (*value == "mutual") {
+                tls.verify_mode = v3::cluster::TlsVerifyMode::kMutual;
+            }
+        }
+        if (const auto value = env_value("BACKEND_TLS_MIN_VERSION")) {
+            if (*value == "1.3" || *value == "tls1.3") {
+                tls.min_version = v3::cluster::TlsSessionConfig::TlsVersion::k13;
+            }
+        }
+        config.tls_config = std::move(tls);
+    }
 
     if (const auto value = env_value("V2_LOGIN_AUTH_MODE")) {
         config.jwt.mode = *value;

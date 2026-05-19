@@ -38,6 +38,7 @@ int main(int argc, char* argv[]) {
     std::signal(SIGTERM, handle_signal);
 
     v2::battle::BattleBackendService service(config.port);
+    service.set_tls_config(config.tls_config);
     g_service = &service;
 
     service.start();

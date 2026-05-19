@@ -77,6 +77,73 @@ python scripts/check_fixed_runner_environment.py \
 
 通过标准是所有启用项 summary 的 `passed=true`。容量专项如果用于发现上限，可以允许性能 gate 失败，但必须在发布说明中标注它是容量边界证据，不得把失败 capacity 结果声明为生产基线通过。
 
+## R2 生产候选 Evidence Manifest
+
+R2 新增 `docs/production-candidate-evidence-manifest.json`，用于把本机有界证据、固定 runner 证据和预发演练证据统一成可校验清单。
+
+默认本机检查：
+
+```bash
+python3 scripts/check_production_evidence_manifest.py
+```
+
+默认检查会要求 R0/R1 已产出的候选证据存在、通过且未超过 freshness 窗口，并校验 R0 子 summary 被 R0 aggregate artifacts 引用。
+
+投产前固定 runner / 预发准入检查：
+
+```bash
+python3 scripts/check_production_evidence_manifest.py --require-fixed-runner
+```
+
+该模式会把 manifest 中 `fixed_runner_required=true` 的条目提升为阻断项，当前包括：
+
+- `fixed_runner_release_capacity`
+- `preprod_recovery_drill`
+- `tls_preprod_multi_run`
+
+这些条目必须由固定性能机器或预发环境生成真实 summary 后再通过，不能用本机 smoke 结果替代。
+
+`fixed_runner_release_capacity` 的 R4 入口：
+
+```bash
+python3 scripts/verify_fixed_runner_release_capacity.py
+```
+
+默认会消费 release baseline、capacity profile 和 business-capacity profile 的既有 summary，并输出 `runtime/validation/fixed-runner-release-capacity-summary.json`。在固定性能机器上可以先刷新对应性能产物，再运行该脚本；也可追加 `--collect-smoke` 先跑一次 fresh smoke 作为当前环境 sanity check。
+
+`preprod_recovery_drill` 的 R5 入口：
+
+```bash
+python3 scripts/verify_preprod_recovery_drill.py --build-dir build/release
+```
+
+Docker 可用且镜像存在时，该脚本会执行真实 Docker Compose gateway restart 演练，并生成 recovery drill record；云端预发和 Kubernetes 演练应复用同一个 record schema 归档。
+
+R5 实测注意：生产镜像 builder 需要 `python3` 支持当前 CMake/proto/gRPC 配置；gateway 生产默认应使用 `V2_BACKEND_CONNECTION_POOL_SIZE=1`，多连接池仍按实验能力处理，不能作为默认投产路径。
+
+`tls_preprod_multi_run` 的 R6 入口：
+
+```bash
+python3 scripts/verify_tls_preprod_multi_run.py --build-dir build/release --skip-build
+```
+
+该脚本多轮调用 R1 TLS readiness，聚合证书轮换、CA mismatch expected failure 和 plain-vs-TLS overhead ratio。
+
+R6 会启动本机服务并绑定临时 TCP 端口；在 macOS 沙箱或未授权环境下可能因端口绑定权限失败，固定 runner/预发环境应显式授予本机端口权限后刷新 summary。
+
+R3 会把 R2 的判断渲染成投产评审报告：
+
+```bash
+python3 scripts/render_production_readiness_report.py
+```
+
+默认输出：
+
+- `runtime/validation/r3-production-readiness-report.md`
+- `runtime/validation/r3-production-readiness-report-summary.json`
+
+报告中的 `Bounded local candidate evidence` 表示当前本机/有界证据是否健康；`Final production fixed-runner/pre-production readiness` 表示固定 runner / 预发证据是否已经满足投产准入。两者必须分开看，不能用前者替代最终投产审批。
+
 ## 推荐运行矩阵
 
 | 阶段 | 建议运行项 | 目标 |

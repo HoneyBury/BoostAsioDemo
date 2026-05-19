@@ -36,6 +36,11 @@
 - N6 gRPC/proto 取舍：`scripts/check_v3_grpc_poc_decision.py` 已补 v3 proto/gRPC PoC 决策门禁，验证 schema/transport contract、CMake target、TCP baseline 对照和 ADR 边界；当前结论是 generated gRPC 保留实验，不进入默认生产链路。
 - R0 生产候选证据聚合：`scripts/verify_production_candidate_evidence.py` 已聚合 fixed-runner preflight、P5 production resilience、P6 production evidence、N5 SDK enterprise delivery，并可显式追加 N4 TLS full-flow 与 N6 gRPC PoC decision；summary 写入 `runtime/validation/r0-production-candidate-evidence-summary.json`。
 - R1 TLS 上线前置证据：`scripts/verify_tls_production_readiness.py` 已覆盖 TLS profile full-flow、server CA 校验、证书轮换 full-flow、CA 不匹配 expected failure 诊断和 plain/TLS 单次业务闭环耗时对比；默认生产仍是 plain TCP，R1 只作为启用 backend TLS profile 前的前置证据。
+- R2 生产候选证据 Manifest：`docs/production-candidate-evidence-manifest.json` 与 `scripts/check_production_evidence_manifest.py` 已将 R0/R1 本机有界证据、固定 runner release/capacity、预发恢复演练和 TLS 预发多轮证据统一成可校验 manifest；默认校验 R0/R1，`--require-fixed-runner` 用于投产前阻断缺失的固定 runner / 预发 summary。
+- R3 生产 Readiness Report：`scripts/render_production_readiness_report.py` 已将 R2 manifest、R0 aggregate 和 R1 TLS readiness 汇总为 Markdown 报告与机器 summary；报告明确区分 bounded local evidence 与 final production readiness，当前固定 runner / 预发缺口仍会作为最终投产阻断项展示。
+- R4 固定 Runner Release / Capacity 证据：`scripts/verify_fixed_runner_release_capacity.py` 已将 release baseline、capacity profile 和 business-capacity profile 汇总成 `runtime/validation/fixed-runner-release-capacity-summary.json`，用于解除 R2/R3 中 `fixed_runner_release_capacity` 阻断；最终投产仍建议在固定低噪声性能机器上刷新该 summary。
+- R5 预发恢复 / 回滚演练证据：`scripts/verify_preprod_recovery_drill.py` 已将 N3 recovery gate、Docker Compose gateway restart、SDK full-flow、Docker production snapshot 和 recovery drill record validator 串成 `runtime/validation/preprod-recovery-drill-summary.json` producer。本机真实演练已发现并修复 Docker builder 缺 `python3`、gateway backend pool 默认进入实验多连接路径的问题；最终 R5 复测仍需在 Docker 授权恢复后重新执行。
+- R6 TLS 预发多轮证据：`scripts/verify_tls_preprod_multi_run.py` 已多轮聚合 R1 TLS readiness，覆盖 TLS full-flow、证书轮换、CA mismatch expected failure 和 plain-vs-TLS overhead ratio，输出 `runtime/validation/tls-preprod-multi-run-summary.json`。该脚本需要本机端口绑定权限；当前普通沙箱会因 `Operation not permitted` 失败，需在授权环境下刷新最终 summary。
 - P3 监控运维：Prometheus 已加载 `env/monitoring/prometheus-alerts.yml`，Grafana dashboard 已对齐当前 gateway `/metrics` 真实指标，`scripts/check_monitoring_operability.py` 会阻断后端 HTTP scrape、旧指标名和 runbook 漂移；运维流程见 `docs/production-operations-runbook.md`。
 - P4 SDK 企业级封装：C++ SDK heartbeat 已实作，disconnect callback 可由 heartbeat failure 触发；C ABI 暴露 heartbeat 控制，Python/C# wrapper 增加 native 版本校验和加载/分配诊断；SDK business-flow 与 full-flow client 验证覆盖 login、room、ready、battle、push、reconnect、heartbeat。
 - H0-H5 生产候选硬化：`scripts/check_production_hardening_gate.py` 聚合固定 runner 定时入口、长稳/容量/K8s/观测/SDK 企业接入证据；`production-resilience.yml` 与 `production-evidence.yml` 已具备 weekly schedule 和 runner fallback。
@@ -50,7 +55,7 @@
 
 ## 当前阶段结论
 
-生产稳定化、交付闭环、生产业务闭环接入、N0-N6 生产数据沉淀与风险燃尽，以及 R0/R1 生产候选实证阶段已经完成当前有界收束。当前主线具备生产候选所需的默认有界 gate、固定 runner 入口、部署/运维/SDK 文档、监控告警静态校验、P5 resilience gate、P6 production evidence gate、P5-P8 business closure gate、N3 recovery gate、N4 transport/config governance gate、N5 SDK enterprise delivery gate、N6 gRPC PoC decision gate、R0 production candidate evidence gate、R1 TLS production readiness gate 和生产候选完整性审核。
+生产稳定化、交付闭环、生产业务闭环接入、N0-N6 生产数据沉淀与风险燃尽，以及 R0-R3 生产候选实证阶段已经完成当前有界收束。当前主线具备生产候选所需的默认有界 gate、固定 runner 入口、部署/运维/SDK 文档、监控告警静态校验、P5 resilience gate、P6 production evidence gate、P5-P8 business closure gate、N3 recovery gate、N4 transport/config governance gate、N5 SDK enterprise delivery gate、N6 gRPC PoC decision gate、R0 production candidate evidence gate、R1 TLS production readiness gate、R2 evidence manifest gate、R3 readiness report 和生产候选完整性审核。
 
 当前默认可执行入口：
 
@@ -63,11 +68,16 @@
 7. N6 gRPC PoC decision：`python3 scripts/check_v3_grpc_poc_decision.py --build-dir build/default`
 8. R0 production candidate evidence：`python3 scripts/verify_production_candidate_evidence.py --build-dir build/default --skip-build`
 9. R1 TLS production readiness：`python3 scripts/verify_tls_production_readiness.py --build-dir build/default --skip-build`
-10. 生产候选审核：`python3 scripts/check_production_candidate_audit.py`
+10. R2 production evidence manifest：`python3 scripts/check_production_evidence_manifest.py`
+11. R3 production readiness report：`python3 scripts/render_production_readiness_report.py`
+12. R4 fixed-runner release/capacity evidence：`python3 scripts/verify_fixed_runner_release_capacity.py`
+13. R5 preprod recovery drill：`python3 scripts/verify_preprod_recovery_drill.py --build-dir build/default`
+14. R6 TLS preprod multi-run：`python3 scripts/verify_tls_preprod_multi_run.py --build-dir build/default --skip-build`
+15. 生产候选审核：`python3 scripts/check_production_candidate_audit.py`
 
 ## 下一阶段优先级
 
-当前“生产数据沉淀与风险燃尽”以 `docs/production-stabilization-roadmap.md` 的 N0-N6 与 R0/R1 为事实源，默认有界收束已经完成；长稳 2h/8h、10K 固定机器容量、TLS 预发多轮性能、真实 gRPC transport profile 等继续作为固定 runner 或后续专项持续沉淀。
+当前“生产数据沉淀与风险燃尽”以 `docs/production-stabilization-roadmap.md` 的 N0-N6 与 R0-R3 为事实源，默认有界收束已经完成；长稳 2h/8h、10K 固定机器容量、TLS 预发多轮性能、真实 gRPC transport profile 等继续作为固定 runner 或后续专项持续沉淀。
 
 1. N0 固定 Runner 与证据自动化常态化。
 2. N1 长稳压测与容量基线。
@@ -78,3 +88,8 @@
 7. N6 gRPC / 协议演进 PoC 与生产取舍。
 8. R0 生产候选证据聚合。
 9. R1 TLS 上线前置证据。
+10. R2 生产候选证据 Manifest 与预发准入。
+11. R3 生产 Readiness Report。
+12. R4 固定 Runner Release / Capacity 证据。
+13. R5 预发恢复 / 回滚演练证据。
+14. R6 TLS 预发多轮证据。

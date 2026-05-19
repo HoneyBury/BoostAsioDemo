@@ -290,6 +290,94 @@ N0-N6 已完成默认有界收束后，R 阶段不扩功能，目标是把“可
 - `python3 scripts/verify_tls_production_readiness.py --build-dir build/release --skip-build` 通过。
 - R1 summary 同时包含 plain full-flow、TLS full-flow、rotated TLS full-flow、mismatched CA expected failure 和耗时对比。
 
+### R2：生产候选证据 Manifest 与预发准入
+
+当前收束状态：已新增 `docs/production-candidate-evidence-manifest.json` 与 `scripts/check_production_evidence_manifest.py`。R2 把 R0/R1 以及固定 runner / 预发多轮证据归一到可校验 manifest，默认要求本机有界候选证据全部存在且通过；运行 `--require-fixed-runner` 时会把 release/capacity、恢复演练和 TLS 预发多轮证据提升为阻断项，用于最终投产审批前检查。
+
+任务：
+
+- [x] 建立生产候选 evidence manifest，统一记录 evidence id、类别、summary 路径、freshness 和固定 runner 要求。
+- [x] 校验 R0/R1 必选 summary 是否存在、是否通过、是否在 freshness 窗口内。
+- [x] 校验 R0 子 summary 是否被 R0 aggregate artifacts 引用，避免孤立 JSON 被误当作聚合证据。
+- [x] 保留固定 runner / 预发证据入口，并通过 `--require-fixed-runner` 切换为投产前阻断项。
+- [ ] 在固定 runner / 预发环境填充 `fixed_runner_release_capacity`、`preprod_recovery_drill` 和 `tls_preprod_multi_run` 的真实 summary。
+
+验收标准：
+
+- `python3 scripts/check_production_evidence_manifest.py` 在当前本机 R0/R1 证据齐全时通过。
+- `python3 scripts/check_production_evidence_manifest.py --require-fixed-runner` 在最终投产前必须通过；当前若缺少固定 runner / 预发 summary，应明确失败而不是误报投产就绪。
+
+### R3：生产 Readiness Report
+
+当前收束状态：已新增 `scripts/render_production_readiness_report.py`，读取 R2 manifest summary、R2 fixed-runner 准入 summary、R0 aggregate summary 和 R1 TLS readiness summary，生成 `runtime/validation/r3-production-readiness-report.md` 与机器可读 summary。默认判定以本机有界证据为通过条件，同时单独输出 `final_production_ready`，避免把固定 runner / 预发缺口误报成已投产就绪。
+
+任务：
+
+- [x] 将 R0/R1/R2 的 JSON summary 汇总为投产评审 Markdown。
+- [x] 在报告顶部明确区分 bounded local candidate evidence 与 final production fixed-runner/pre-production readiness。
+- [x] 将 `fixed_runner_release_capacity`、`preprod_recovery_drill`、`tls_preprod_multi_run` 列为最终投产阻断项。
+- [ ] 固定 runner / 预发 summary 补齐后，R3 report 应自然更新为 `final_production_ready=true`。
+
+验收标准：
+
+- `python3 scripts/render_production_readiness_report.py` 通过，并生成 Markdown 报告。
+- 报告必须展示 R2 evidence table、最终投产阻断项、R0 聚合步骤和 R1 TLS 耗时对比。
+
+### R4：固定 Runner Release / Capacity 证据
+
+当前收束状态：已新增 `scripts/verify_fixed_runner_release_capacity.py`，用于把 release baseline、capacity profile 和 business-capacity profile 汇总为 R2 manifest 需要的 `runtime/validation/fixed-runner-release-capacity-summary.json`。脚本默认消费已有固定 runner / 本机实测性能产物；也可以通过 `--collect-smoke` 追加一次 fresh smoke，避免最终报告只依赖历史 JSON。
+
+任务：
+
+- [x] 校验 release baseline aggregate summary 是否通过。
+- [x] 校验 capacity profile 覆盖 `echo-1000`、`echo-5000`、`echo-10000`、`battle-100`、`battle-500` 且 release gates 通过。
+- [x] 校验 business-capacity profile 覆盖 `echo-1000`、`battle-100`、`battle-500`，并要求 SDK full-flow business path 通过。
+- [x] 将 R4 producer 写入 R2 evidence manifest，使 `--require-fixed-runner` 能消费该 summary。
+- [ ] 在固定低噪声性能机器上重跑 release/capacity/business-capacity 多轮，并用固定 runner 产物替换本机历史产物。
+
+验收标准：
+
+- `python3 scripts/verify_fixed_runner_release_capacity.py` 通过，并生成 `runtime/validation/fixed-runner-release-capacity-summary.json`。
+- 重新运行 `python3 scripts/check_production_evidence_manifest.py --require-fixed-runner` 时，`fixed_runner_release_capacity` 不再是阻断项。
+
+### R5：预发恢复 / 回滚演练证据
+
+当前收束状态：已新增 `scripts/verify_preprod_recovery_drill.py`，在 Docker 可用且镜像已存在时执行真实 Docker Compose gateway restart 演练：启动生产栈、等待 gateway ready、重启 gateway、再次等待 ready、运行 SDK full-flow、采集 Docker production snapshot，并生成/校验 recovery drill record。没有 Docker 时可保留 bounded-local 模式，但投产前应使用真实预发记录。
+
+本机真实演练补充结论：R5 已暴露两个生产部署缺口，并已在代码层修复。第一，Docker builder 镜像缺 `python3` 会导致当前 CMake/proto/gRPC PoC 配置失败；`env/docker/Dockerfile.backend` 与 `env/docker/Dockerfile.gateway` 已补齐。第二，gateway backend connection pool 默认值不应进入当前实验多连接路径；`src/v2/gateway/gateway_service_bridge.cpp` 默认值和 Compose 显式环境变量已收敛到 `V2_BACKEND_CONNECTION_POOL_SIZE=1`，直到 backend 长连接复用协议完成生产化。
+
+任务：
+
+- [x] 将 N3 recovery gate、SDK full-flow、Docker snapshot 和 drill record validator 串成 R5 producer。
+- [x] 输出 `runtime/validation/preprod-recovery-drill-summary.json`，供 R2 manifest 消费。
+- [x] 生成 `runtime/validation/r5-preprod-recovery-drill-record.json` 并通过 `scripts/check_recovery_drill_record.py` 校验。
+- [x] 修复 Docker builder 缺 `python3` 导致生产镜像无法重建的问题。
+- [x] 将 gateway backend pool 生产默认收敛为 1，避免实验多连接池破坏 SDK full-flow leaderboard 闭环。
+- [ ] 在云端预发或固定 Docker/K8s 环境补 gateway/backend/Redis/rollback 多场景记录。
+
+验收标准：
+
+- `python3 scripts/verify_preprod_recovery_drill.py --build-dir build/release` 通过。
+- R2 `--require-fixed-runner` 不再阻断 `preprod_recovery_drill`。
+
+### R6：TLS 预发多轮证据
+
+当前收束状态：已新增 `scripts/verify_tls_preprod_multi_run.py`，多次调用 R1 TLS readiness，聚合 TLS full-flow、证书轮换、CA mismatch expected failure 和 plain-vs-TLS overhead ratio，输出 `runtime/validation/tls-preprod-multi-run-summary.json`。
+
+本机验证注意：R6 会启动本机服务并绑定临时 TCP 端口。普通沙箱会在 `reserve_free_port()` 阶段触发 `Operation not permitted`，因此最终 R6 evidence 应在已授权的本机或固定 runner 上刷新。
+
+任务：
+
+- [x] 将 R1 TLS readiness 从单次 smoke 扩展为多轮聚合 evidence。
+- [x] 聚合每轮 plain/TLS full-flow 耗时和 overhead ratio。
+- [x] 将 R6 producer 写入 R2 evidence manifest。
+- [ ] 在预发环境继续补充服务名校验、client cert 缺失、过期证书告警和容量级 TLS 性能。
+
+验收标准：
+
+- `python3 scripts/verify_tls_preprod_multi_run.py --build-dir build/release --skip-build` 通过。
+- R2 `--require-fixed-runner` 不再阻断 `tls_preprod_multi_run`。
+
 ## 下一阶段推荐执行顺序
 
 1. N0 固定 Runner 与证据自动化常态化。
@@ -301,6 +389,11 @@ N0-N6 已完成默认有界收束后，R 阶段不扩功能，目标是把“可
 7. N6 gRPC / 协议演进 PoC 与生产取舍。
 8. R0 生产候选证据聚合。
 9. R1 TLS 上线前置证据。
+10. R2 生产候选证据 Manifest 与预发准入。
+11. R3 生产 Readiness Report。
+12. R4 固定 Runner Release / Capacity 证据。
+13. R5 预发恢复 / 回滚演练证据。
+14. R6 TLS 预发多轮证据。
 
 推荐先从 N0 和 N1 开始，因为它们会直接暴露当前系统在真实生产环境下的波动、容量边界和回归风险；N2-N5 再围绕这些事实完善观测、部署、配置和客户端交付；N6 放在最后，避免在主链稳定前引入新的传输复杂度。
 

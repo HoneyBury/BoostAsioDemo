@@ -34,6 +34,11 @@ REQUIRED_SCENARIOS = {
     "v3_grpc_poc_decision_gate",
     "production_evidence_gate",
     "production_hardening_gate",
+    "production_candidate_evidence_manifest",
+    "production_readiness_report",
+    "fixed_runner_release_capacity_gate",
+    "preprod_recovery_drill_gate",
+    "tls_preprod_multi_run_gate",
 }
 
 
@@ -57,6 +62,8 @@ def main() -> int:
     broken: list[str] = []
     for path_text in paths:
         if "*" in path_text or "<" in path_text:
+            continue
+        if path_text.startswith("runtime/"):
             continue
         path = root / Path(path_text.replace("\\", "/"))
         if not path.exists():

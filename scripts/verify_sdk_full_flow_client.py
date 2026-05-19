@@ -28,6 +28,8 @@ def write_temp_gateway_config(
     leaderboard_port: int,
     backend_tls: bool = False,
     cert_dir: Path | None = None,
+    gateway_tls_verify_mode: str = "none",
+    gateway_tls_ca_cert_path: Path | None = None,
 ) -> None:
     document = {
         "gateway": {
@@ -49,8 +51,8 @@ def write_temp_gateway_config(
         document["tls"] = {
             "cert_chain_path": str(cert_root / "server.crt"),
             "private_key_path": str(cert_root / "server.key"),
-            "ca_cert_path": str(cert_root / "ca.crt"),
-            "verify_mode": "none",
+            "ca_cert_path": str(gateway_tls_ca_cert_path or (cert_root / "ca.crt")),
+            "verify_mode": gateway_tls_verify_mode,
         }
         document["security_policy"] = {
             "require_tls": True,
@@ -82,8 +84,8 @@ def run_command(name: str, command: list[str], checks: list[dict[str, Any]]) -> 
     return passed
 
 
-def ensure_dev_certs(checks: list[dict[str, Any]]) -> bool:
-    certs = [REPO_ROOT / "certs/ca.crt", REPO_ROOT / "certs/server.crt", REPO_ROOT / "certs/server.key"]
+def ensure_dev_certs(checks: list[dict[str, Any]], cert_dir: Path) -> bool:
+    certs = [cert_dir / "ca.crt", cert_dir / "server.crt", cert_dir / "server.key"]
     if all(path.exists() for path in certs):
         checks.append(
             {
@@ -96,6 +98,18 @@ def ensure_dev_certs(checks: list[dict[str, Any]]) -> bool:
             }
         )
         return True
+    if cert_dir.resolve() != (REPO_ROOT / "certs").resolve():
+        checks.append(
+            {
+                "name": "backend-tls-dev-certs-present",
+                "passed": False,
+                "command": ["check", str(cert_dir)],
+                "duration_seconds": 0.0,
+                "stdout": "",
+                "stderr": f"missing required TLS files in {cert_dir}",
+            }
+        )
+        return False
     return run_command("generate-backend-tls-dev-certs", ["python3", "scripts/gen_certs.py"], checks)
 
 
@@ -259,6 +273,10 @@ def main() -> int:
     parser.add_argument("--http-port", type=int, default=0)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--backend-tls", action="store_true", help="Run gateway->backend traffic through the opt-in backend TLS profile")
+    parser.add_argument("--tls-cert-dir", type=Path, default=REPO_ROOT / "certs")
+    parser.add_argument("--gateway-tls-verify-mode", choices=["none", "server", "mutual"], default="none")
+    parser.add_argument("--gateway-tls-ca-cert-path", type=Path)
+    parser.add_argument("--backend-tls-verify-mode", choices=["none", "mutual"], default="none")
     parser.add_argument(
         "--summary-path",
         type=Path,
@@ -307,9 +325,21 @@ def main() -> int:
     processes: list[tuple[str, subprocess.Popen[str]]] = []
     try:
         base_env = os.environ.copy()
-        if args.backend_tls and not ensure_dev_certs(checks):
+        tls_cert_dir = args.tls_cert_dir if args.tls_cert_dir.is_absolute() else REPO_ROOT / args.tls_cert_dir
+        gateway_tls_ca_cert_path = args.gateway_tls_ca_cert_path
+        if gateway_tls_ca_cert_path is not None and not gateway_tls_ca_cert_path.is_absolute():
+            gateway_tls_ca_cert_path = REPO_ROOT / gateway_tls_ca_cert_path
+        if args.backend_tls and not ensure_dev_certs(checks, tls_cert_dir):
             failed = [check for check in checks if not check["passed"]]
-            return write_summary(args.summary_path, checks, failed, backend_tls=args.backend_tls)
+            return write_summary(
+                args.summary_path,
+                checks,
+                failed,
+                backend_tls=args.backend_tls,
+                tls_cert_dir=tls_cert_dir,
+                gateway_tls_verify_mode=args.gateway_tls_verify_mode,
+                backend_tls_verify_mode=args.backend_tls_verify_mode,
+            )
         temp_gateway_config = REPO_ROOT / "runtime/validation/sdk-full-flow-temp-gateway.json"
         write_temp_gateway_config(
             temp_gateway_config,
@@ -320,6 +350,9 @@ def main() -> int:
             match_port=match_port,
             leaderboard_port=leaderboard_port,
             backend_tls=args.backend_tls,
+            cert_dir=tls_cert_dir,
+            gateway_tls_verify_mode=args.gateway_tls_verify_mode,
+            gateway_tls_ca_cert_path=gateway_tls_ca_cert_path,
         )
         backend_specs = [
             ("login", login_backend, login_port, {"SERVICE_PORT": str(login_port)}),
@@ -335,10 +368,10 @@ def main() -> int:
                 env.update(
                     {
                         "BACKEND_TLS_ENABLED": "true",
-                        "BACKEND_TLS_CERT_CHAIN_PATH": str(REPO_ROOT / "certs/server.crt"),
-                        "BACKEND_TLS_PRIVATE_KEY_PATH": str(REPO_ROOT / "certs/server.key"),
-                        "BACKEND_TLS_CA_CERT_PATH": str(REPO_ROOT / "certs/ca.crt"),
-                        "BACKEND_TLS_VERIFY_MODE": "none",
+                        "BACKEND_TLS_CERT_CHAIN_PATH": str(tls_cert_dir / "server.crt"),
+                        "BACKEND_TLS_PRIVATE_KEY_PATH": str(tls_cert_dir / "server.key"),
+                        "BACKEND_TLS_CA_CERT_PATH": str(tls_cert_dir / "ca.crt"),
+                        "BACKEND_TLS_VERIFY_MODE": args.backend_tls_verify_mode,
                     }
                 )
             proc = start_process(name, [str(executable)], env, checks)
@@ -420,14 +453,33 @@ def main() -> int:
             temp_gateway_config.unlink()
 
     failed = [check for check in checks if not check["passed"]]
-    return write_summary(args.summary_path, checks, failed, backend_tls=args.backend_tls)
+    return write_summary(
+        args.summary_path,
+        checks,
+        failed,
+        backend_tls=args.backend_tls,
+        tls_cert_dir=tls_cert_dir if args.backend_tls else None,
+        gateway_tls_verify_mode=args.gateway_tls_verify_mode,
+        backend_tls_verify_mode=args.backend_tls_verify_mode,
+    )
 
 
-def write_summary(path: Path, checks: list[dict[str, Any]], failed: list[dict[str, Any]], backend_tls: bool = False) -> int:
+def write_summary(
+    path: Path,
+    checks: list[dict[str, Any]],
+    failed: list[dict[str, Any]],
+    backend_tls: bool = False,
+    tls_cert_dir: Path | None = None,
+    gateway_tls_verify_mode: str = "none",
+    backend_tls_verify_mode: str = "none",
+) -> int:
     summary = {
         "summary_version": 2,
         "passed": not failed,
         "backend_tls": backend_tls,
+        "tls_cert_dir": str(tls_cert_dir or ""),
+        "gateway_tls_verify_mode": gateway_tls_verify_mode,
+        "backend_tls_verify_mode": backend_tls_verify_mode,
         "total_checks": len(checks),
         "failed_checks": len(failed),
         "failed_step": failed[0]["name"] if failed else "",

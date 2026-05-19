@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import shutil
 import subprocess
 import sys
@@ -20,8 +21,14 @@ IP.1=127.0.0.1
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate local TLS certificates for gateway/backend validation.")
+    parser.add_argument("--output-dir", type=Path, default=Path("certs"))
+    parser.add_argument("--days", type=int, default=3650)
+    parser.add_argument("--common-name", default="localhost")
+    args = parser.parse_args()
+
     root = Path(__file__).resolve().parent.parent
-    certs_dir = root / "certs"
+    certs_dir = args.output_dir if args.output_dir.is_absolute() else root / args.output_dir
     certs_dir.mkdir(parents=True, exist_ok=True)
 
     openssl = shutil.which("openssl")
@@ -31,7 +38,7 @@ def main() -> int:
     print(f"==> Generating dev certificates in {certs_dir}")
 
     subprocess.run([
-        openssl, "req", "-x509", "-newkey", "rsa:4096", "-sha256", "-days", "3650", "-nodes",
+        openssl, "req", "-x509", "-newkey", "rsa:4096", "-sha256", "-days", str(args.days), "-nodes",
         "-keyout", str(certs_dir / "ca.key"),
         "-out", str(certs_dir / "ca.crt"),
         "-subj", "/CN=Boost Dev CA/O=Boost Gateway Dev/C=US",
@@ -41,10 +48,10 @@ def main() -> int:
     print("  [OK] ca.key + ca.crt")
 
     subprocess.run([
-        openssl, "req", "-new", "-newkey", "rsa:4096", "-sha256", "-days", "3650", "-nodes",
+        openssl, "req", "-new", "-newkey", "rsa:4096", "-sha256", "-days", str(args.days), "-nodes",
         "-keyout", str(certs_dir / "server.key"),
         "-out", str(certs_dir / "server.csr"),
-        "-subj", "/CN=localhost/O=Boost Gateway Dev/C=US",
+        "-subj", f"/CN={args.common_name}/O=Boost Gateway Dev/C=US",
     ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     server_ext = certs_dir / "server.ext"
@@ -56,7 +63,7 @@ def main() -> int:
         "-CAkey", str(certs_dir / "ca.key"),
         "-CAcreateserial",
         "-out", str(certs_dir / "server.crt"),
-        "-days", "3650", "-sha256",
+        "-days", str(args.days), "-sha256",
         "-extfile", str(server_ext),
     ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print("  [OK] server.key + server.crt")

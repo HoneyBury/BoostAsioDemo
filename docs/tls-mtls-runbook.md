@@ -22,6 +22,12 @@
 python3 scripts/gen_certs.py
 ```
 
+也可以为轮换演练输出到独立目录：
+
+```bash
+python3 scripts/gen_certs.py --output-dir runtime/tls-readiness/rotated-certs --days 90
+```
+
 产物：
 
 - `certs/ca.crt`
@@ -49,6 +55,20 @@ TLS profile 生产业务闭环实测：
 ```bash
 python3 scripts/check_transport_config_governance.py --generate-dev-certs --include-tls-full-flow --build-dir build/release --summary-path runtime/validation/n4-transport-config-governance-summary.json
 ```
+
+R1 TLS 上线前置证据：
+
+```bash
+python3 scripts/verify_tls_production_readiness.py --build-dir build/release --skip-build --summary-path runtime/validation/r1-tls-production-readiness-summary.json
+```
+
+该入口会在本机启动 gateway、五个 backend 和 SDK full-flow client，验证：
+
+- 默认 TLS profile full-flow 仍可通过。
+- gateway 使用 `server` verify mode 与指定 CA 时，backend TLS full-flow 可通过。
+- 轮换后的证书目录可以完成同一业务闭环。
+- CA 不匹配会导致预期失败，并把失败 summary 归档为诊断证据。
+- plain TCP 与 backend TLS profile 的单次业务闭环耗时会写入 R1 summary；该对比是 smoke 级上线前置检查，不替代固定 runner 多轮容量基线。
 
 P5-P8 聚合入口会自动运行该检查：
 
@@ -80,7 +100,7 @@ python3 scripts/verify_p5_p8_business_closure.py --build-dir build/default --ski
 4. 观察连接失败率、backend TLS handshake 错误、leaderboard mTLS 拒绝数和证书过期告警。
 5. 回滚时先关闭 `v3_tls_enabled`，必要时回退 Secret 版本并滚动重启 gateway/backend。
 
-当前仓库已具备 opt-in backend TLS listener、五个 backend 配置接入和本机 TLS profile SDK full-flow 实测。默认生产仍保持 plain TCP；真正上线 TLS profile 前，还需要在固定 runner 或预发环境补多轮归档、证书轮换演练和性能损耗对比。
+当前仓库已具备 opt-in backend TLS listener、五个 backend 配置接入、本机 TLS profile SDK full-flow 实测，以及 R1 证书轮换 / CA 不匹配失败诊断 / plain-vs-TLS smoke 对比。默认生产仍保持 plain TCP；真正上线 TLS profile 前，还需要在固定 runner 或预发环境补多轮归档、证书过期告警、mTLS client cert 缺失和容量级性能损耗对比。
 
 ## 上线要求
 
@@ -89,6 +109,7 @@ python3 scripts/verify_p5_p8_business_closure.py --build-dir build/default --ski
 - 五个 backend 服务端 TLS listener 与证书加载全部启用。
 - Compose/K8s TLS profile 中 Secret/volume 挂载，并显式设置 `BACKEND_TLS_ENABLED=true`。
 - SDK full-flow 在 TLS profile 下通过并归档 summary；本机入口为 `runtime/validation/n4-tls-full-flow-summary.json`。
-- 错误证书、CA 不匹配、服务名不匹配、client cert 缺失的诊断用例。
+- R1 TLS production readiness 通过并归档 `runtime/validation/r1-tls-production-readiness-summary.json`。
+- 错误证书、CA 不匹配、服务名不匹配、client cert 缺失的诊断用例；当前 R1 已覆盖 CA 不匹配 expected failure，服务名和 client cert 缺失仍需预发/固定 runner 继续沉淀。
 
 上述内容未完成前，P6 的交付状态是“安全配置与灰度边界收束完成”，不是“默认生产 TLS transport 已上线”。

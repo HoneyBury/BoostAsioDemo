@@ -3,6 +3,7 @@
 更新时间：2026-05-18
 
 本文档记录 v3.3.2 之后生产稳定化与交付闭环阶段的规划和完成状态。当前阶段已经完成 P0-P8 生产业务闭环接入收束；后续继续推进时，本文档新增的“生产数据沉淀与风险燃尽”作为下一阶段规划事实源。
+历史 P 阶段中，当前阶段已经完成 P0-P6 收束，生产候选硬化方向的原始规划入口保留在 `docs/production-candidate-hardening-plan.md`，后续以本文档、`docs/current-state.md` 和各 runtime summary 作为最新事实源。
 
 ## 阶段目标
 
@@ -251,6 +252,44 @@ consumer、in-process business-flow、真实 gateway full-flow，以及 N4 backe
 - 默认生产主链不因 PoC 引入不稳定性。
 - 协议演进路径和回退策略清晰。
 
+## R 阶段：生产候选实证与上线前置燃尽
+
+N0-N6 已完成默认有界收束后，R 阶段不扩功能，目标是把“可以跑的验证入口”收成“投产前可反复执行、可归档、可解释失败原因”的候选证据。R0/R1 默认仍是本机/固定 runner 可运行的有界门禁；真实 2h/8h soak、多轮预发、跨节点和云上容量数据继续由固定 runner 或预发环境沉淀。
+
+### R0：生产候选证据聚合
+
+当前收束状态：已新增 `scripts/verify_production_candidate_evidence.py`，默认聚合 fixed-runner preflight、P5 production resilience、P6 production evidence、N5 SDK enterprise delivery；可显式追加 N4 backend TLS full-flow 和 N6 gRPC PoC decision。该入口用于发布前一次性确认生产候选证据没有被文档、脚本、SDK 或传输治理回归打断。
+
+任务：
+
+- [x] 将 P5 resilience、P6 production evidence、N5 SDK enterprise delivery 聚合成 R0 生产候选入口。
+- [x] 支持 `--include-tls-full-flow` 和 `--include-n6-grpc-decision`，把 N4/N6 的高风险边界纳入同一次候选实证。
+- [x] 输出 `runtime/validation/r0-production-candidate-evidence-summary.json`，记录失败分类、子 summary 路径和执行范围。
+- [x] 将生产候选完整性审核继续作为 P6/R0 的文档一致性阻断项，避免文档与实际交付漂移。
+- [ ] 固定 runner / 预发环境继续追加 Redis live、Operator kind、runtime HTTP、release/capacity baseline 和更长 soak。
+
+验收标准：
+
+- `python3 scripts/verify_production_candidate_evidence.py --build-dir build/release --skip-build --include-tls-full-flow --include-n6-grpc-decision` 通过。
+- R0 summary 能定位失败属于环境预检、生产韧性、生产证据、SDK 交付、TLS 治理或 gRPC 取舍。
+
+### R1：TLS 上线前置证据
+
+当前收束状态：已新增 `scripts/verify_tls_production_readiness.py`，在本机真实启动 gateway、五个 backend 和 SDK full-flow client，覆盖默认 TLS profile、server CA 校验、证书轮换后的 full-flow、CA 不匹配失败诊断，以及 plain/TLS 单次业务闭环耗时对比。`scripts/gen_certs.py` 已支持输出到指定目录，`scripts/verify_sdk_full_flow_client.py` 已支持指定证书目录和 gateway TLS verify mode。
+
+任务：
+
+- [x] 将 backend TLS profile full-flow 从“默认开发证书”扩展为可指定证书目录、CA 和 verify mode 的验证入口。
+- [x] 生成 current / rotated / mismatched 三套证书，验证轮换证书能完成业务闭环，错误 CA 会触发可诊断失败。
+- [x] 对 plain TCP 与 backend TLS profile 的 SDK full-flow 做 smoke 级耗时对比，并输出到 R1 summary。
+- [x] 将 TLS 上线前置命令写入 TLS runbook，明确它是上线前置证据，不代表默认生产已启用 TLS。
+- [ ] 预发/固定 runner 多轮 TLS 性能、证书过期告警、mTLS client cert 缺失和服务名校验仍需继续沉淀。
+
+验收标准：
+
+- `python3 scripts/verify_tls_production_readiness.py --build-dir build/release --skip-build` 通过。
+- R1 summary 同时包含 plain full-flow、TLS full-flow、rotated TLS full-flow、mismatched CA expected failure 和耗时对比。
+
 ## 下一阶段推荐执行顺序
 
 1. N0 固定 Runner 与证据自动化常态化。
@@ -260,6 +299,8 @@ consumer、in-process business-flow、真实 gateway full-flow，以及 N4 backe
 5. N4 传输安全与配置治理升级。
 6. N5 SDK 企业交付与客户端兼容矩阵。
 7. N6 gRPC / 协议演进 PoC 与生产取舍。
+8. R0 生产候选证据聚合。
+9. R1 TLS 上线前置证据。
 
 推荐先从 N0 和 N1 开始，因为它们会直接暴露当前系统在真实生产环境下的波动、容量边界和回归风险；N2-N5 再围绕这些事实完善观测、部署、配置和客户端交付；N6 放在最后，避免在主链稳定前引入新的传输复杂度。
 

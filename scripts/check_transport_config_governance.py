@@ -76,6 +76,8 @@ def run_step(name: str, category: str, cmd: list[str], timeout_seconds: int) -> 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--generate-dev-certs", action="store_true")
+    parser.add_argument("--include-tls-full-flow", action="store_true")
+    parser.add_argument("--build-dir", type=Path, default=ROOT / "build/release")
     parser.add_argument(
         "--summary-path",
         type=Path,
@@ -108,6 +110,25 @@ def main() -> int:
             60,
         ),
     ]
+    tls_full_flow_summary = ROOT / "runtime/validation/n4-tls-full-flow-summary.json"
+    if args.include_tls_full_flow:
+        steps.append(
+            run_step(
+                "N4 backend TLS SDK full-flow",
+                "tls_full_flow",
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/verify_sdk_full_flow_client.py"),
+                    "--build-dir",
+                    str(args.build_dir),
+                    "--skip-build",
+                    "--backend-tls",
+                    "--summary-path",
+                    str(tls_full_flow_summary),
+                ],
+                120,
+            )
+        )
 
     failed = next((step for step in steps if step.get("status") != "passed"), None)
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
@@ -122,6 +143,7 @@ def main() -> int:
             "summary_path": str(summary_path),
             "tls_profile_summary_path": str(tls_summary),
             "config_governance_summary_path": str(config_summary),
+            "tls_full_flow_summary_path": str(tls_full_flow_summary) if args.include_tls_full_flow else "",
         },
         "steps": steps,
     }

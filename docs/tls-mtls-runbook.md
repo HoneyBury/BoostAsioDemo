@@ -44,6 +44,12 @@ N4 传输安全与配置治理聚合门禁：
 python3 scripts/check_transport_config_governance.py --generate-dev-certs --summary-path runtime/validation/n4-transport-config-governance-summary.json
 ```
 
+TLS profile 生产业务闭环实测：
+
+```bash
+python3 scripts/check_transport_config_governance.py --generate-dev-certs --include-tls-full-flow --build-dir build/release --summary-path runtime/validation/n4-transport-config-governance-summary.json
+```
+
 P5-P8 聚合入口会自动运行该检查：
 
 ```bash
@@ -57,6 +63,7 @@ python3 scripts/verify_p5_p8_business_closure.py --build-dir build/default --ski
 - gateway bridge 按 `security_policy.require_tls` 和 `v3_tls_enabled` 控制 TLS。
 - backend connection 在传入 `tls_config` 时具备 TLS handshake 路径。
 - backend 服务端具备 opt-in TLS listener；`BackendTlsListenerCompletesLoginRequest` 覆盖 backend TLS listener + `BackendConnection` 的真实 request/response 闭环。
+- `scripts/verify_sdk_full_flow_client.py --backend-tls` 会启动五个 backend、gateway 和 SDK full-flow client，验证 login、room、battle、matchmaking、leaderboard 业务闭环全部通过 TLS profile。
 - 证书生成器和证书可读性正常。
 - Docker Compose 和 Kubernetes 为 backend TLS profile 保留显式 cert mount / Secret mount，默认仍关闭。
 - 配置治理门禁能发现 Docker/K8s/Helm 与生产配置事实源之间的漂移。
@@ -73,7 +80,7 @@ python3 scripts/verify_p5_p8_business_closure.py --build-dir build/default --ski
 4. 观察连接失败率、backend TLS handshake 错误、leaderboard mTLS 拒绝数和证书过期告警。
 5. 回滚时先关闭 `v3_tls_enabled`，必要时回退 Secret 版本并滚动重启 gateway/backend。
 
-当前仓库已具备 opt-in backend TLS listener 和 login backend 配置接入，但默认生产仍保持 plain TCP。真正把全业务 SDK full-flow 切到 TLS profile 前，必须让五个 backend 都按同一 TLS profile 启动，并在固定 runner 上归档 SDK full-flow。
+当前仓库已具备 opt-in backend TLS listener、五个 backend 配置接入和本机 TLS profile SDK full-flow 实测。默认生产仍保持 plain TCP；真正上线 TLS profile 前，还需要在固定 runner 或预发环境补多轮归档、证书轮换演练和性能损耗对比。
 
 ## 上线要求
 
@@ -81,7 +88,7 @@ python3 scripts/verify_p5_p8_business_closure.py --build-dir build/default --ski
 
 - 五个 backend 服务端 TLS listener 与证书加载全部启用。
 - Compose/K8s TLS profile 中 Secret/volume 挂载，并显式设置 `BACKEND_TLS_ENABLED=true`。
-- SDK full-flow 在 TLS profile 下通过并归档 summary。
+- SDK full-flow 在 TLS profile 下通过并归档 summary；本机入口为 `runtime/validation/n4-tls-full-flow-summary.json`。
 - 错误证书、CA 不匹配、服务名不匹配、client cert 缺失的诊断用例。
 
 上述内容未完成前，P6 的交付状态是“安全配置与灰度边界收束完成”，不是“默认生产 TLS transport 已上线”。

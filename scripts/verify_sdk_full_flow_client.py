@@ -26,6 +26,8 @@ def write_temp_gateway_config(
     battle_port: int,
     match_port: int,
     leaderboard_port: int,
+    backend_tls: bool = False,
+    cert_dir: Path | None = None,
 ) -> None:
     document = {
         "gateway": {
@@ -39,6 +41,25 @@ def write_temp_gateway_config(
             "leaderboard": {"host": "127.0.0.1", "port": leaderboard_port},
         },
     }
+    if backend_tls:
+        cert_root = cert_dir or (REPO_ROOT / "certs")
+        document["feature_flags"] = {
+            "v3_tls_enabled": {"enabled": True, "rollout_percentage": 100},
+        }
+        document["tls"] = {
+            "cert_chain_path": str(cert_root / "server.crt"),
+            "private_key_path": str(cert_root / "server.key"),
+            "ca_cert_path": str(cert_root / "ca.crt"),
+            "verify_mode": "none",
+        }
+        document["security_policy"] = {
+            "require_tls": True,
+            "login": {"tls_required": True, "mtls_required": False},
+            "room": {"tls_required": True, "mtls_required": False},
+            "battle": {"tls_required": True, "mtls_required": False},
+            "match": {"tls_required": True, "mtls_required": False},
+            "leaderboard": {"tls_required": True, "mtls_required": False},
+        }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(document, indent=2), encoding="utf-8")
 
@@ -59,6 +80,23 @@ def run_command(name: str, command: list[str], checks: list[dict[str, Any]]) -> 
         }
     )
     return passed
+
+
+def ensure_dev_certs(checks: list[dict[str, Any]]) -> bool:
+    certs = [REPO_ROOT / "certs/ca.crt", REPO_ROOT / "certs/server.crt", REPO_ROOT / "certs/server.key"]
+    if all(path.exists() for path in certs):
+        checks.append(
+            {
+                "name": "backend-tls-dev-certs-present",
+                "passed": True,
+                "command": ["check", "certs"],
+                "duration_seconds": 0.0,
+                "stdout": "",
+                "stderr": "",
+            }
+        )
+        return True
+    return run_command("generate-backend-tls-dev-certs", ["python3", "scripts/gen_certs.py"], checks)
 
 
 def wait_for_port(host: str, port: int, timeout_s: float) -> bool:
@@ -183,6 +221,36 @@ def add_backend_metric_check(checks: list[dict[str, Any]], diagnostics_url: str)
         )
 
 
+def add_backend_tls_metric_check(checks: list[dict[str, Any]], diagnostics_url: str) -> None:
+    try:
+        doc = fetch_json(diagnostics_url)
+        backend_metrics = doc.get("backend_metrics", {})
+        expected = ["login", "room", "battle", "matchmaking", "leaderboard"]
+        missing_successes = []
+        for service in expected:
+            snap = backend_metrics.get(service)
+            if not isinstance(snap, dict) or int(snap.get("total_successes", 0)) <= 0:
+                missing_successes.append(service)
+        checks.append(
+            {
+                "name": "backend-tls-full-flow-success-metrics",
+                "passed": not missing_successes,
+                "command": ["GET", diagnostics_url],
+                "stdout": json.dumps(backend_metrics, indent=2, sort_keys=True)[-8000:],
+                "stderr": "" if not missing_successes else "missing TLS successes for: " + ", ".join(missing_successes),
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 - recorded into validation summary
+        checks.append(
+            {
+                "name": "backend-tls-full-flow-success-metrics",
+                "passed": False,
+                "command": ["GET", diagnostics_url],
+                "stdout": "",
+                "stderr": str(exc),
+            }
+        )
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=REPO_ROOT / "build/default")
@@ -190,6 +258,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--http-port", type=int, default=0)
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--backend-tls", action="store_true", help="Run gateway->backend traffic through the opt-in backend TLS profile")
     parser.add_argument(
         "--summary-path",
         type=Path,
@@ -238,6 +307,9 @@ def main() -> int:
     processes: list[tuple[str, subprocess.Popen[str]]] = []
     try:
         base_env = os.environ.copy()
+        if args.backend_tls and not ensure_dev_certs(checks):
+            failed = [check for check in checks if not check["passed"]]
+            return write_summary(args.summary_path, checks, failed, backend_tls=args.backend_tls)
         temp_gateway_config = REPO_ROOT / "runtime/validation/sdk-full-flow-temp-gateway.json"
         write_temp_gateway_config(
             temp_gateway_config,
@@ -247,6 +319,7 @@ def main() -> int:
             battle_port=battle_port,
             match_port=match_port,
             leaderboard_port=leaderboard_port,
+            backend_tls=args.backend_tls,
         )
         backend_specs = [
             ("login", login_backend, login_port, {"SERVICE_PORT": str(login_port)}),
@@ -258,6 +331,16 @@ def main() -> int:
         for name, executable, port, extra_env in backend_specs:
             env = dict(base_env)
             env.update(extra_env)
+            if args.backend_tls:
+                env.update(
+                    {
+                        "BACKEND_TLS_ENABLED": "true",
+                        "BACKEND_TLS_CERT_CHAIN_PATH": str(REPO_ROOT / "certs/server.crt"),
+                        "BACKEND_TLS_PRIVATE_KEY_PATH": str(REPO_ROOT / "certs/server.key"),
+                        "BACKEND_TLS_CA_CERT_PATH": str(REPO_ROOT / "certs/ca.crt"),
+                        "BACKEND_TLS_VERIFY_MODE": "none",
+                    }
+                )
             proc = start_process(name, [str(executable)], env, checks)
             if proc is not None:
                 processes.append((name, proc))
@@ -324,6 +407,11 @@ def main() -> int:
                 checks,
                 f"http://{args.host}:{http_port}/metrics/diagnostics/json",
             )
+            if args.backend_tls:
+                add_backend_tls_metric_check(
+                    checks,
+                    f"http://{args.host}:{http_port}/metrics/diagnostics/json",
+                )
     finally:
         for name, proc in reversed(processes):
             terminate_process(name, proc, checks)
@@ -332,14 +420,17 @@ def main() -> int:
             temp_gateway_config.unlink()
 
     failed = [check for check in checks if not check["passed"]]
-    return write_summary(args.summary_path, checks, failed)
+    return write_summary(args.summary_path, checks, failed, backend_tls=args.backend_tls)
 
 
-def write_summary(path: Path, checks: list[dict[str, Any]], failed: list[dict[str, Any]]) -> int:
+def write_summary(path: Path, checks: list[dict[str, Any]], failed: list[dict[str, Any]], backend_tls: bool = False) -> int:
     summary = {
+        "summary_version": 2,
         "passed": not failed,
+        "backend_tls": backend_tls,
         "total_checks": len(checks),
         "failed_checks": len(failed),
+        "failed_step": failed[0]["name"] if failed else "",
         "checks": checks,
     }
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -65,6 +65,7 @@ add_executable(project_v2_unit_tests
     unit/realtime/spi_compliance_test.cpp
     unit/parallel_system_executor_test.cpp
     unit/tank_battle_plugin_test.cpp
+    unit/gateway_grpc_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE
@@ -79,6 +80,15 @@ target_compile_definitions(project_v2_unit_tests
 apply_project_warnings(project_v2_unit_tests)
 if(COMMAND boost_gateway_stage_runtime_dlls)
     boost_gateway_stage_runtime_dlls(project_v2_unit_tests)
+endif()
+
+# ─── gRPC test dependencies (optional) ──────────────────────────────
+if(BOOST_BUILD_GRPC)
+    target_include_directories(project_v2_unit_tests
+        PRIVATE
+            "${CMAKE_SOURCE_DIR}/src/v2/grpc"
+            "${CMAKE_SOURCE_DIR}/src/v3/proto"
+    )
 endif()
 
 include(GoogleTest)

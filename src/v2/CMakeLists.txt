@@ -38,6 +38,7 @@ add_library(project_v2 STATIC
     io/io_engine.cpp
     memory/arena.cpp
     player/player_actor.cpp
+    realtime/instance_runtime.cpp
     room/room_actor.cpp
     room/room_backend_service.cpp
     login/login_backend_service.cpp

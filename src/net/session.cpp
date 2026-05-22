@@ -369,7 +369,7 @@ void Session::do_write() {
         socket_,
         asio::buffer(write_queue_.front().packet),
         asio::bind_executor(strand_,
-                            [self](const error_code& ec, std::size_t /*bytes_transferred*/) {
+                            [self](const error_code& ec, std::size_t bytes_transferred) {
                                 if (ec) {
                                     self->handle_close(ec);
                                     return;

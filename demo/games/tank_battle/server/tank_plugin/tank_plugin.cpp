@@ -115,7 +115,7 @@ v2::realtime::InputResult TankPlugin::on_input(
 
 v2::realtime::TickStats TankPlugin::on_tick(
     v2::realtime::InstanceContext& ctx,
-    const v2::realtime::FrameContext& frame_ctx) {
+    const v2::realtime::FrameContext& frame_ctx) noexcept {
 
     // Advance the world simulation by one tick
     // Inputs have already been applied via on_input, so we pass empty
@@ -134,7 +134,7 @@ v2::realtime::TickStats TankPlugin::on_tick(
 }
 
 v2::realtime::Snapshot TankPlugin::build_snapshot(
-    v2::realtime::InstanceContext& ctx, bool is_resume) {
+    v2::realtime::InstanceContext& ctx, bool is_resume) noexcept {
 
     v2::realtime::Snapshot snap;
     snap.frame_number = world_.frame();
@@ -147,7 +147,7 @@ v2::realtime::Snapshot TankPlugin::build_snapshot(
 
 std::string TankPlugin::build_settlement(
     v2::realtime::InstanceContext& ctx,
-    const v2::realtime::SettlementContext& sctx) {
+    const v2::realtime::SettlementContext& sctx) noexcept {
 
     auto settlement = world_.build_settlement();
     settlement["instance_id"] = ctx.instance_id;
@@ -158,7 +158,7 @@ std::string TankPlugin::build_settlement(
 
 v2::realtime::Snapshot TankPlugin::build_resume_snapshot(
     v2::realtime::InstanceContext& ctx,
-    const v2::realtime::PlayerContext& player) {
+    const v2::realtime::PlayerContext& player) noexcept {
 
     return build_snapshot(ctx, true);
 }

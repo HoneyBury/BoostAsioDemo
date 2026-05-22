@@ -104,7 +104,7 @@ TEST(PacketFuzzTest, FragmentPacketSplitsLargeBody) {
 
 TEST(PacketFuzzTest, NonFragmentPassesThroughAssembler) {
     net::packet::FragmentAssembler assembler;
-    net::packet::DecodedPacket pkt{42, 0, 0, 0, "hello"};
+    net::packet::DecodedPacket pkt{0, 42, 0, 0, 0, 0, "hello"};
     auto result = assembler.feed(pkt);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->body, "hello");

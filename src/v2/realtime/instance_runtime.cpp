@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -97,7 +98,21 @@ public:
         inst->state = InstanceState::kWaitingPlayers;
 
         // Let the plugin initialise its state
-        inst->plugin->on_instance_created(inst->ctx);
+        // Error isolation: if the plugin throws, we log and abort creation
+        try {
+            inst->plugin->on_instance_created(inst->ctx);
+        } catch (const std::exception& e) {
+            AUDIT_LOG("instance_create_failure",
+                      "instance_id=" + instance_id +
+                      " reason=plugin_on_instance_created_exception what=" +
+                      std::string(e.what()));
+            return {};
+        } catch (...) {
+            AUDIT_LOG("instance_create_failure",
+                      "instance_id=" + instance_id +
+                      " reason=plugin_on_instance_created_unknown_exception");
+            return {};
+        }
 
         instances_[instance_id] = std::move(inst);
 
@@ -173,8 +188,25 @@ public:
         settlement_ctx.room_id = inst->ctx.room_id;
         settlement_ctx.reason = reason;
         settlement_ctx.total_frames = inst->current_frame;
-        settlement_ctx.result_payload = inst->plugin->build_settlement(
-            inst->ctx, settlement_ctx);
+
+        // Build settlement with error isolation
+        // Note: build_settlement is noexcept by contract, but we wrap
+        // it for defence-in-depth.
+        try {
+            settlement_ctx.result_payload = inst->plugin->build_settlement(
+                inst->ctx, settlement_ctx);
+        } catch (const std::exception& e) {
+            AUDIT_LOG("instance_settlement_failure",
+                      "instance_id=" + instance_id +
+                      " reason=plugin_build_settlement_exception what=" +
+                      std::string(e.what()));
+            settlement_ctx.result_payload = R"({"error":"settlement_failed"})";
+        } catch (...) {
+            AUDIT_LOG("instance_settlement_failure",
+                      "instance_id=" + instance_id +
+                      " reason=plugin_build_settlement_unknown_exception");
+            settlement_ctx.result_payload = R"({"error":"settlement_failed"})";
+        }
 
         inst->state = InstanceState::kFinished;
 
@@ -200,7 +232,25 @@ public:
         auto* player = inst->ctx.find_player(user_id);
         if (player == nullptr) return {};
 
-        return inst->plugin->build_resume_snapshot(inst->ctx, *player);
+        // Build resume snapshot with error isolation
+        // Note: build_resume_snapshot is noexcept by contract, but we
+        // wrap it for defence-in-depth.
+        try {
+            return inst->plugin->build_resume_snapshot(inst->ctx, *player);
+        } catch (const std::exception& e) {
+            AUDIT_LOG("instance_resume_snapshot_failure",
+                      "instance_id=" + instance_id +
+                      " user_id=" + user_id +
+                      " reason=plugin_build_resume_snapshot_exception what=" +
+                      std::string(e.what()));
+            return {};
+        } catch (...) {
+            AUDIT_LOG("instance_resume_snapshot_failure",
+                      "instance_id=" + instance_id +
+                      " user_id=" + user_id +
+                      " reason=plugin_build_resume_snapshot_unknown_exception");
+            return {};
+        }
     }
 
     TickStats tick_instance(const std::string& instance_id,
@@ -234,19 +284,60 @@ public:
 
         while (!inst->input_queue.empty()) {
             auto& input = inst->input_queue.front();
-            auto result = inst->plugin->on_input(inst->ctx, input);
-            if (result.accepted) {
-                input.seq = result.ack_seq;  // update to ack seq
-                frame_ctx.inputs_this_tick.push_back(std::move(input));
 
-                auto& ps = inst->player_input_state[input.user_id];
-                ps.last_acked_frame = frame_number;
+            // Error isolation for on_input
+            try {
+                auto result = inst->plugin->on_input(inst->ctx, input);
+                if (result.accepted) {
+                    input.seq = result.ack_seq;  // update to ack seq
+                    frame_ctx.inputs_this_tick.push_back(std::move(input));
+
+                    auto& ps = inst->player_input_state[input.user_id];
+                    ps.last_acked_frame = frame_number;
+                }
+            } catch (const std::exception& e) {
+                AUDIT_LOG("plugin_on_input_exception",
+                          "instance_id=" + instance_id +
+                          " user_id=" + input.user_id +
+                          " seq=" + std::to_string(input.seq) +
+                          " what=" + std::string(e.what()));
+                // Input is rejected, not added to inputs_this_tick
+            } catch (...) {
+                AUDIT_LOG("plugin_on_input_unknown_exception",
+                          "instance_id=" + instance_id +
+                          " user_id=" + input.user_id +
+                          " seq=" + std::to_string(input.seq));
+                // Input is rejected, not added to inputs_this_tick
             }
+
             inst->input_queue.pop();
         }
 
         // Forward tick to plugin
-        auto tick_result = inst->plugin->on_tick(inst->ctx, frame_ctx);
+        // Note: on_tick is noexcept by contract; try-catch is defence-in-depth.
+        TickStats tick_result;
+        try {
+            tick_result = inst->plugin->on_tick(inst->ctx, frame_ctx);
+        } catch (const std::exception& e) {
+            AUDIT_LOG("plugin_on_tick_exception",
+                      "instance_id=" + instance_id +
+                      " frame=" + std::to_string(frame_number) +
+                      " what=" + std::string(e.what()));
+            tick_result = TickStats{
+                .frame_number = frame_number,
+                .should_finish = true,
+                .finish_reason = FinishReason::kError,
+            };
+        } catch (...) {
+            AUDIT_LOG("plugin_on_tick_unknown_exception",
+                      "instance_id=" + instance_id +
+                      " frame=" + std::to_string(frame_number));
+            tick_result = TickStats{
+                .frame_number = frame_number,
+                .should_finish = true,
+                .finish_reason = FinishReason::kError,
+            };
+        }
 
         // Check frame limit
         if (inst->ctx.max_frames > 0 &&
@@ -257,7 +348,30 @@ public:
         }
 
         // Build and emit snapshot
-        auto snapshot = inst->plugin->build_snapshot(inst->ctx);
+        // Note: build_snapshot is noexcept by contract; try-catch is defence-in-depth.
+        Snapshot snapshot;
+        try {
+            snapshot = inst->plugin->build_snapshot(inst->ctx);
+        } catch (const std::exception& e) {
+            AUDIT_LOG("plugin_build_snapshot_exception",
+                      "instance_id=" + instance_id +
+                      " frame=" + std::to_string(frame_number) +
+                      " what=" + std::string(e.what()));
+            snapshot = Snapshot{
+                .frame_number = frame_number,
+                .payload_type = "error",
+                .payload = R"({"error":"snapshot_failed"})",
+            };
+        } catch (...) {
+            AUDIT_LOG("plugin_build_snapshot_unknown_exception",
+                      "instance_id=" + instance_id +
+                      " frame=" + std::to_string(frame_number));
+            snapshot = Snapshot{
+                .frame_number = frame_number,
+                .payload_type = "error",
+                .payload = R"({"error":"snapshot_failed"})",
+            };
+        }
         snapshot.frame_number = frame_number;
 
         emit_event(InstanceEvent{

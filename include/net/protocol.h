@@ -4,6 +4,17 @@
 
 namespace net::protocol {
 
+// Protocol version range supported by this build.
+// Used during connection-level version handshake and packet validation.
+constexpr std::uint8_t kProtocolVersion = 1;
+constexpr std::uint8_t kProtocolMinVersion = 1;
+constexpr std::uint8_t kProtocolMaxVersion = 1;
+
+// Version negotiation message types (500-599).
+// These are exchanged at connection startup before application messages.
+constexpr std::uint16_t kVersionRequest = 500;
+constexpr std::uint16_t kVersionResponse = 501;
+
 enum class ErrorCode : std::int32_t {
     kOk = 0,
     kAuthRequired = 1001,

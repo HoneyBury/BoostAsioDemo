@@ -16,3 +16,9 @@ add_subdirectory(v2_gateway_pressure)
 add_subdirectory(v2_arch_benchmark)
 add_subdirectory(v2_match_backend)
 add_subdirectory(v2_leaderboard_backend)
+
+# ─── Optional demo plugins (not in default build) ────────────────────
+option(BOOST_BUILD_ECHO_PLUGIN_DEMO "Build realtime_echo_plugin demo" OFF)
+if(BOOST_BUILD_ECHO_PLUGIN_DEMO)
+    add_subdirectory(realtime_echo_plugin)
+endif()

@@ -88,7 +88,7 @@ public:
 private:
     bool tls_handshake();
 
-    BackendEnvelope do_send(BackendEnvelope request);
+    std::optional<BackendEnvelope> do_send(BackendEnvelope request);
 
     std::optional<BackendEnvelope> attempt_send_with_retry(
         BackendEnvelope request,

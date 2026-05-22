@@ -201,3 +201,34 @@
 - demo 可以删除而不影响框架构建、SDK 分发和生产 gate。
 - demo 只能通过文档声明验证了哪些框架能力。
 
+## 11. M4 — Business Plugin SPI
+
+SPI（Service Provider Interface）定义框架 runtime 与业务 plugin 之间的契约。InstancePlugin 是框架提供的纯虚接口，业务通过实现该接口注入领域逻辑。
+
+### SPI 定义
+
+- `InstancePlugin`（`include/v2/realtime/instance_plugin.h`）定义了 8 个虚方法，覆盖实例生命周期、输入处理、tick 推进和快照结算。
+- 高频方法（`on_tick`、`build_snapshot`、`build_settlement`、`build_resume_snapshot`）标记为 `noexcept`，确保 hot path 不因异常而中断。
+- 低频方法（`on_instance_created`、`on_player_join`、`on_player_leave`、`on_input`）允许抛异常，runtime 通过 try-catch 包裹实现错误隔离。
+
+### 框架责任
+
+- 提供 `InstanceRuntime`，管理 instance 生命周期、tick 调度、input 队列、snapshot 分发和事件回调。
+- 在调用 plugin 方法的每个入口点包裹 try-catch（包括 noexcept 方法作为防御深度），捕获异常后记录 `AUDIT_LOG` 并返回安全默认值。
+- 保证 plugin 抛出异常时 runtime 不崩溃、不泄漏、不破坏其他 instance 的状态。
+- 维护 `InstancePluginFactory` 工厂注册表，支持按 `instance_type` 动态创建不同业务 plugin。
+
+### 业务责任
+
+- 实现 `InstancePlugin` 接口，提供具体领域规则（坦克物理、协作编辑、IoT 控制等）。
+- 确保 `noexcept` 方法的内部错误全部自行处理，不向外抛出。
+- 通过 `instance_ctx.plugin_state` 管理业务状态（opaque pointer），框架不解释其内容。
+- 在 `build_snapshot` / `build_settlement` 中返回序列化后的业务 payload（框架不解释 payload 格式）。
+
+### 验收标准
+
+- 新增业务 plugin 不需要修改框架 runtime 代码。
+- plugin 抛异常不会导致 runtime 崩溃（通过 spi_compliance_test 验证）。
+- plugin 可以独立发布和测试，不依赖框架的编译单元。
+- 框架源码中不出现业务实体类型名（`Tank`、`Bullet`、`Map` 等）。
+

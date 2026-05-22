@@ -21,7 +21,7 @@ TEST(CodecV4Test, EmptyBodyRoundTrip) {
     protocol::LengthHeader h{};
     std::memcpy(h.data(), enc.data(), 4);
     auto len = protocol::decode_length(h);
-    EXPECT_EQ(len, 11U);
+    EXPECT_EQ(len, 16U);
     std::vector<char> p(enc.begin() + 4, enc.end());
     auto dec = protocol::decode_payload(p);
     EXPECT_TRUE(dec.body.empty());
@@ -44,7 +44,7 @@ TEST(CodecV4Test, LargeBodyPreserved) {
     auto enc = protocol::encode(protocol::kEchoRequest, 1, 0, big);
     protocol::LengthHeader h{};
     std::memcpy(h.data(), enc.data(), 4);
-    EXPECT_EQ(protocol::decode_length(h), 10011U);
+    EXPECT_EQ(protocol::decode_length(h), 10016U);
     std::vector<char> p(enc.begin() + 4, enc.end());
     auto dec = protocol::decode_payload(p);
     EXPECT_EQ(dec.body.size(), 10000U);

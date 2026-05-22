@@ -50,7 +50,7 @@ TEST(SdkProtocolTest, LargeBodyRoundTrip) {
     std::memcpy(header.data(), encoded.data(), 4);
     auto total = net::packet::decode_length(header);
 
-    EXPECT_EQ(total, 11U + 5000U);
+    EXPECT_EQ(total, 16U + 5000U);
 
     std::vector<char> payload(encoded.begin() + 4, encoded.end());
     auto decoded = net::packet::decode_payload(payload);

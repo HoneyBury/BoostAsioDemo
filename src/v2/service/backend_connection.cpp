@@ -138,7 +138,7 @@ void BackendConnection::release_permit() {
     }
 }
 
-BackendEnvelope BackendConnection::do_send(BackendEnvelope request) {
+std::optional<BackendEnvelope> BackendConnection::do_send(BackendEnvelope request) {
     if (request.correlation_id == 0) {
         request.correlation_id = generate_correlation_id();
     }
@@ -148,13 +148,13 @@ BackendEnvelope BackendConnection::do_send(BackendEnvelope request) {
         if (!write_frame(*ssl_stream_, request)) {
             last_failure_stage_ = FailureStage::kWrite;
             close();
-            return {};
+            return std::nullopt;
         }
         auto response = read_frame(*ssl_stream_, options_.timeout);
         if (!response) {
             last_failure_stage_ = FailureStage::kRead;
             close();
-            return {};
+            return std::nullopt;
         }
         return *response;
     }
@@ -162,14 +162,14 @@ BackendEnvelope BackendConnection::do_send(BackendEnvelope request) {
     if (!write_frame(*socket_, request)) {
         last_failure_stage_ = FailureStage::kWrite;
         close();
-        return {};
+        return std::nullopt;
     }
 
     auto response = read_frame(*socket_, options_.timeout);
     if (!response) {
         last_failure_stage_ = FailureStage::kRead;
         close();
-        return {};
+        return std::nullopt;
     }
 
     return *response;
@@ -182,7 +182,7 @@ std::optional<BackendEnvelope> BackendConnection::attempt_send_with_retry(
 
     // Try once immediately
     auto result = do_send(std::move(request));
-    if (last_failure_stage_ == FailureStage::kNone) {
+    if (result.has_value()) {
         return result;
     }
 

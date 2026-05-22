@@ -46,7 +46,7 @@ public:
     }
 
     v2::realtime::TickStats on_tick(v2::realtime::InstanceContext& ctx,
-                                     const v2::realtime::FrameContext& frame_ctx) override {
+                                     const v2::realtime::FrameContext& frame_ctx) noexcept override {
         auto* world = static_cast<tank::TankWorld*>(ctx.plugin_state);
         if (world) {
             // Convert inputs to tank format
@@ -66,7 +66,7 @@ public:
     }
 
     v2::realtime::Snapshot build_snapshot(v2::realtime::InstanceContext& ctx,
-                                           bool /*is_resume*/) override {
+                                           bool /*is_resume*/) noexcept override {
         auto* world = static_cast<tank::TankWorld*>(ctx.plugin_state);
         v2::realtime::Snapshot snap;
         snap.payload_type = "tank.snapshot";
@@ -78,7 +78,7 @@ public:
     }
 
     std::string build_settlement(v2::realtime::InstanceContext& ctx,
-                                  const v2::realtime::SettlementContext& /*sctx*/) override {
+                                  const v2::realtime::SettlementContext& /*sctx*/) noexcept override {
         auto* world = static_cast<tank::TankWorld*>(ctx.plugin_state);
         if (world) {
             return world->build_settlement().dump();
@@ -87,7 +87,7 @@ public:
     }
 
     v2::realtime::Snapshot build_resume_snapshot(v2::realtime::InstanceContext& ctx,
-                                                  const v2::realtime::PlayerContext& /*player*/) override {
+                                                  const v2::realtime::PlayerContext& /*player*/) noexcept override {
         return build_snapshot(ctx, true);
     }
 };

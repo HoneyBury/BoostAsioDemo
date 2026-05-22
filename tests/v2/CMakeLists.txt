@@ -59,6 +59,7 @@ add_executable(project_v2_unit_tests
     unit/identity_register_test.cpp
     unit/room_lobby_test.cpp
     unit/realtime/instance_runtime_test.cpp
+    unit/realtime/spi_compliance_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE

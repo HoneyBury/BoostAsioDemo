@@ -78,7 +78,7 @@ inline std::vector<DecodedPacket> fragment_packet(std::uint16_t message_id,
                                                     std::int32_t error_code,
                                                     std::string_view body) {
     if (body.size() <= kFragmentThreshold) {
-        return {DecodedPacket{message_id, request_id, error_code, 0, std::string(body)}};
+        return {DecodedPacket{0, message_id, request_id, 0, error_code, 0, std::string(body)}};
     }
 
     std::vector<DecodedPacket> fragments;
@@ -92,7 +92,7 @@ inline std::vector<DecodedPacket> fragment_packet(std::uint16_t message_id,
         if (i == total_fragments - 1) flags |= fragment_flags::kLastFragment;
 
         fragments.push_back(DecodedPacket{
-            message_id, request_id, error_code, flags,
+            0, message_id, request_id, 0, error_code, flags,
             std::string(body.substr(offset, len)),
         });
     }

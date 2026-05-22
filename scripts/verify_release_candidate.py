@@ -75,6 +75,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--soak-profile", choices=["smoke", "short", "medium"], default="smoke")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-release-baseline", action="store_true")
+    parser.add_argument("--include-tank-demo", action="store_true",
+                        help="Include tank battle demo verification and perf smoke test")
     parser.add_argument("--timeout-seconds", type=int, default=90)
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/release-candidate-summary.json"))
     return parser.parse_args()
@@ -210,6 +212,32 @@ def main() -> int:
             ],
             root,
             args.timeout_seconds + 420,
+        ))
+
+    if args.include_tank_demo:
+        steps.append(run_step(
+            "tank demo checkpoint verification",
+            "tank_demo",
+            [
+                sys.executable,
+                str(root / "demo" / "games" / "tank_battle" / "scripts" / "verify_tank_battle_demo.py"),
+                "--build-dir",
+                str(args.build_dir),
+            ],
+            root,
+            args.timeout_seconds,
+        ))
+        steps.append(run_step(
+            "tank demo perf smoke",
+            "tank_demo",
+            [
+                sys.executable,
+                str(root / "demo" / "games" / "tank_battle" / "scripts" / "perf_smoke_test.py"),
+                "--build-dir",
+                str(args.build_dir),
+            ],
+            root,
+            args.timeout_seconds + 60,
         ))
 
     summary["steps"] = steps

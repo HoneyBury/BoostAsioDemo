@@ -1,6 +1,12 @@
 // v3.0.0 Phase 14: Remote Actor Transport + Consistent Hash tests
 
 #include <gtest/gtest.h>
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "v2/runtime/actor_system.h"
 #include "v3/cluster/remote_actor.h"
 #include "v3/cluster/consistent_hash.h"
 
@@ -198,4 +204,104 @@ TEST(ShardRouterTest, AddRemoveBackend) {
 
     router.remove_backend("b1");
     EXPECT_EQ(router.room_ring().size(), 150U);
+}
+
+// ─── RemoteActorRef::tell() tests ─────────────────────────────────────────
+
+namespace {
+
+/// Test actor that records string payloads from received messages.
+class TellTestActor final : public v2::actor::Actor {
+public:
+    explicit TellTestActor(std::vector<std::string>& received)
+        : received_(received) {}
+
+    void on_message(v2::actor::Message&& message) override {
+        if (const auto* text = std::get_if<std::string>(&message.payload)) {
+            received_.push_back(*text);
+        }
+    }
+
+private:
+    std::vector<std::string>& received_;
+};
+
+}  // anonymous namespace
+
+TEST(RemoteActorTest, TellLocalDeliversToLocalRef) {
+    std::vector<std::string> received;
+    v2::runtime::ActorSystem actor_system;
+    auto actor_ref = actor_system.create_actor(
+        std::make_unique<TellTestActor>(received));
+
+    NodeId node{.host = "127.0.0.1", .node_name = "local-node"};
+    RemoteActorRef remote_ref(actor_ref, node);
+
+    v2::actor::Message msg;
+    msg.header.kind = v2::actor::MessageKind::kUser;
+    msg.payload = std::string("local_delivery");
+
+    remote_ref.tell(std::move(msg));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(received.size(), 1U);
+    EXPECT_EQ(received[0], "local_delivery");
+}
+
+TEST(RemoteActorTest, TellRemoteWithoutTransportDoesNotCrash) {
+    auto ref = RemoteActorRef::remote(42, NodeId{.host = "10.0.0.1", .node_name = "node-1"});
+
+    v2::actor::Message msg;
+    msg.header.kind = v2::actor::MessageKind::kUser;
+    msg.payload = std::string("hello");
+
+    // Should not crash; should log a warning and return.
+    ref.tell(std::move(msg));
+}
+
+TEST(RemoteActorTest, TellRemoteWithTransportRoutes) {
+    auto registry = std::make_shared<ActorLocationRegistry>();
+    auto router = std::make_shared<ClusterRouter>();
+    RemoteActorTransport transport(registry, router);
+
+    NodeId target_node{.host = "10.0.0.2", .node_name = "node-2"};
+    NodeId captured_node;
+    std::string captured_data;
+
+    transport.set_sender(
+        [&](const NodeId& node, const std::string& data) -> bool {
+            captured_node = node;
+            captured_data = data;
+            return true;
+        });
+
+    RemoteActorRef::set_default_transport(&transport);
+
+    auto ref = RemoteActorRef::remote(42, target_node);
+
+    v2::actor::Message msg;
+    msg.header.kind = v2::actor::MessageKind::kUser;
+    msg.header.request_id = 99;
+    msg.header.source_actor = 100;
+    msg.header.target_actor = 42;
+    msg.payload = std::string("remote_hello");
+
+    ref.tell(std::move(msg));
+
+    EXPECT_EQ(captured_node.node_name, "node-2");
+    EXPECT_FALSE(captured_data.empty());
+
+    // Verify the serialized data can be deserialized and preserves fields.
+    auto decoded = RemoteActorTransport::deserialize(captured_data);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->header.request_id, 99U);
+    EXPECT_EQ(decoded->header.source_actor, 100U);
+    EXPECT_EQ(decoded->header.target_actor, 42U);
+
+    const auto* payload = std::get_if<std::string>(&decoded->payload);
+    ASSERT_NE(payload, nullptr);
+    EXPECT_EQ(*payload, "remote_hello");
+
+    // Clean up global state.
+    RemoteActorRef::set_default_transport(nullptr);
 }

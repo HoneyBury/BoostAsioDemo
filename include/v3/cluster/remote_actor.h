@@ -15,6 +15,9 @@
 
 namespace v3::cluster {
 
+// Forward declarations
+class RemoteActorTransport;
+
 // ── Node-aware ActorRef ────────────────────────────────────────────────
 
 class RemoteActorRef {
@@ -38,6 +41,9 @@ public:
 
     /// Send a message to this actor (local or remote transparently).
     void tell(v2::actor::Message msg) const;
+
+    /// Set the default transport used for remote delivery.
+    static void set_default_transport(RemoteActorTransport* transport);
 
     /// Get the local ActorRef (only valid if is_local()).
     [[nodiscard]] std::optional<v2::actor::ActorRef> local_ref() const {
@@ -118,6 +124,12 @@ public:
 
     /// Set the function that actually sends bytes to a remote node.
     void set_sender(MessageSender sender) { sender_ = std::move(sender); }
+
+    /// Send raw serialized bytes to a specific node via the configured sender.
+    bool send_to_node(const NodeId& target, const std::string& serialized_msg) {
+        if (!sender_) return false;
+        return sender_(target, serialized_msg);
+    }
 
     /// Serialize a message for network transport.
     [[nodiscard]] static std::string serialize(const v2::actor::Message& msg);

@@ -206,6 +206,25 @@ Prometheus 告警：
 - cAdvisor 属于可选 `host-observability` profile，只有在宿主允许挂载 `/sys`、`/var/run`、`/var/lib/docker` 等目录时才启用。
 - 启用该 profile 时，额外使用 `env/monitoring/prometheus.host-observability.yml` 在 `127.0.0.1:9091` 提供隔离的容器 runtime metrics scrape，不污染默认 Prometheus target 状态。
 
+## 云服务器生产收束
+
+如果当前 Linux 云服务器被指定为生产环境或生产候选环境，执行口径应从“开发环境预演”切换为“固定生产验证主机”。推荐顺序：
+
+```bash
+cmake --preset release
+python3 scripts/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release
+python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-2h-soak --run-capacity
+python3 scripts/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence
+```
+
+说明：
+
+- 第一步确认生产主机依赖完整：Docker、kubectl、kind、Go、systemd、CMake、Ninja。
+- 生产主机如已安装系统 Boost/OpenSSL 头文件，应优先复用本机依赖，避免发布收束阶段继续依赖外网下载第三方源码。
+- 第二步完成 2h soak 与 capacity 证据收束；8h soak 可复用同一脚本补跑。
+- 第三步完成 Docker Compose、kind/control-plane、production evidence 聚合和快照归档。
+- 如需形成最终发布记录，再追加 `python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-8h-soak`。
+
 ## Redis 备份与恢复
 
 Docker Compose 使用 `redis-data:` volume；Kubernetes 使用 `redis-data` PVC。生产至少需要：

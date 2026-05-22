@@ -2,7 +2,7 @@
 
 > 当前事实源优先阅读：[当前项目事实源](./current-state.md) 和 [可靠性矩阵](./reliability-matrix.md)。两者用于对齐稳定性、可靠性、性能收束状态，并由 release candidate 门禁校验关键证据。
 
-当前项目的工程化文档统一放在 `docs/` 目录下，面向后续把本项目持续演进成一个高性能游戏服务器框架。
+当前项目的工程化文档统一放在 `docs/` 目录下，面向后续把本项目持续演进成一个企业级高性能实时服务框架。
 
 ## 文档列表
 
@@ -64,6 +64,10 @@
 
 - [v2.x 企业级迭代路线](./v2-enterprise-roadmap.md) — 从 v2.0.0 到 v3.0.0 的完整版本规划与验收标准
 - [架构验收标准](./architecture-acceptance-criteria.md) — 五维度量化验收标准（性能/可靠性/可观测性/安全性/可运维性）
+- [实时系统框架实施改造计划](./realtime-framework-modernization-plan.md) — 约束主线继续作为企业级实时服务底座演进，demo 只能作为验证样例接入
+- [实时系统框架模块边界](./realtime-framework-module-boundaries.md) — 定义 gateway、identity、room、matchmaking、realtime instance、leaderboard、observability 与 demo 的允许/禁止职责
+- [SDK 封装边界与演进说明](./realtime-framework-sdk-boundary.md) — 定义 SDK 作为框架客户端接入层的通用 API 边界，禁止业务专属方法进入公共 SDK
+- [服务端框架与坦克大战 Demo 开发计划](./server-framework-and-tank-demo-development-plan.md) — 仅服务端范围的阶段计划、优先级、时间安排、验收标准、测试与回归约束
 - [v3.x 生产就绪加强规划](./v3-production-readiness-plan.md) — v3.3.x 之后的 12 周收口计划，覆盖性能数据闭环、架构实测、交付面、Actor 多核线程边界、通信契约、控制面和发布门槛
 - [生产稳定化与交付闭环路线图](./production-stabilization-roadmap.md) — v3.3.2 之后的大阶段执行规划，聚焦生产部署、性能基线、固定 runner 证据、监控运维、SDK 企业级封装和长稳故障演练
 - [生产候选实测与发布硬化规划](./production-candidate-hardening-plan.md) — P0-P6 收束后的下一阶段规划，聚焦固定 runner 常态化、长稳、容量、Kubernetes 发布演练、观测闭环和 SDK 企业接入包
@@ -93,6 +97,8 @@
 - [v3.3.2 H0-H5 生产候选硬化记录](./releases/v3.3.2-h0-h5-production-hardening.md) — 固定 runner、长稳/容量入口、K8s、观测和 SDK 企业接入包证据收束
 - [v3.3.2 OrbStack 生产部署上线记录](./releases/v3.3.2-orbstack-production-deployment.md) — 本机 OrbStack Docker Compose 全栈部署、监控入口和 SDK 真实业务闭环证据
 - [部署手册](../deploy/README.md) — Docker Compose + systemd 部署运行手册
+- [业务 demo 接入规范](../demo/games/README.md) — `demo/games/` 下游戏和实时系统样例的目录、验证和生产 gate 隔离规则
+- [坦克大战 demo 规划](../demo/games/tank-battle-demo-plan.md) — 多人在线 2D 坦克大战作为业务验证样例的流程、边界、SDK adapter 和验收标准
 
 ## 文档使用建议
 
@@ -109,6 +115,10 @@
    - `README.md`
    - `docs/development-log.md`
    - `docs/v2-enterprise-roadmap.md`
+   - `docs/realtime-framework-modernization-plan.md`
+   - `docs/realtime-framework-module-boundaries.md`
+   - `docs/realtime-framework-sdk-boundary.md`
+   - `docs/server-framework-and-tank-demo-development-plan.md`
    - `docs/v3-production-readiness-plan.md`
    - `docs/v3-release-checklist.md`
    - `docs/p4-validation-checklist.md`

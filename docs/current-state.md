@@ -50,6 +50,7 @@
 ## 保留边界
 
 - 2h/8h soak、10K 连接生产容量基线、跨节点 Redis/Raft、更完整 Operator rollback/probe E2E、更完整角色化 RBAC、外部 OTel collector 长稳、Prometheus P99 告警灵敏度多轮实测和 generated gRPC transport PoC 仍属于固定 runner/后续专项；默认生产主链仍是 SDK + TCP gateway + BackendEnvelope + 五后端 + Redis。
+- 主线定位为企业级高性能实时服务框架。坦克大战和后续游戏/实时系统样例必须放在 `demo/games/` 作为业务验证 demo，不能把碰撞、地图、胜负、得分公式等业务规则写入 gateway、login、room、leaderboard 或公共 SDK。框架与业务边界以 `docs/realtime-framework-modernization-plan.md`、`docs/realtime-framework-module-boundaries.md`、`docs/realtime-framework-sdk-boundary.md` 和 `demo/games/README.md` 为准。
 - 默认 CI/release workflow 使用有界 smoke 门禁，避免长时间占用终端或 runner。
 - 文档出现编码显示异常时，以 UTF-8 文件内容和 CI 校验结果为准，PowerShell 控制台乱码不代表文件编码错误。
 
@@ -78,6 +79,10 @@
 ## 下一阶段优先级
 
 当前“生产数据沉淀与风险燃尽”以 `docs/production-stabilization-roadmap.md` 的 N0-N6 与 R0-R3 为事实源，默认有界收束已经完成；长稳 2h/8h、10K 固定机器容量、TLS 预发多轮性能、真实 gRPC transport profile 等继续作为固定 runner 或后续专项持续沉淀。
+
+业务验证型下一阶段以“框架与业务隔离”为前提：先按 `docs/realtime-framework-modernization-plan.md` 固化 identity、lobby/room、realtime instance、business plugin SPI、SDK 通用 API 和 demo gate 边界，再把坦克大战放入 `demo/games/` 作为独立验证样例推进。
+
+近期服务端实施以 `docs/server-framework-and-tank-demo-development-plan.md` 为执行计划：优先完成 P0-P3 的服务端框架通用能力，再实现 P4-P6 的 tank demo simulation、settlement 和 reconnect，最后通过 P7 的回归与性能 gate 收束。当前阶段不实现正式客户端。
 
 1. N0 固定 Runner 与证据自动化常态化。
 2. N1 长稳压测与容量基线。

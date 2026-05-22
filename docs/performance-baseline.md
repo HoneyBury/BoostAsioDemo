@@ -575,8 +575,23 @@ python3 scripts/collect_docker_production_perf_snapshot.py
 | 2h/8h soak RSS/fd/CPU/P99 波动 | 本机已跑 `verify_stability_soak.py --soak-profile long` 架构型 long profile；真实 wall-clock 2h/8h 仍未定版 | `verify_production_evidence_gate.py` 显式启用 long/overnight soak，在固定 runner 归档 summary/report |
 | 5K/10K echo 容量上限 | 2026-05-18 本机 P0 capacity 三轮通过；10K echo 连接失败为 0，但 P99=50ms 贴近 gate | `collect_release_baseline.py --perf-preset capacity --perf-repetitions 3` 多轮复测 |
 | battle-500 容量 | 2026-05-19 架构专项已完成 response/push 出站优先级隔离、battle route worker 闭环修复和 battle frame push 降频实测；`runtime/perf/gateway-arch-priority-route4-push10/` 中 business-capacity 全通过，battle-500 P99=400ms、rejected=0、failed=0 | 固定 runner 多轮复测；下一步再评估真实多 core session 分流并把目标从 500ms 收紧到 250ms |
+| 云服务器 long soak / capacity 汇总 | 新增统一执行入口，仍不改变既有事实判定 | `run_long_soak_capacity.py --run-2h-soak --run-capacity` 与 `--run-8h-soak`，产物归档到 `runtime/validation/long-soak-*.json` 和 `capacity-baseline-summary.json` |
 | 1/2/4 核线性扩容 | 仅 4 核 baseline 已沉淀 | 固定机器分别设置 `--io-cores 1/2/4` 后归档报告 |
 | Prometheus P99 histogram/summary | 2026-05-19 N2 已导出 `gateway_backend_route_latency_us_bucket/_sum/_count` 与 per-service P50/P90/P99 gauge | 固定 runner 多轮复测告警灵敏度；Grafana 与 Alertmanager 持续校验 |
+
+在当前云服务器被视为生产验证主机时，建议改用统一入口：
+
+```bash
+python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-2h-soak --run-capacity
+python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-8h-soak
+```
+
+该入口不会改变现有事实判定，只是把 2h/8h soak 与 capacity baseline 的固定主机执行收束为统一 summary：
+
+- `runtime/validation/long-soak-capacity-summary.json`
+- `runtime/validation/long-soak-2h-summary.json`
+- `runtime/validation/long-soak-8h-summary.json`
+- `runtime/validation/capacity-baseline-summary.json`
 
 ### 7.4 P0 本机生产候选实测（2026-05-18）
 

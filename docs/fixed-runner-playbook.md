@@ -49,6 +49,7 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs
 | Business closure P5-P8 | `self-hosted,business-closure` | 手动命令 | CMake、Ninja、Python、可绑定本地端口；可选 OTel、kind、K8s 已部署集群 |
 | Production resilience | `self-hosted,production-resilience` | `production-resilience.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
 | Production evidence | `self-hosted,production-evidence` | `production-evidence.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
+| Cloud production closure | `self-hosted,cloud-production` | 手动命令 | CMake、Ninja、Python、Docker、kubectl、kind、Go、systemd；用于当前云服务器生产环境收束 |
 
 GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-evidence.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","production-evidence"]`。
 
@@ -190,9 +191,27 @@ python scripts/check_fixed_runner_environment.py --profile specialized-e2e --bui
 python scripts/check_fixed_runner_environment.py --profile observability --build-dir build/default
 python scripts/check_fixed_runner_environment.py --profile control-plane --build-dir build/default --require-kind
 python scripts/check_fixed_runner_environment.py --profile production-resilience --build-dir build/default --require-redis --require-kind
+python scripts/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release
 ```
 
 预检只检查工具链和外部服务可达性，不替代实际测试。
+
+## Cloud Production Closure
+
+当前云服务器如果被用作生产环境或生产候选环境，应把它视为固定 runner，而不是继续沿用 macOS / Windows 的开发预演口径。推荐在该主机上执行：
+
+```bash
+python scripts/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release
+python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-2h-soak --run-capacity
+python scripts/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence
+```
+
+通过标准：
+
+- `runtime/validation/long-soak-capacity-summary.json` 中 `passed=true`。
+- `runtime/validation/cloud-production-closure-summary.json` 中 `passed=true`。
+- 长稳 summary 至少归档 `long-soak-2h-summary.json`；8h soak 可在同一云主机扩展执行并归档 `long-soak-8h-summary.json`。
+- 云端部署收束必须同时包含 Compose 运行态快照、kind/control-plane 结果和 production evidence 聚合 summary。
 
 ## P6 Production Evidence
 

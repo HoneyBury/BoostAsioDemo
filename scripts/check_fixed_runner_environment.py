@@ -79,6 +79,7 @@ def parse_args() -> argparse.Namespace:
             "control-plane",
             "production-resilience",
             "production-evidence",
+            "cloud-production",
         ],
         required=True,
     )
@@ -141,6 +142,21 @@ def main() -> int:
             for command in ["kind", "kubectl", "make", "docker"]:
                 checks.append(check_command(command, True, errors, warnings))
             checks.append(check_kind_cluster(True, errors, warnings))
+    elif args.profile == "cloud-production":
+        for command in ["python3", "cmake", "ninja", "docker", "kubectl", "kind", "go", "systemctl"]:
+            checks.append(check_command(command, True, errors, warnings))
+        checks.append(check_kind_cluster(True, errors, warnings))
+        checks.append(check_tcp(args.redis_host, args.redis_port, False, errors, warnings))
+        warnings.append(
+            "cloud-production profile assumes this host is the fixed production-validation runner; "
+            "2h/8h soak and capacity evidence should run here or on an equivalently isolated machine"
+        )
+        checks.append({
+            "name": "cloud-production:fixed-host-contract",
+            "required": False,
+            "status": "warning",
+            "message": warnings[-1],
+        })
 
     if args.build_dir.exists() and not args.build_dir.is_dir():
         message = f"build path exists but is not a directory: {args.build_dir}"

@@ -139,6 +139,11 @@ if(BOOST_SOURCE_CACHE_DIR)
     FetchContent_Declare(Boost
         SOURCE_DIR "${BOOST_SOURCE_CACHE_DIR}"
     )
+elseif(EXISTS "/usr/include/boost/version.hpp")
+    message(STATUS "Using system Boost headers: /usr/include")
+    FetchContent_Declare(Boost
+        SOURCE_DIR "/usr/include"
+    )
 elseif(EXISTS "${THIRD_PARTY_DIR}/boost_1_90_0.zip")
     message(STATUS "Using local archive: boost_1_90_0.zip")
     FetchContent_Declare(Boost

@@ -349,13 +349,13 @@ int WindowsService::run_as_service(ServiceMainFn fn) {
 
     // Build the service name from the executable name.
     // The service main table requires at least one entry.
-    SERVICE_TABLE_ENTRYW service_table[] = {
-        {const_cast<wchar_t*>(L""), service_main_entry},
+    SERVICE_TABLE_ENTRYA service_table[] = {
+        {const_cast<char*>(""), service_main_entry},
         {nullptr, nullptr}  // terminator
     };
 
     LOG_INFO("WindowsService: entering dispatch loop...");
-    bool dispatched = StartServiceCtrlDispatcherW(service_table) != FALSE;
+    bool dispatched = StartServiceCtrlDispatcherA(service_table) != FALSE;
 
     if (!dispatched) {
         DWORD err = GetLastError();

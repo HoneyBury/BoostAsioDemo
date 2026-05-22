@@ -20,6 +20,7 @@
 #include <string>
 #include <thread>
 
+#include <future>
 #include <gtest/gtest.h>
 
 namespace sdk = boost_gateway::sdk;
@@ -392,6 +393,72 @@ TEST_F(GatewayFixture, SdkMultipleConcurrentConnections) {
 
     for (auto& c : clients) c.disconnect();
     SUCCEED();
+}
+
+}  // namespace
+
+// ── Async API tests (v3.4.0) ────────────────────────────────────────────
+
+namespace {
+
+using namespace boost_gateway::sdk;
+
+TEST(SdkAsyncTest, AsyncConnectCallback) {
+    SdkClient client;
+    std::promise<bool> promise;
+    auto future = promise.get_future();
+
+    client.async_connect("127.0.0.1", 9201,
+        [&promise](bool ok) { promise.set_value(ok); });
+
+    // Timeout after 2 seconds (no server expected in unit test)
+    auto status = future.wait_for(std::chrono::seconds(2));
+    EXPECT_EQ(status, std::future_status::timeout)
+        << "Expected timeout since no server is running";
+}
+
+TEST(SdkAsyncTest, AsyncLoginNoServer) {
+    SdkClient client;
+    std::promise<LoginResult> promise;
+    auto future = promise.get_future();
+
+    // Don't connect first - should fail gracefully
+    client.async_login("test_user", "test_token",
+        [&promise](LoginResult result) { promise.set_value(result); });
+
+    auto status = future.wait_for(std::chrono::seconds(2));
+    ASSERT_EQ(status, std::future_status::ready);
+    EXPECT_FALSE(future.get().success);
+}
+
+TEST(SdkAsyncTest, AsyncPushCallbackRegistration) {
+    SdkClient client;
+    bool callback_called = false;
+
+    client.on_async_push([&callback_called](const std::string&) {
+        callback_called = true;
+    });
+
+    // Just verify registration doesn't crash - actual push needs server
+    SUCCEED();
+}
+
+TEST(SdkAsyncTest, MultipleAsyncOperations) {
+    SdkClient client;
+    std::atomic<int> completed{0};
+    constexpr int kOpCount = 5;
+
+    auto cb = [&completed](auto&&...) { completed++; };
+
+    client.async_connect("127.0.0.1", 9201, cb);
+    client.async_login("u1", "t1", cb);
+    client.async_create_room("r1", cb);
+    client.async_join_room("r1", cb);
+    client.async_send_battle_input("input", cb);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    // At minimum, all callbacks should have been invoked
+    EXPECT_GT(completed.load(), 0);
 }
 
 }  // namespace

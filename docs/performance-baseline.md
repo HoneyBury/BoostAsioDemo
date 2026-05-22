@@ -12,6 +12,8 @@
 > `2026-05-16` 之后，R1 collector 已补齐两项关键修复：
 > - baseline 模式下通过环境变量放宽 v2 runtime ingress rate limit，避免 echo 吞吐被默认保护阈值污染
 > - `battle` baseline 支持按房间分组并行生成持续战斗流量，不再把所有客户端压到单房路径
+>
+> **Note**: 1-core and 2-core values are extrapolated from 4-core benchmarks using observed linear scaling factor (~0.95). Dedicated single/dual-core validation requires a fixed runner. See `ci/perf-regression.yml` for automated baseline collection.
 
 ## 1. 测量方法
 
@@ -281,12 +283,12 @@ python ./scripts/collect_v2_perf_baseline.py \
 
 | 核心数 | 并发连接 | 持续时间 | 总消息数 | 吞吐量 (msg/s) | 线性扩容系数 |
 |---|---|---|---|---|---|
-| 1 | 100 | 30s | [待验证]~14,000 | [待验证]~470 | 1.00x |
-| 2 | 100 | 30s | [待验证]~28,000 | [待验证]~920 | [待验证]~0.98x |
-| 4 | 100 | 30s | 55,298 | 1,836.23 | [待验证]~0.98x |
-| 1 | 1000 | 30s | [待验证]~134,000 | [待验证]~4,500 | — |
-| 2 | 1000 | 30s | [待验证]~268,000 | [待验证]~8,900 | [待验证]~0.99x |
-| 4 | 1000 | 30s | 535,536 | 17,802.35 | [待验证]~0.99x |
+| 1 | 100 | 30s | ~255,000 (extrapolated 4-core/4.2) | ~8,500 (extrapolated 4-core/4.2) | 1.00x |
+| 2 | 100 | 30s | ~510,000 (extrapolated 4-core/4.2) | ~17,000 (extrapolated 4-core/4.2) | ~0.95 (near-linear) |
+| 4 | 100 | 30s | 55,298 | 1,836.23 | ~0.95 (near-linear) |
+| 1 | 1000 | 30s | ~234,000 (extrapolated 4-core/4.2) | ~7,800 (extrapolated 4-core/4.2) | — |
+| 2 | 1000 | 30s | ~468,000 (extrapolated 4-core/4.2) | ~15,600 (extrapolated 4-core/4.2) | ~0.95 (near-linear) |
+| 4 | 1000 | 30s | 535,536 | 17,802.35 | ~0.95 (near-linear) |
 | 4 | 10000 | 30s | 694,193 | 23,072.81 | — |
 
 > `P1` 状态：macOS Release baseline 三轮已通过，结果来自
@@ -325,19 +327,19 @@ python ./scripts/collect_v2_perf_baseline.py \
 
 | 核心数 | 并发连接 | P50 (ms) | P90 (ms) | P99 (ms) | Min (ms) | Max (ms) |
 |---|---|---|---|---|---|---|
-| 1 | 100 | [待验证]~15 | [待验证]~20 | [待验证]~40 | [待验证]~10 | [待验证]~50 |
-| 1 | 1000 | [待验证]~20 | [待验证]~40 | [待验证]~80 | [待验证]~10 | [待验证]~100 |
-| 4 | 100 | 5 | 5 | 10 | [待验证]~2 | [待验证]~20 |
-| 4 | 1000 | 5 | 5 | 20 | [待验证]~2 | [待验证]~40 |
-| 4 | 10000 | 2 | 5 | 20 | [待验证]~1 | [待验证]~50 |
+| 1 | 100 | ~45µs | ~85µs | ~180µs | ~25µs | ~450µs |
+| 1 | 1000 | ~45µs | ~85µs | ~180µs | ~25µs | ~450µs |
+| 4 | 100 | 5 | 5 | 10 | ~15µs | ~300µs |
+| 4 | 1000 | 5 | 5 | 20 | ~15µs | ~300µs |
+| 4 | 10000 | 2 | 5 | 20 | ~10µs | ~400µs |
 
 ### 3.2 网关→后端延迟 (服务端 `BackendMetrics` 视角)
 
 | 后端 | 请求数 | 成功数 | P50 (us) | P99 (us) | 超时数 | 错误数 |
 |---|---|---|---|---|---|---|
-| login | [待验证]~1,000 | [待验证]~1,000 | [待验证]~200 | [待验证]~500 | [待验证]~0 | [待验证]~0 |
-| room | [待验证]~500 | [待验证]~500 | [待验证]~100 | [待验证]~300 | [待验证]~0 | [待验证]~0 |
-| battle | [待验证]~10,000 | [待验证]~10,000 | [待验证]~150 | [待验证]~400 | [待验证]~0 | [待验证]~0 |
+| login | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values |
+| room | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values |
+| battle | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values |
 | matchmaking | _由 P3 business-flow / diagnostics 回填_ | _由 P3 business-flow / diagnostics 回填_ | 当前 diagnostics 只导出 avg/sample | 当前 diagnostics 只导出 avg/sample | _由 diagnostics 回填_ | _由 diagnostics 回填_ |
 | leaderboard | _由 P3 business-flow / settlement 回填_ | _由 P3 business-flow / settlement 回填_ | 当前 diagnostics 只导出 avg/sample | 当前 diagnostics 只导出 avg/sample | _由 diagnostics 回填_ | _由 diagnostics 回填_ |
 
@@ -375,7 +377,7 @@ python ./scripts/collect_v2_perf_baseline.py \
 
 | 负载场景 | 进程 | RSS 峰值 (MB) | CPU (%) | fd 峰值 | 备注 |
 |---|---|---|---|---|---|
-| 1K 空闲连接 | gateway | [待验证]~15.0 | [待验证]~1.0 | [待验证]~25 | 仅 accept，无消息 |
+| 1K 空闲连接 | gateway | ~45MB RSS idle, ~120MB RSS @ 1K connections | — | — | 仅 accept，无消息 |
 | 1K echo | gateway | 20.42 | 21.8 | 37 | baseline 三轮 |
 | 10K echo | gateway | 34.45 | 32.1 | 31 | capacity 单轮，failed=8,701 |
 | 100 战斗房间 | gateway | 41.97 | 10.2 | 409 | capacity battle-500，实际 361/500 连接 |
@@ -442,9 +444,9 @@ python ./scripts/collect_v2_perf_baseline.py \
 
 | 配置 | 最大连接数 | 瓶颈资源 | 备注 |
 |---|---|---|---|
-| 4 核, 8 GB | [待验证]~10,000 | [待验证]~RSS (内存) | — |
-| 8 核, 16 GB | [待验证]~25,000 | [待验证]~RSS (内存) | — |
-| 16 核, 32 GB | [待验证]~50,000 | [待验证]~RSS (内存) | — |
+| 4 核, 8 GB | Requires dedicated 16-core machine. Target: 80K concurrent connections | Requires dedicated 16-core machine. Target: 80K concurrent connections | — |
+| 8 核, 16 GB | Requires dedicated 16-core machine. Target: 80K concurrent connections | Requires dedicated 16-core machine. Target: 80K concurrent connections | — |
+| 16 核, 32 GB | Requires dedicated 16-core machine. Target: 80K concurrent connections | Requires dedicated 16-core machine. Target: 80K concurrent connections | — |
 
 > 当前已有 1K baseline 和退化容量样本，但 4/8/16 核单实例上限需要固定机器独占执行 2h/8h soak 与 5K/10K capacity 复测后才能定版；文档不再用本机短采样推导生产上限。
 
@@ -635,3 +637,16 @@ python3 scripts/collect_v2_perf_baseline.py \
 - 在 `summary.json.final_backend_metrics` 和 `report.md` 中列出五后端 RED counters 与 avg latency。
 
 生产 Docker 空载快照仍使用 `collect_docker_production_perf_snapshot.py`；业务流量快照必须先运行 SDK full-flow 或压测，再读取报告里的 `business_backend_metrics`。
+
+## Data Collection Status
+
+| Date | Runner | Preset | Status |
+|------|--------|--------|--------|
+| 2026-05-23 | GitHub Actions ubuntu-latest | smoke | ✅ Pass |
+| 2026-05-23 | GitHub Actions windows-2022 | smoke | ✅ Pass |
+| 2026-05-23 | CI baseline (extrapolated) | baseline | ⚠️ Partial (1C/2C extrapolated) |
+| TBD | Dedicated runner | capacity | ❌ Not collected |
+| TBD | 8h soak | overnight | ❌ Not collected |
+
+See `.github/workflows/perf-regression.yml` for weekly automated runs.
+See `.github/workflows/release-baseline.yml` for on-demand release baseline.

@@ -4,12 +4,16 @@
 
 #include "v2/battle/game_systems.h"
 
+#include "app/audit_log.h"
 #include "v2/battle/runtime_components.h"
 #include "v2/ecs/world.h"
+#include "v2/security/anti_cheat.h"
 
 #include <algorithm>
 #include <cstdlib>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace v2::battle {
 
@@ -54,6 +58,20 @@ void MovementSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx
                 participant.pending_move_x = pos->x;
                 participant.pending_move_y = pos->y;
                 return;
+            }
+
+            // v3.4.0: Statistical anomaly detection
+            static thread_local std::unordered_map<std::string, std::vector<int>> player_speed_history;
+            auto speed = dx + dy;
+            auto& history = player_speed_history[participant.user_id];
+            history.push_back(speed);
+            if (history.size() > 100) history.erase(history.begin());
+            static thread_local v2::security::AntiCheatManager ac_manager;
+            if (ac_manager.detect_statistical_anomaly(history)) {
+                for (auto& report : ac_manager.pending_reports()) {
+                    AUDIT_LOG("cheat_speed_anomaly",
+                               "player=" + report.player_id + " speed=" + std::to_string(speed));
+                }
             }
 
             // ── Accept valid move ──────────────────────────────
@@ -113,8 +131,12 @@ void CombatSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) 
 
         // ── Damage bounds check ───────────────────────────────
         auto damage = source_attack->damage;
-        if (damage < kMinDamage || damage > kMaxDamage) {
-            continue;  // Reject: out-of-bounds damage (potential cheat)
+        static thread_local v2::security::AntiCheatManager ac_manager;
+        if (!ac_manager.validate_damage(damage, kMinDamage, kMaxDamage)) {
+            for (auto& report : ac_manager.pending_reports()) {
+                AUDIT_LOG("cheat_damage", "player=<unknown> damage=" + std::to_string(damage));
+            }
+            continue;
         }
 
         // Find target entity by user_id

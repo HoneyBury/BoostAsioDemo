@@ -91,7 +91,55 @@ public:
         // Future: use async_read + callback dispatch.
     }
 
+    // ── Async operations ──────────────────────────────────────────
+
+    void async_connect(const std::string& host, std::uint16_t port,
+                       std::function<void(bool)> callback) override {
+        std::thread([this, host, port, callback]() {
+            bool ok = connect(host, port, std::chrono::seconds(5));
+            if (callback) callback(ok);
+            if (ok) start_async_read();
+        }).detach();
+    }
+
+    void async_send(const std::string& data,
+                    std::function<void(bool)> callback) override {
+        std::thread([this, data, callback]() {
+            std::vector<char> buf(data.begin(), data.end());
+            bool ok = send(buf);
+            if (callback) callback(ok);
+        }).detach();
+    }
+
+    void set_async_receive_callback(
+        std::function<void(const std::string&)> callback) override {
+        async_receive_callback_ = std::move(callback);
+    }
+
 private:
+    // Async support
+    std::function<void(const std::string&)> async_receive_callback_;
+    std::vector<char> async_read_buffer_;
+    bool async_read_in_progress_ = false;
+
+    void start_async_read() {
+        async_read_buffer_.resize(4096);
+        async_read_in_progress_ = true;
+        std::thread([this]() {
+            while (is_connected()) {
+                auto data = receive(std::chrono::milliseconds(100));
+                if (data.empty()) {
+                    if (!is_connected()) break;
+                    continue;
+                }
+                if (async_receive_callback_) {
+                    async_receive_callback_(std::string(data.begin(), data.end()));
+                }
+            }
+            async_read_in_progress_ = false;
+        }).detach();
+    }
+
     boost::asio::io_context io_context_;
     tcp::socket socket_{io_context_};
     std::atomic<bool> connected_{false};

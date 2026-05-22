@@ -1,3 +1,14 @@
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#define _WIN32_WINNT 0x0600
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#include <process.h>
+#endif
+
 #include "app/process_supervisor.h"
 
 #include "app/logging.h"
@@ -12,11 +23,6 @@
 #include <system_error>
 
 #ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <process.h>
 #else
 #include <csignal>
 #include <cerrno>

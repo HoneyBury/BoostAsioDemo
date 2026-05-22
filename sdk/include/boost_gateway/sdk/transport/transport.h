@@ -30,6 +30,20 @@ public:
 
     /// Async receive callback (called from transport thread).
     virtual void set_receive_callback(ReceiveCallback cb) = 0;
+
+    // ── Async operations ──────────────────────────────────────────────────
+
+    /// Async connect with callback
+    virtual void async_connect(const std::string& host, std::uint16_t port,
+                               std::function<void(bool)> callback) = 0;
+
+    /// Async send with callback (bytes_sent or error)
+    virtual void async_send(const std::string& data,
+                            std::function<void(bool)> callback) = 0;
+
+    /// Set async receive callback (called when data arrives)
+    virtual void set_async_receive_callback(
+        std::function<void(const std::string&)> callback) = 0;
 };
 
 // ── Connection pool ──────────────────────────────────────────────────

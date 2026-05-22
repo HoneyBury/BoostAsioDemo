@@ -228,6 +228,19 @@ public:
         return raft_node_ && raft_node_->is_leader();
     }
 
+    // v3.4.0: Non-leader redirect with leader hint.
+    std::string get_leader_hint() const {
+        if (!raft_node_) return {};
+        auto lid = raft_node_->leader_id();
+        if (lid.empty()) return {};
+        for (const auto& peer : raft_config_.peers) {
+            if (peer.id == lid) {
+                return "{\"leader_id\":\"" + lid + "\",\"leader_host\":\"" + peer.host + "\",\"leader_port\":" + std::to_string(peer.port) + "}";
+            }
+        }
+        return "{\"leader_id\":\"" + lid + "\"}";
+    }
+
     void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config) {
         tls_config_ = std::move(tls_config);
     }
@@ -294,7 +307,7 @@ private:
 
         if (raft_node_) {
             if (!raft_node_->is_leader()) {
-                return make_error(-1003, "not_raft_leader");
+                return make_error(-1003, "not_raft_leader:" + get_leader_hint());
             }
             if (!raft_node_->append_command(
                     make_submit_command(user_id, display_name, score))) {

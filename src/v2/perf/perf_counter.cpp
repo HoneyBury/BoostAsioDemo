@@ -11,6 +11,13 @@
 
 #if defined(_MSC_VER)
 #include <intrin.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #endif
 
 namespace v2::perf {

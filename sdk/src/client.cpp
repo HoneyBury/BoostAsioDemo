@@ -81,6 +81,7 @@ private:
 
 class SdkClient::Impl {
     TcpConnection conn_; std::atomic<std::uint32_t> next_{1}; PushCallback push_callback_; DisconnectCallback disconnect_callback_;
+    std::function<void(const std::string&)> async_push_callback_; std::function<void()> async_disconnect_callback_;
     std::mutex callback_mutex_; std::mutex io_mutex_; std::mutex heartbeat_mutex_; std::condition_variable heartbeat_cv_;
     std::thread heartbeat_thread_; std::atomic<bool> heartbeat_running_{false};
 
@@ -194,6 +195,14 @@ public:
         std::lock_guard<std::mutex> lock(callback_mutex_);
         disconnect_callback_ = std::move(callback);
     }
+    void on_async_push(std::function<void(const std::string&)> callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        async_push_callback_ = std::move(callback);
+    }
+    void on_async_disconnect(std::function<void()> callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        async_disconnect_callback_ = std::move(callback);
+    }
     bool heartbeat_once(std::chrono::milliseconds timeout) {
         auto response = expect(msg::kHeartbeatRequest, "", timeout, msg::kHeartbeatResponse);
         return response.message_id == msg::kHeartbeatResponse && response.error_code == 0;
@@ -248,5 +257,60 @@ void SdkClient::on_push(PushCallback callback) { impl_->on_push(std::move(callba
 void SdkClient::on_disconnect(DisconnectCallback callback) { impl_->on_disconnect(std::move(callback)); }
 void SdkClient::start_heartbeat(std::chrono::seconds interval) { impl_->start_heartbeat(interval); }
 void SdkClient::stop_heartbeat() { impl_->stop_heartbeat(); }
+
+// ── Async API ──────────────────────────────────────────────────────────
+
+void SdkClient::async_connect(const std::string& host, std::uint16_t port,
+                              std::function<void(bool)> callback,
+                              std::chrono::milliseconds timeout) {
+    std::thread([this, host, port, callback, timeout]() {
+        bool ok = impl_->connect(host, port, timeout);
+        if (callback) callback(ok);
+    }).detach();
+}
+
+void SdkClient::async_login(const std::string& user_id, const std::string& token,
+                            std::function<void(LoginResult)> callback,
+                            std::chrono::milliseconds timeout) {
+    std::thread([this, user_id, token, callback, timeout]() {
+        auto result = impl_->login(user_id, token, timeout);
+        if (callback) callback(result);
+    }).detach();
+}
+
+void SdkClient::async_create_room(const std::string& room_id,
+                                  std::function<void(RoomResult)> callback,
+                                  std::chrono::milliseconds timeout) {
+    std::thread([this, room_id, callback, timeout]() {
+        auto result = impl_->create_room(room_id, timeout);
+        if (callback) callback(result);
+    }).detach();
+}
+
+void SdkClient::async_join_room(const std::string& room_id,
+                                std::function<void(RoomResult)> callback,
+                                std::chrono::milliseconds timeout) {
+    std::thread([this, room_id, callback, timeout]() {
+        auto result = impl_->join_room(room_id, timeout);
+        if (callback) callback(result);
+    }).detach();
+}
+
+void SdkClient::async_send_battle_input(const std::string& input_data,
+                                        std::function<void(BattleInputResult)> callback,
+                                        std::chrono::milliseconds timeout) {
+    std::thread([this, input_data, callback, timeout]() {
+        auto result = impl_->send_battle_input(input_data, timeout);
+        if (callback) callback(result);
+    }).detach();
+}
+
+void SdkClient::on_async_push(std::function<void(const std::string&)> callback) {
+    impl_->on_async_push(std::move(callback));
+}
+
+void SdkClient::on_async_disconnect(std::function<void()> callback) {
+    impl_->on_async_disconnect(std::move(callback));
+}
 
 }} // namespaces

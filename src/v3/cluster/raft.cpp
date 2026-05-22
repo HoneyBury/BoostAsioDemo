@@ -3,6 +3,8 @@
 
 #include "v3/cluster/raft.h"
 
+#include "app/audit_log.h"
+
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -251,14 +253,20 @@ void RaftNode::become_follower(std::uint64_t term) {
     reset_election_timeout();
     leader_id_.clear();
     persist_state_locked();
-    if (was_leader && step_down_cb_) {
-        step_down_cb_();
+    if (was_leader) {
+        AUDIT_LOG("raft_leader_step_down",
+                   "node_id=" + config_.node_id + " term=" + std::to_string(current_term_));
+        if (step_down_cb_) {
+            step_down_cb_();
+        }
     }
 }
 
 void RaftNode::become_leader() {
     state_ = RaftState::kLeader;
     leader_id_ = config_.node_id;
+    AUDIT_LOG("raft_leader_elected",
+               "node_id=" + config_.node_id + " term=" + std::to_string(current_term_));
     next_index_.clear();
     match_index_.clear();
     const auto next = static_cast<std::uint64_t>(log_.size()) + 1;
@@ -416,6 +424,7 @@ AppendEntriesReply RaftNode::handle_append_entries(const AppendEntriesArgs& args
         }
 
         std::size_t local_index = static_cast<std::size_t>(args.prev_log_index);
+        bool caught_up = false;
         for (const auto& entry : args.entries) {
             if (local_index < log_.size()) {
                 if (log_[local_index].term != entry.term ||
@@ -425,8 +434,13 @@ AppendEntriesReply RaftNode::handle_append_entries(const AppendEntriesArgs& args
             }
             if (local_index >= log_.size()) {
                 log_.push_back(entry);
+                caught_up = true;
             }
             ++local_index;
+        }
+        if (caught_up) {
+            AUDIT_LOG("raft_follower_catch_up",
+                       "node_id=" + config_.node_id + " term=" + std::to_string(current_term_));
         }
 
         if (args.leader_commit > commit_index_) {

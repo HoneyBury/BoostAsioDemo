@@ -1,51 +1,27 @@
 name: Release Baseline
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 on:
   workflow_dispatch:
     inputs:
-      runner:
-        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","release-baseline"]'
+      preset:
+        description: 'Performance preset (smoke, baseline, capacity)'
         required: true
-        default: '"ubuntu-latest"'
-      configure_preset:
-        description: "CMake configure preset"
-        required: true
-        default: "release"
-      build_dir:
-        description: "CMake build directory"
-        required: true
-        default: "build/release"
-      configuration:
-        description: "Build configuration"
-        required: true
-        default: "Release"
-      perf_preset:
-        description: "Performance preset"
-        required: true
-        default: "baseline"
-        type: choice
-        options:
-          - smoke
-          - baseline
-          - capacity
-      perf_repetitions:
-        description: "Repetitions per performance case"
-        required: true
-        default: "3"
-      perf_timeout_seconds:
-        description: "Performance collection timeout"
-        required: true
-        default: "900"
+        default: 'smoke'
+      repetitions:
+        description: 'Number of repetitions'
+        required: false
+        default: '1'
 
 permissions:
   contents: read
 
 jobs:
   release-baseline:
-    runs-on: ${{ fromJSON(inputs.runner || '"ubuntu-latest"') }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
 
     steps:
       - name: Checkout
@@ -61,52 +37,31 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Fixed runner preflight
-        run: >
-          python scripts/check_fixed_runner_environment.py
-          --profile release-baseline
-          --build-dir ${{ inputs.build_dir }}
-          --summary-path runtime/validation/fixed-runner-preflight-summary.json
-
-      - name: Configure
-        run: cmake --preset ${{ inputs.configure_preset }}
-
-      - name: Collect release baseline
-        run: >
-          python scripts/collect_release_baseline.py
-          --build-dir ${{ inputs.build_dir }}
-          --configuration ${{ inputs.configuration }}
-          --perf-preset ${{ inputs.perf_preset }}
-          --perf-repetitions ${{ inputs.perf_repetitions }}
-          --perf-timeout-seconds ${{ inputs.perf_timeout_seconds }}
-          --summary-path runtime/validation/release-baseline-summary.json
-
-      - name: Render release baseline summary
-        if: always()
-        shell: bash
+      - name: Configure (Release)
         run: |
-          summaries=()
-          for path in \
-            runtime/validation/fixed-runner-preflight-summary.json \
-            runtime/validation/release-baseline-summary.json \
-            runtime/validation/release-r4-contract-summary.json \
-            runtime/perf/release-baseline/summary.json; do
-            if [ -f "$path" ]; then
-              summaries+=("$path")
-            fi
-          done
-          if [ "${#summaries[@]}" -gt 0 ]; then
-            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG"
 
-      - name: Upload release baseline
-        if: always()
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run release baseline
+        run: |
+          python scripts/collect_release_baseline.py \
+            --build-dir build \
+            --perf-preset ${{ github.event.inputs.preset }} \
+            --perf-repetitions ${{ github.event.inputs.repetitions }}
+
+      - name: Check gates
+        run: |
+          python scripts/verify_r4_contract.py \
+            --build-dir build \
+            --skip-build \
+            --configuration Release
+
+      - name: Upload baseline artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-baseline-${{ inputs.runner }}-${{ inputs.perf_preset }}
-          path: |
-            runtime/validation/fixed-runner-preflight-summary.json
-            runtime/validation/release-baseline-summary.json
-            runtime/perf/release-baseline/**
-            runtime/perf/v2-arch-baseline/**
-          if-no-files-found: warn
+          name: release-baseline-${{ matrix.os }}-${{ github.event.inputs.preset }}
+          path: runtime/perf-results/
+          retention-days: 90

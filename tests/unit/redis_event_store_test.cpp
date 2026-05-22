@@ -11,16 +11,26 @@
 
 using namespace v3::persistence;
 
-// ── Redis availability check (shared by all tests) ────────────────────────
+// ── Redis test fixture (gates on Redis availability) ──────────────────────
 
-static bool is_redis_running() {
-    RedisClient::Config cfg;
-    cfg.timeout = std::chrono::milliseconds(200);
-    RedisClient client(cfg);
-    return client.reconnect();
-}
+class RedisTest : public ::testing::Test {
+protected:
+    static bool IsRedisAvailable() {
+        static bool available = []() {
+            RedisClient::Config cfg;
+            cfg.timeout = std::chrono::milliseconds(200);
+            RedisClient client(cfg);
+            return client.reconnect();
+        }();
+        return available;
+    }
 
-static bool redis_available = is_redis_running();
+    void SetUp() override {
+        if (!IsRedisAvailable()) {
+            GTEST_SKIP() << "Redis is not available on this system";
+        }
+    }
+};
 
 static std::string unique_redis_prefix(const std::string& label) {
     static int counter = 0;
@@ -62,8 +72,7 @@ TEST(RedisClientTest, DisconnectedOperationsReturnEmpty) {
     EXPECT_EQ(client.zcard("zset"), -1);
 }
 
-TEST(RedisClientTest, SetGetDel) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, SetGetDel) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);
@@ -78,8 +87,7 @@ TEST(RedisClientTest, SetGetDel) {
     EXPECT_EQ(client.get("test:key1"), std::nullopt);
 }
 
-TEST(RedisClientTest, Exists) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, Exists) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);
@@ -91,8 +99,7 @@ TEST(RedisClientTest, Exists) {
     client.del("test:exists_key");
 }
 
-TEST(RedisClientTest, Incr) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, Incr) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);
@@ -105,8 +112,7 @@ TEST(RedisClientTest, Incr) {
     client.del("test:counter");
 }
 
-TEST(RedisClientTest, ListOperations) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, ListOperations) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);
@@ -125,8 +131,7 @@ TEST(RedisClientTest, ListOperations) {
     client.del("test:list");
 }
 
-TEST(RedisClientTest, SortedSetOperations) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, SortedSetOperations) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);
@@ -147,8 +152,7 @@ TEST(RedisClientTest, SortedSetOperations) {
     client.del("test:zset");
 }
 
-TEST(RedisClientTest, HashSetGet) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, HashSetGet) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);
@@ -162,8 +166,7 @@ TEST(RedisClientTest, HashSetGet) {
     client.del("test:hash");
 }
 
-TEST(RedisClientTest, HashGetNonexistent) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, HashGetNonexistent) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);
@@ -173,8 +176,7 @@ TEST(RedisClientTest, HashGetNonexistent) {
     EXPECT_EQ(client.hget("test:hash2", "no_such_field"), std::nullopt);
 }
 
-TEST(RedisClientTest, ZRevRangeWithScores) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, ZRevRangeWithScores) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);
@@ -196,8 +198,7 @@ TEST(RedisClientTest, ZRevRangeWithScores) {
     client.del("test:zrev");
 }
 
-TEST(RedisClientTest, ZRevRank) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, ZRevRank) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);
@@ -224,8 +225,7 @@ TEST(RedisClientTest, ZRevRank) {
     client.del("test:zrank");
 }
 
-TEST(RedisClientTest, ZScore) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, ZScore) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);
@@ -242,8 +242,7 @@ TEST(RedisClientTest, ZScore) {
     client.del("test:zsc");
 }
 
-TEST(RedisClientTest, MoveSemantics) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, MoveSemantics) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);
@@ -260,8 +259,7 @@ TEST(RedisClientTest, MoveSemantics) {
 
 // ── RedisEventStore tests ─────────────────────────────────────────────────
 
-TEST(RedisEventStoreTest, AppendAndRead) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, AppendAndRead) {
     RedisEventStore::Config cfg;
     cfg.key_prefix = unique_redis_prefix("es");
     RedisEventStore store(cfg);
@@ -284,8 +282,7 @@ TEST(RedisEventStoreTest, AppendAndRead) {
     EXPECT_EQ(events[1].aggregate_id, "battle_001");
 }
 
-TEST(RedisEventStoreTest, LatestSequence) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, LatestSequence) {
     RedisEventStore::Config cfg;
     cfg.key_prefix = unique_redis_prefix("es2");
     RedisEventStore store(cfg);
@@ -302,8 +299,7 @@ TEST(RedisEventStoreTest, LatestSequence) {
     EXPECT_GT(seq, 0U);
 }
 
-TEST(RedisEventStoreTest, ReadByType) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, ReadByType) {
     RedisEventStore::Config cfg;
     cfg.key_prefix = unique_redis_prefix("es3");
     RedisEventStore store(cfg);
@@ -329,8 +325,7 @@ TEST(RedisEventStoreTest, ReadByType) {
     EXPECT_EQ(battles[0].event_type, "battle_result");
 }
 
-TEST(RedisEventStoreTest, TotalEvents) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, TotalEvents) {
     RedisEventStore::Config cfg;
     cfg.key_prefix = unique_redis_prefix("es4");
     RedisEventStore store(cfg);
@@ -346,8 +341,7 @@ TEST(RedisEventStoreTest, TotalEvents) {
     EXPECT_GT(after, before);
 }
 
-TEST(RedisEventStoreTest, FromSequenceFilter) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, FromSequenceFilter) {
     RedisEventStore::Config cfg;
     cfg.key_prefix = unique_redis_prefix("es5");
     RedisEventStore store(cfg);
@@ -372,8 +366,7 @@ TEST(RedisEventStoreTest, FromSequenceFilter) {
     EXPECT_GE(from_second[0].sequence, all[1].sequence);
 }
 
-TEST(RedisEventStoreTest, ClientAccess) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, ClientAccess) {
     RedisEventStore::Config cfg;
     cfg.key_prefix = unique_redis_prefix("es6");
     RedisEventStore store(cfg);
@@ -418,8 +411,7 @@ TEST(RedisConnectionPoolTest, AcquireWhenRedisDownReturnsEmpty) {
     EXPECT_EQ(pool.idle_count(), 0U);
 }
 
-TEST(RedisConnectionPoolTest, AcquireReturnsValidConnection) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, AcquireReturnsValidConnection) {
     RedisConnectionPool::Config cfg;
     cfg.redis.timeout = std::chrono::milliseconds(500);
     cfg.max_size = 2;
@@ -432,8 +424,7 @@ TEST(RedisConnectionPoolTest, AcquireReturnsValidConnection) {
     EXPECT_EQ(pool.idle_count(), 0U);
 }
 
-TEST(RedisConnectionPoolTest, ReleaseReturnsToPool) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, ReleaseReturnsToPool) {
     RedisConnectionPool::Config cfg;
     cfg.redis.timeout = std::chrono::milliseconds(500);
     cfg.max_size = 2;
@@ -447,8 +438,7 @@ TEST(RedisConnectionPoolTest, ReleaseReturnsToPool) {
     EXPECT_EQ(pool.idle_count(), 1U);
 }
 
-TEST(RedisConnectionPoolTest, AcquireAfterReleaseReusesConnection) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, AcquireAfterReleaseReusesConnection) {
     RedisConnectionPool::Config cfg;
     cfg.redis.timeout = std::chrono::milliseconds(500);
     cfg.max_size = 2;
@@ -470,8 +460,7 @@ TEST(RedisConnectionPoolTest, AcquireAfterReleaseReusesConnection) {
     c2->del("pool:reuse");
 }
 
-TEST(RedisConnectionPoolTest, MaxSizeEnforced) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, MaxSizeEnforced) {
     RedisConnectionPool::Config cfg;
     cfg.redis.timeout = std::chrono::milliseconds(500);
     cfg.max_size = 1;
@@ -485,8 +474,7 @@ TEST(RedisConnectionPoolTest, MaxSizeEnforced) {
     EXPECT_FALSE(c2);  // timeout — pool exhausted
 }
 
-TEST(RedisConnectionPoolTest, MoveSemantics) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, MoveSemantics) {
     RedisConnectionPool::Config cfg;
     cfg.redis.timeout = std::chrono::milliseconds(500);
     RedisConnectionPool pool(cfg);
@@ -504,8 +492,7 @@ TEST(RedisConnectionPoolTest, MoveSemantics) {
     c2->del("pool:move");
 }
 
-TEST(RedisConnectionPoolTest, DeadConnectionRevivedOnAcquire) {
-    if (!redis_available) GTEST_SKIP() << "Redis not running";
+TEST_F(RedisTest, DeadConnectionRevivedOnAcquire) {
     RedisConnectionPool::Config cfg;
     cfg.redis.timeout = std::chrono::milliseconds(500);
     cfg.max_size = 2;

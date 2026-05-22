@@ -6,6 +6,7 @@
 #include "v2/battle/runtime_components.h"
 #include "v2/battle/game_systems.h"
 #include "v2/ecs/world.h"
+#include "v2/security/anti_cheat.h"
 
 #include <memory>
 
@@ -117,4 +118,82 @@ TEST(AntiCheatTest, CooldownComponentDefaults) {
     EXPECT_EQ(cooldown.cooldown_frames, 3U);
     EXPECT_EQ(cooldown.attacks_this_frame, 0U);
     EXPECT_EQ(v2::battle::AttackCooldownComponent::kMaxAttacksPerFrame, 1U);
+}
+
+// ─── AntiCheatManager ──────────────────────────────────────────────────
+
+TEST(AntiCheatManagerTest, TeleportDetection) {
+    v2::security::AntiCheatManager ac;
+    v2::security::Position old_pos{0, 0};
+    v2::security::Position new_pos{500, 500};
+    EXPECT_FALSE(ac.detect_teleport(old_pos, new_pos, 200));
+}
+
+TEST(AntiCheatManagerTest, TeleportDetection_Valid) {
+    v2::security::AntiCheatManager ac;
+    v2::security::Position old_pos{0, 0};
+    v2::security::Position new_pos{50, 50};
+    EXPECT_TRUE(ac.detect_teleport(old_pos, new_pos, 200));
+}
+
+TEST(AntiCheatManagerTest, StatisticalAnomaly_DetectsOutlier) {
+    v2::security::AntiCheatManager ac;
+    // 2-sigma: mean=52.5, sdv≈52.4, threshold≈157, 500 >> threshold
+    std::vector<int> speeds = {10, 10, 10, 10, 10, 500};
+    EXPECT_TRUE(ac.detect_statistical_anomaly(speeds));
+}
+
+TEST(AntiCheatManagerTest, StatisticalAnomaly_NoFalsePositive) {
+    v2::security::AntiCheatManager ac;
+    std::vector<int> speeds = {10, 10, 10, 10, 10};
+    EXPECT_FALSE(ac.detect_statistical_anomaly(speeds));
+}
+
+TEST(AntiCheatManagerTest, DamageValidation) {
+    v2::security::AntiCheatManager ac;
+    EXPECT_FALSE(ac.validate_damage(51, 1, 50));
+    EXPECT_FALSE(ac.validate_damage(0, 1, 50));
+}
+
+TEST(AntiCheatManagerTest, DamageValidation_Valid) {
+    v2::security::AntiCheatManager ac;
+    EXPECT_TRUE(ac.validate_damage(25, 1, 50));
+    EXPECT_TRUE(ac.validate_damage(1, 1, 50));
+    EXPECT_TRUE(ac.validate_damage(50, 1, 50));
+}
+
+TEST(AntiCheatManagerTest, AttackDistance_OutOfRange) {
+    v2::security::AntiCheatManager ac;
+    v2::security::Position attacker{0, 0};
+    v2::security::Position target{100, 100};
+    EXPECT_FALSE(ac.validate_attack_distance(attacker, target, 10));
+}
+
+TEST(AntiCheatManagerTest, AttackDistance_InRange) {
+    v2::security::AntiCheatManager ac;
+    v2::security::Position attacker{0, 0};
+    v2::security::Position target{5, 5};
+    EXPECT_TRUE(ac.validate_attack_distance(attacker, target, 10));
+}
+
+TEST(AntiCheatManagerTest, PendingReports_Accumulates) {
+    v2::security::AntiCheatManager ac;
+    v2::security::Position old_pos{0, 0};
+    v2::security::Position new_pos{1000, 0};
+    (void)ac.detect_teleport(old_pos, new_pos, 200);
+    (void)ac.validate_damage(999, 1, 50);
+    auto reports = ac.pending_reports();
+    EXPECT_EQ(reports.size(), 2U);
+    EXPECT_EQ(reports[0].cheat_type, "teleport_hack");
+    EXPECT_EQ(reports[1].cheat_type, "damage_cheat");
+}
+
+TEST(AntiCheatManagerTest, ClearReports) {
+    v2::security::AntiCheatManager ac;
+    v2::security::Position old_pos{0, 0};
+    v2::security::Position new_pos{1000, 0};
+    (void)ac.detect_teleport(old_pos, new_pos, 200);
+    ac.clear_reports();
+    auto reports = ac.pending_reports();
+    EXPECT_TRUE(reports.empty());
 }

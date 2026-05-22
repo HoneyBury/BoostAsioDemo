@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <unordered_map>
 
 namespace net {
 
@@ -16,6 +17,20 @@ struct HttpMetricsSnapshot {
     std::string diagnostics_text;
     std::string diagnostics_json_text;
 };
+
+// v3.4.0: Custom route request/response types
+struct HttpRequest {
+    std::string target;
+    std::string method;
+};
+
+struct HttpResponse {
+    int status_code;
+    std::string body;
+    std::string content_type;
+};
+
+using RouteHandler = std::function<HttpResponse(const HttpRequest&)>;
 
 class HttpManager {
 public:
@@ -36,6 +51,9 @@ public:
     void stop();
     [[nodiscard]] std::uint16_t local_port() const;
 
+    // v3.4.0: Custom route registration
+    void register_route(const std::string& path, RouteHandler handler);
+
 private:
     void do_accept();
 
@@ -43,6 +61,9 @@ private:
     MetricsProvider metrics_provider_;
     HealthProvider health_provider_;
     ReadyProvider ready_provider_;
+
+    // v3.4.0: Custom HTTP routes
+    std::unordered_map<std::string, RouteHandler> custom_routes_;
 };
 
 }  // namespace net

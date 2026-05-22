@@ -89,6 +89,7 @@ add_executable(project_v2_integration_tests
     integration/demo_server_smoke_test.cpp
     integration/backend_health_test.cpp
     integration/data_layer_test.cpp
+    integration/raft_e2e_test.cpp
     integration/service_bus_integrity_test.cpp
     integration/process_supervisor_test.cpp
     integration/cluster_router_e2e_test.cpp

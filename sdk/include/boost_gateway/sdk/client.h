@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -95,6 +96,39 @@ public:
 
     EchoResult echo(const std::string& body,
                     std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    // ── Async API (v3.4.0) ─────────────────────────────────────────────────
+
+    /// Async connect. Callback fires on completion.
+    void async_connect(const std::string& host, std::uint16_t port,
+                       std::function<void(bool)> callback,
+                       std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    /// Async login. Callback fires with result.
+    void async_login(const std::string& user_id, const std::string& token,
+                     std::function<void(LoginResult)> callback,
+                     std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    /// Async create_room.
+    void async_create_room(const std::string& room_id,
+                           std::function<void(RoomResult)> callback,
+                           std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    /// Async join_room.
+    void async_join_room(const std::string& room_id,
+                         std::function<void(RoomResult)> callback,
+                         std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    /// Async battle input.
+    void async_send_battle_input(const std::string& input_data,
+                                 std::function<void(BattleInputResult)> callback,
+                                 std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    /// Set async push callback (called from background receive thread).
+    void on_async_push(std::function<void(const std::string&)> callback);
+
+    /// Set async disconnect callback.
+    void on_async_disconnect(std::function<void()> callback);
 
     // ── Callbacks ───────────────────────────────────────────────────
 

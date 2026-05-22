@@ -4,6 +4,10 @@
 #include <functional>
 #include <string>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 // Windows Service wrapper for Boost Gateway backend processes.
 // Provides the ability to register, unregister, start, stop and run
 // backend processes as native Windows Services.

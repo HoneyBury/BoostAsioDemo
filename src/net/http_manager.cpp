@@ -51,6 +51,11 @@ void HttpManager::set_ready_provider(ReadyProvider provider) {
     ready_provider_ = std::move(provider);
 }
 
+// v3.4.0: Custom route registration
+void HttpManager::register_route(const std::string& path, RouteHandler handler) {
+    custom_routes_[path] = std::move(handler);
+}
+
 void HttpManager::start() {
     do_accept();
     LOG_INFO("HTTP management endpoint listening on port {}",
@@ -113,8 +118,19 @@ void HttpManager::do_accept() {
                             auto body = metrics_provider_ ? metrics_provider_().diagnostics_json_text : "";
                             res = build_response(http::status::ok, "application/json", std::move(body));
                         } else {
-                            res = build_response(http::status::not_found,
-                                                  "text/plain", "Not Found");
+                            // v3.4.0: Check custom routes
+                            auto it = custom_routes_.find(std::string(req->target()));
+                            if (it != custom_routes_.end()) {
+                                HttpRequest http_req{std::string(req->target()), "GET"};
+                                auto http_res = it->second(http_req);
+                                res = build_response(
+                                    static_cast<http::status>(http_res.status_code),
+                                    http_res.content_type.empty() ? "text/plain" : http_res.content_type,
+                                    std::move(http_res.body));
+                            } else {
+                                res = build_response(http::status::not_found,
+                                                      "text/plain", "Not Found");
+                            }
                         }
 
                         auto sp = std::make_shared<http::response<http::string_body>>(std::move(res));

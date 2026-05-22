@@ -49,6 +49,7 @@ add_library(project_v2 STATIC
     battle/battle_backend_service.cpp
     leaderboard/leaderboard_service.cpp
     match/matchmaking_service.cpp
+    security/anti_cheat.cpp
     test/fault_injector.cpp
     runtime/actor_system.cpp
 )

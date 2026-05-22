@@ -22,6 +22,7 @@
 #include "v2/gateway/schema_validator.h"
 #include "v2/battle/battle_actor.h"
 #include "v2/match/match_protocol.h"
+#include "v2/match/matchmaking_service.h"
 #include "v2/player/player_actor.h"
 #include "v2/room/room_actor.h"
 #include "v2/runtime/actor_system.h"

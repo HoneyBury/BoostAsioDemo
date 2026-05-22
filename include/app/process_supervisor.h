@@ -10,6 +10,10 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 // ProcessSupervisor — manages child process lifecycle on Windows.
 //
 // Starts child processes via CreateProcess (or fork+exec on POSIX),

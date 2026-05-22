@@ -14,6 +14,7 @@
 #include <fstream>
 #include <limits>
 #include <utility>
+#include <vector>
 
 namespace v2::gateway {
 namespace {
@@ -118,7 +119,7 @@ DemoServer::DemoServer(std::uint16_t port,
         // P1c: Seed cluster_router_ member and set up health checks
         cluster_router_ = runtime_.service_bridge()->get_cluster_router();
         if (cluster_router_) {
-            cluster_router_->set_health_check_fn(
+            cluster_router_->set_health_check(
                 [](const v3::cluster::NodeId& node) -> bool {
                     try {
                         boost::asio::io_context io;
@@ -178,6 +179,24 @@ void DemoServer::start() {
         http_manager_->set_health_provider([this]() { return health_json(); });
         http_manager_->set_ready_provider([this]() { return ready_json(); });
         http_manager_->set_metrics_provider([this]() { return metrics_snapshot(); });
+        // v3.4.0: Audit log query endpoint
+        http_manager_->register_route("/audit-log", [this](const net::HttpRequest&) -> net::HttpResponse {
+            std::ifstream file("logs/audit.log");
+            if (!file) return net::HttpResponse{404, "{\"error\":\"audit_log_not_found\"}", "text/plain"};
+            std::vector<std::string> lines;
+            std::string line;
+            while (std::getline(file, line)) {
+                lines.push_back(line);
+                if (lines.size() > 200) lines.erase(lines.begin());
+            }
+            std::string result = "[";
+            for (size_t i = 0; i < lines.size(); ++i) {
+                if (i > 0) result += ",";
+                result += lines[i];
+            }
+            result += "]";
+            return net::HttpResponse{200, result, "application/json"};
+        });
         http_manager_->start();
         management_thread_ = std::make_unique<std::thread>([this]() { management_io_->run(); });
         LOG_INFO("v2 demo server HTTP management listening on :{}", *options_.http_management_port);

@@ -76,6 +76,33 @@ PooledConnection RedisConnectionPool::acquire() {
     }
 }
 
+PooledConnection RedisConnectionPool::try_acquire() {
+    std::lock_guard lock(mutex_);
+
+    // 1. Try an existing idle connection.
+    for (auto& slot : slots_) {
+        if (slot.in_use) continue;
+        if (!slot.client->is_connected()) {
+            if (!slot.client->reconnect()) continue;
+        }
+        slot.in_use = true;
+        return {slot.client.get(), this};
+    }
+
+    // 2. Create a new connection if under max.
+    if (slots_.size() < config_.max_size) {
+        auto client = std::make_unique<RedisClient>(config_.redis);
+        if (client->reconnect()) {
+            auto* ptr = client.get();
+            slots_.push_back({std::move(client), true});
+            return {ptr, this};
+        }
+    }
+
+    // 3. Pool is full and no idle connections.
+    return {};
+}
+
 void RedisConnectionPool::release(RedisClient* client) {
     std::lock_guard lock(mutex_);
     for (auto& slot : slots_) {

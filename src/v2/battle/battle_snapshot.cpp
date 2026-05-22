@@ -83,10 +83,8 @@ std::string battle_world_snapshot_to_json(v2::ecs::World& world) {
 }
 
 bool battle_world_restore_from_json(v2::ecs::World& world, std::string_view json) {
-    nlohmann::json doc;
-    try {
-        doc = nlohmann::json::parse(json);
-    } catch (const nlohmann::json::exception&) {
+    auto doc = nlohmann::json::parse(json, nullptr, false);
+    if (doc.is_discarded() || !doc.is_object()) {
         return false;
     }
 

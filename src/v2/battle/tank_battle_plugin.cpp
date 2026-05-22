@@ -2,14 +2,36 @@
 
 #include "v2/battle/game_systems.h"
 #include "v2/battle/runtime_components.h"
+#include "v2/ecs/parallel_system_executor.h"
 
 #include <nlohmann/json.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <random>
 #include <string>
 #include <utility>
+
+namespace {
+
+std::string generate_uuid_v4() {
+    static thread_local std::mt19937 gen(std::random_device{}());
+    static thread_local std::uniform_int_distribution<int> dist(0, 15);
+    std::array<char, 36> uuid;
+    const char* hex = "0123456789abcdef";
+    for (int i = 0; i < 36; i++) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) { uuid[i] = '-'; continue; }
+        int v = dist(gen);
+        if (i == 14) v = 4;  // version 4
+        if (i == 19) v = 8 | (v & 3);  // variant
+        uuid[i] = hex[v];
+    }
+    return std::string(uuid.data(), 36);
+}
+
+}  // namespace
 
 namespace v2::battle {
 
@@ -62,11 +84,24 @@ void TankBattlePlugin::on_instance_created(
     auto state = std::make_unique<State>();
     state->world = std::make_unique<v2::ecs::SimpleWorld>();
 
-    // Register ECS systems in order
-    state->world->add_system(std::make_unique<MovementSystem>());
-    state->world->add_system(std::make_unique<CombatSystem>());
-    state->world->add_system(std::make_unique<ProjectileSystem>());
-    state->world->add_system(std::make_unique<BattleClockSystem>());
+    // Create executor and register ECS systems with stage dependencies
+    auto executor = std::make_unique<v2::ecs::ParallelSystemExecutor>();
+
+    // Stage 0: no dependencies
+    executor->add_system(std::make_unique<MovementSystem>(),
+        v2::ecs::SystemMetadata{.name = "MovementSystem"});
+    executor->add_system(std::make_unique<BattleClockSystem>(),
+        v2::ecs::SystemMetadata{.name = "BattleClockSystem"});
+
+    // Stage 1: depends on MovementSystem
+    executor->add_system(std::make_unique<CombatSystem>(),
+        v2::ecs::SystemMetadata{.name = "CombatSystem", .dependencies = {"MovementSystem"}});
+
+    // Stage 2: depends on CombatSystem
+    executor->add_system(std::make_unique<ProjectileSystem>(),
+        v2::ecs::SystemMetadata{.name = "ProjectileSystem", .dependencies = {"CombatSystem"}});
+
+    state->world->set_executor(std::move(executor));
 
     // Create entities for each player
     for (const auto& player : instance_ctx.players) {
@@ -237,9 +272,7 @@ v2::realtime::InputResult TankBattlePlugin::on_input(
         }
 
         // Generate unique projectile ID
-        static std::atomic<std::uint64_t> proj_counter{0};
-        auto proj_id = "proj_" + input.user_id + "_"
-                     + std::to_string(++proj_counter);
+        auto proj_id = generate_uuid_v4();
 
         // Spawn the projectile
         ProjectileSystem::spawn_projectile(

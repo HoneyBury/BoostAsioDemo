@@ -112,6 +112,17 @@ void RaftNode::on_apply(ApplyCallback cb) {
     deliver_applied_entries(applied);
 }
 
+void RaftNode::set_state_machine(StateMachine* sm) {
+    state_machine_ = sm;
+    if (sm) {
+        on_apply([this](std::uint64_t index, const LogEntry& entry) {
+            state_machine_->apply(index, entry);
+        });
+    } else {
+        on_apply(nullptr);
+    }
+}
+
 void RaftNode::run() {
     while (running_) {
         const auto now = std::chrono::steady_clock::now();

@@ -295,6 +295,9 @@ void fill_backend_from_store(const ConfigStore& store, BackendServiceConfig& con
     if (const auto value = store.get_string("redis.leaderboard_key")) {
         config.redis.leaderboard_key = *value;
     }
+    if (const auto value = store.get_size("redis.pool_size")) {
+        config.redis.pool_size = *value;
+    }
     if (const auto value = store.get_string("raft.node_id")) {
         config.raft.node_id = *value;
     }
@@ -424,6 +427,9 @@ void apply_backend_env_overlay(const std::string& service_name, BackendServiceCo
     }
     if (const auto value = env_value("REDIS_LEADERBOARD_KEY")) {
         config.redis.leaderboard_key = *value;
+    }
+    if (const auto value = env_value("REDIS_POOL_SIZE")) {
+        config.redis.pool_size = static_cast<std::size_t>(std::stoul(*value));
     }
 
     if (const auto value = env_value("RAFT_NODE_ID")) {

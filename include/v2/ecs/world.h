@@ -15,15 +15,7 @@
 
 namespace v2::ecs {
 
-using FrameNumber = std::uint32_t;
-
-struct FrameContext {
-    std::string battle_id;
-    std::string room_id;
-    FrameNumber frame_number = 0;
-    std::string trigger;
-    std::chrono::milliseconds tick_interval{33};
-};
+class SystemExecutor;
 
 class World {
 public:
@@ -61,6 +53,7 @@ public:
     }
 
     virtual void tick(const FrameContext& ctx) = 0;
+    virtual void set_executor(std::unique_ptr<SystemExecutor> executor) = 0;
 
 protected:
     virtual Component* add_component_erased(EntityHandle entity,
@@ -73,13 +66,14 @@ protected:
 
 class SimpleWorld final : public World {
 public:
-    SimpleWorld() = default;
-    ~SimpleWorld() override = default;
+    SimpleWorld();
+    ~SimpleWorld() override;
 
     EntityHandle create_entity() override;
     void destroy_entity(EntityHandle entity) override;
     [[nodiscard]] bool exists(EntityHandle entity) const override;
     void tick(const FrameContext& ctx) override;
+    void set_executor(std::unique_ptr<SystemExecutor> executor) override;
 
     void add_system(std::unique_ptr<System> system);
 
@@ -118,6 +112,7 @@ private:
     std::unordered_map<ComponentTypeId, ComponentStore> component_stores_;
     std::unordered_map<EntityId, std::uint32_t> generations_;
     std::vector<std::unique_ptr<System>> systems_;
+    std::unique_ptr<SystemExecutor> executor_;
     EntityId next_entity_id_ = 1;
 };
 

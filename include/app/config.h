@@ -77,6 +77,7 @@ struct RedisServiceConfig {
     std::uint16_t port = 6379;
     std::string password;
     std::string leaderboard_key = "lb:global";
+    std::size_t pool_size = 3;
 };
 
 struct RaftPeerConfig {

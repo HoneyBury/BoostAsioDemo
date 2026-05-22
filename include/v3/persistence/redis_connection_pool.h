@@ -60,6 +60,9 @@ public:
     /// Returns empty PooledConnection on timeout or if no Redis is reachable.
     [[nodiscard]] PooledConnection acquire();
 
+    /// Non-blocking acquire. Returns nullptr immediately if no connection is available.
+    [[nodiscard]] PooledConnection try_acquire();
+
     [[nodiscard]] std::size_t size() const;
     [[nodiscard]] std::size_t idle_count() const;
 

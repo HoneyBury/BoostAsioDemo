@@ -1,7 +1,7 @@
 #pragma once
 
+#include "v2/ecs/frame_context.h"
 #include "v2/ecs/system.h"
-#include "v2/ecs/world.h"
 #include "v2/perf/hot_path.h"
 
 #include <algorithm>
@@ -16,18 +16,7 @@
 
 namespace v2::ecs {
 
-// ============================================================================
-// SystemMetadata
-//
-// Describes a single system's identity and its dependencies.  The executor
-// uses this information to build a topological ordering and determine which
-// systems can run in parallel.
-// ============================================================================
-
-struct SystemMetadata {
-    std::string system_id;
-    std::vector<std::string> dependencies;  // system_ids that must run first
-};
+class World;
 
 // ============================================================================
 // SystemExecutor (base)

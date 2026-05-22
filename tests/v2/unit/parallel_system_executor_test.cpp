@@ -58,11 +58,11 @@ TEST(ParallelSystemExecutorTest, IndependentSystemsRunInParallel) {
 
     executor.add_system(
         std::make_unique<TestSystem>("slow_a", std::chrono::milliseconds(200)),
-        SystemMetadata{.system_id = "slow_a"});
+        SystemMetadata{.name = "slow_a"});
 
     executor.add_system(
         std::make_unique<TestSystem>("slow_b", std::chrono::milliseconds(200)),
-        SystemMetadata{.system_id = "slow_b"});
+        SystemMetadata{.name = "slow_b"});
 
     SimpleWorld world;
     FrameContext ctx;
@@ -90,15 +90,15 @@ TEST(ParallelSystemExecutorTest, DependentSystemsRunInOrder) {
     // System "b" depends on "a", system "c" depends on "b".
     executor.add_system(
         std::make_unique<TestSystem>("a"),
-        SystemMetadata{.system_id = "a"});
+        SystemMetadata{.name = "a"});
 
     executor.add_system(
         std::make_unique<TestSystem>("b"),
-        SystemMetadata{.system_id = "b", .dependencies = {"a"}});
+        SystemMetadata{.name = "b", .dependencies = {"a"}});
 
     executor.add_system(
         std::make_unique<TestSystem>("c"),
-        SystemMetadata{.system_id = "c", .dependencies = {"b"}});
+        SystemMetadata{.name = "c", .dependencies = {"b"}});
 
     SimpleWorld world;
     FrameContext ctx;
@@ -136,15 +136,15 @@ TEST(ParallelSystemExecutorTest, MixedDependencies) {
 
     executor.add_system(
         std::make_unique<TestSystem>("a2"),
-        SystemMetadata{.system_id = "a2"});
+        SystemMetadata{.name = "a2"});
 
     executor.add_system(
         std::make_unique<TestSystem>("b"),
-        SystemMetadata{.system_id = "b", .dependencies = {"a1", "a2"}});
+        SystemMetadata{.name = "b", .dependencies = {"a1", "a2"}});
 
     executor.add_system(
         std::make_unique<TestSystem>("a1"),
-        SystemMetadata{.system_id = "a1"});
+        SystemMetadata{.name = "a1"});
 
     SimpleWorld world;
     FrameContext ctx;
@@ -175,10 +175,10 @@ TEST(ParallelSystemExecutorTest, SequentialExecutorBaseline) {
     SequentialSystemExecutor executor;
     executor.add_system(
         std::make_unique<TestSystem>("seq1"),
-        SystemMetadata{.system_id = "seq1"});
+        SystemMetadata{.name = "seq1"});
     executor.add_system(
         std::make_unique<TestSystem>("seq2"),
-        SystemMetadata{.system_id = "seq2"});
+        SystemMetadata{.name = "seq2"});
 
     SimpleWorld world;
     FrameContext ctx;
@@ -201,11 +201,11 @@ TEST(ParallelSystemExecutorTest, CycleDoesNotCrash) {
     // a depends on b, b depends on a → cycle.
     executor.add_system(
         std::make_unique<TestSystem>("a"),
-        SystemMetadata{.system_id = "a", .dependencies = {"b"}});
+        SystemMetadata{.name = "a", .dependencies = {"b"}});
 
     executor.add_system(
         std::make_unique<TestSystem>("b"),
-        SystemMetadata{.system_id = "b", .dependencies = {"a"}});
+        SystemMetadata{.name = "b", .dependencies = {"a"}});
 
     SimpleWorld world;
     FrameContext ctx;

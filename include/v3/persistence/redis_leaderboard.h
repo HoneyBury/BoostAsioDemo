@@ -3,6 +3,7 @@
 // Drop-in replacement for the in-memory SortedSet in LeaderboardService.
 
 #include "v3/persistence/redis_client.h"
+#include "v3/persistence/redis_connection_pool.h"
 
 #include <cstdint>
 #include <memory>
@@ -24,9 +25,12 @@ public:
     struct Config {
         RedisClient::Config redis;
         std::string key = "lb:default";  // Redis ZSET key
+        std::size_t pool_size = 0;           // 0 = use direct connection (legacy)
+        std::chrono::milliseconds acquire_timeout_ms{5000};
     };
 
     explicit RedisLeaderboard(Config config);
+    RedisLeaderboard(Config config, std::shared_ptr<RedisConnectionPool> pool);
     ~RedisLeaderboard();
 
     RedisLeaderboard(const RedisLeaderboard&) = delete;

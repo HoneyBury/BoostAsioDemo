@@ -68,6 +68,9 @@ target_link_libraries(project_v2
 )
 apply_project_warnings(project_v2)
 
+# gRPC gateway (experimental, disabled by default)
+# Enable with: cmake -B build -DBOOST_BUILD_GRPC=ON
+# Test with: ctest -C Debug -R "gateway_grpc"
 # ─── gRPC server sources (conditional on BOOST_BUILD_GRPC) ─────────────────
 if(BOOST_BUILD_GRPC)
   target_sources(project_v2 PRIVATE

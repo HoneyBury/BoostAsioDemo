@@ -171,6 +171,12 @@ inline AppendEntriesReply parse_append_entries_reply(const std::string& data) {
 RequestVoteReply handle_request_vote_internal(
     const RaftNodeId& peer, const RequestVoteArgs& args);
 
+class StateMachine {
+public:
+    virtual ~StateMachine() = default;
+    virtual void apply(std::uint64_t index, const LogEntry& entry) = 0;
+};
+
 class RaftNode {
 public:
     using LeaderCallback = std::function<void()>;
@@ -203,6 +209,7 @@ public:
     void on_become_leader(LeaderCallback cb) { leader_cb_ = std::move(cb); }
     void on_step_down(StepDownCallback cb) { step_down_cb_ = std::move(cb); }
     void on_apply(ApplyCallback cb);
+    void set_state_machine(StateMachine* sm);
 
     RequestVoteReply handle_request_vote(const RequestVoteArgs& args);
     AppendEntriesReply handle_append_entries(const AppendEntriesArgs& args);
@@ -257,6 +264,7 @@ private:
     LeaderCallback leader_cb_;
     StepDownCallback step_down_cb_;
     ApplyCallback apply_cb_;
+    StateMachine* state_machine_ = nullptr;
 };
 
 }  // namespace v3::cluster

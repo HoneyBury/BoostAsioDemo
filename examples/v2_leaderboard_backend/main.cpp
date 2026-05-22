@@ -5,6 +5,7 @@
 #include "v2/leaderboard/leaderboard_service.h"
 #include "v3/cluster/raft.h"
 #include "v3/persistence/redis_client.h"
+#include "v3/persistence/redis_connection_pool.h"
 #include "v3/persistence/redis_leaderboard.h"
 #include <atomic>
 #include <chrono>
@@ -82,22 +83,34 @@ int main(int argc, char* argv[]) {
     }
 
     if (!config.redis.host.empty()) {
-        v3::persistence::RedisClient::Config redis_config;
-        redis_config.host = config.redis.host;
-        redis_config.port = config.redis.port;
-        redis_config.password = config.redis.password;
+        const auto pool_size = config.redis.pool_size > 0
+            ? config.redis.pool_size
+            : std::size_t{3};
 
-        v3::persistence::RedisLeaderboard::Config lb_config;
-        lb_config.redis = std::move(redis_config);
-        lb_config.key = config.redis.leaderboard_key;
+        v3::persistence::RedisConnectionPool::Config pool_config;
+        pool_config.redis.host = config.redis.host;
+        pool_config.redis.port = config.redis.port;
+        pool_config.redis.password = config.redis.password;
+        pool_config.max_size = pool_size;
 
-        auto display_port = lb_config.redis.port;
-        auto redis_lb = std::make_shared<v3::persistence::RedisLeaderboard>(
-            std::move(lb_config));
-        if (redis_lb->available()) {
+        auto pool = std::make_shared<v3::persistence::RedisConnectionPool>(
+            std::move(pool_config));
+
+        // Quick verification that Redis is reachable
+        const bool pool_ok = [&pool] {
+            auto c = pool->try_acquire();
+            return static_cast<bool>(c);
+        }();
+
+        if (pool_ok) {
+            v3::persistence::RedisLeaderboard::Config lb_config;
+            lb_config.key = config.redis.leaderboard_key;
+
+            auto redis_lb = std::make_shared<v3::persistence::RedisLeaderboard>(
+                std::move(lb_config), pool);
             service.set_redis_leaderboard(std::move(redis_lb));
             std::cout << "Redis leaderboard enabled ("
-                      << config.redis.host << ":" << display_port << ")"
+                      << config.redis.host << ":" << config.redis.port << ")"
                       << std::endl;
         } else {
             std::cerr << "Redis unavailable at " << config.redis.host

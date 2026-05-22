@@ -1,8 +1,12 @@
 #include "v2/ecs/world.h"
+#include "v2/ecs/parallel_system_executor.h"
 
 #include <utility>
 
 namespace v2::ecs {
+
+SimpleWorld::SimpleWorld() = default;
+SimpleWorld::~SimpleWorld() = default;
 
 EntityHandle SimpleWorld::create_entity() {
     const auto entity_id = next_entity_id_++;
@@ -36,6 +40,10 @@ bool SimpleWorld::exists(EntityHandle entity) const {
 }
 
 void SimpleWorld::tick(const FrameContext& ctx) {
+    if (executor_) {
+        executor_->execute_all(*this, ctx);
+        return;
+    }
     for (auto& system : systems_) {
         system->run(*this, ctx);
     }
@@ -45,7 +53,19 @@ void SimpleWorld::add_system(std::unique_ptr<System> system) {
     if (!system) {
         return;
     }
+    if (executor_) {
+        executor_->add_system(std::move(system), system->metadata());
+        return;
+    }
     systems_.push_back(std::move(system));
+}
+
+void SimpleWorld::set_executor(std::unique_ptr<SystemExecutor> executor) {
+    executor_ = std::move(executor);
+    for (auto& sys : systems_) {
+        executor_->add_system(std::move(sys), sys ? sys->metadata() : SystemMetadata{});
+    }
+    systems_.clear();
 }
 
 Component* SimpleWorld::add_component_erased(EntityHandle entity,

@@ -3,6 +3,7 @@
 #include "v2/aoi/aoi_system.h"
 #include "v2/battle/game_systems.h"
 #include "v2/battle/runtime_components.h"
+#include "v2/ecs/parallel_system_executor.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -221,13 +222,35 @@ std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id
                                                     const std::vector<std::string>& player_ids,
                                                     std::uint32_t max_frames) {
     auto world = std::make_unique<v2::ecs::SimpleWorld>();
-    world->add_system(std::make_unique<BattleClockSystem>());
-    world->add_system(std::make_unique<BattleInputSystem>());
-    world->add_system(std::make_unique<MovementSystem>());
-    world->add_system(std::make_unique<CombatSystem>());
-    world->add_system(std::make_unique<v2::aoi::AoiSystem>());
-    world->add_system(std::make_unique<BattleLifecycleSystem>());
-    world->add_system(std::make_unique<BattleReplaySystem>());
+
+    // Create executor and register all systems with stage dependencies for
+    // parallel execution.  Systems in the same stage have no dependencies on
+    // each other and can run concurrently.
+    auto executor = std::make_unique<v2::ecs::ParallelSystemExecutor>();
+
+    // Stage 0: no dependencies
+    executor->add_system(std::make_unique<BattleClockSystem>(),
+        v2::ecs::SystemMetadata{.name = "BattleClockSystem"});
+    executor->add_system(std::make_unique<BattleInputSystem>(),
+        v2::ecs::SystemMetadata{.name = "BattleInputSystem"});
+
+    // Stage 1: depend on stage 0 systems
+    executor->add_system(std::make_unique<MovementSystem>(),
+        v2::ecs::SystemMetadata{.name = "MovementSystem", .dependencies = {"BattleInputSystem"}});
+    executor->add_system(std::make_unique<BattleLifecycleSystem>(),
+        v2::ecs::SystemMetadata{.name = "BattleLifecycleSystem", .dependencies = {"BattleClockSystem"}});
+
+    // Stage 2: depend on stage 1 systems
+    executor->add_system(std::make_unique<CombatSystem>(),
+        v2::ecs::SystemMetadata{.name = "CombatSystem", .dependencies = {"MovementSystem", "BattleInputSystem"}});
+    executor->add_system(std::make_unique<v2::aoi::AoiSystem>(),
+        v2::ecs::SystemMetadata{.name = "AoiSystem", .dependencies = {"MovementSystem"}});
+
+    // Stage 3: depends on stage 2 systems
+    executor->add_system(std::make_unique<BattleReplaySystem>(),
+        v2::ecs::SystemMetadata{.name = "BattleReplaySystem", .dependencies = {"BattleLifecycleSystem", "CombatSystem", "AoiSystem"}});
+
+    world->set_executor(std::move(executor));
 
     const auto clock_entity = world->create_entity();
     world->add_component<BattleClockComponent>(clock_entity);

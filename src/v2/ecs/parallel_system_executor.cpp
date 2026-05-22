@@ -106,7 +106,7 @@ std::size_t ParallelSystemExecutor::execute_all(World& world,
                     f.get();
                 } catch (const std::exception& e) {
                     SPDLOG_ERROR("[ParallelSystemExecutor] System '{}' threw: {}",
-                                 entries_[stage[&f - &futures[0]]].metadata.system_id,
+                                 entries_[stage[&f - &futures[0]]].metadata.name,
                                  e.what());
                 }
             }
@@ -134,7 +134,7 @@ void ParallelSystemExecutor::build_stages() {
     std::unordered_map<std::string, std::size_t> id_to_idx;
     id_to_idx.reserve(n);
     for (std::size_t i = 0; i < n; ++i) {
-        const auto& id = entries_[i].metadata.system_id;
+        const auto& id = entries_[i].metadata.name;
         if (!id.empty()) {
             id_to_idx[id] = i;
         }

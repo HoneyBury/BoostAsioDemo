@@ -1,9 +1,11 @@
 {
   "service": {
     "name": "room",
-    "port": 9302,
+    "host": "0.0.0.0",
+    "port": 9303,
     "config_version": "production-room-v1"
   },
+  "log_level": "info",
   "battle": {
     "max_frames": 1800
   }

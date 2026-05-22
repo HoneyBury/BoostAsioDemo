@@ -26,6 +26,7 @@ add_library(project_v2 STATIC
     service/error_codes.cpp
     service/service_manifest.cpp
     service/service_registry.cpp
+    service/service_registrar.cpp
     gateway/gateway_service_bridge.cpp
     gateway/battle_protocol_codec.cpp
     gateway/battle_wire_parser.cpp

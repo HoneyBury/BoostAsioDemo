@@ -45,6 +45,9 @@ enum class EnvelopeMessageKind : std::uint16_t {
     kMatchLeaveResponse,
     kMatchStatusRequest,
     kMatchStatusResponse,
+    kMatchFoundPush,
+    kMatchToRoomRequest,
+    kMatchToRoomResponse,
     kLeaderboardSubmitRequest,
     kLeaderboardSubmitResponse,
     kLeaderboardTopRequest,
@@ -116,6 +119,9 @@ inline std::string to_string(EnvelopeMessageKind kind) {
         case EnvelopeMessageKind::kMatchLeaveResponse: return "match_leave_response";
         case EnvelopeMessageKind::kMatchStatusRequest: return "match_status";
         case EnvelopeMessageKind::kMatchStatusResponse: return "match_status_response";
+        case EnvelopeMessageKind::kMatchFoundPush: return "match_found_push";
+        case EnvelopeMessageKind::kMatchToRoomRequest: return "match_to_room";
+        case EnvelopeMessageKind::kMatchToRoomResponse: return "match_to_room_response";
         case EnvelopeMessageKind::kLeaderboardSubmitRequest: return "submit";
         case EnvelopeMessageKind::kLeaderboardSubmitResponse: return "submit_response";
         case EnvelopeMessageKind::kLeaderboardTopRequest: return "top";
@@ -143,6 +149,9 @@ inline std::optional<EnvelopeMessageKind> kind_from_string(const std::string& ki
     if (kind == "match_leave_response") return EnvelopeMessageKind::kMatchLeaveResponse;
     if (kind == "match_status") return EnvelopeMessageKind::kMatchStatusRequest;
     if (kind == "match_status_response") return EnvelopeMessageKind::kMatchStatusResponse;
+    if (kind == "match_found_push") return EnvelopeMessageKind::kMatchFoundPush;
+    if (kind == "match_to_room") return EnvelopeMessageKind::kMatchToRoomRequest;
+    if (kind == "match_to_room_response") return EnvelopeMessageKind::kMatchToRoomResponse;
     if (kind == "submit") return EnvelopeMessageKind::kLeaderboardSubmitRequest;
     if (kind == "submit_response") return EnvelopeMessageKind::kLeaderboardSubmitResponse;
     if (kind == "top") return EnvelopeMessageKind::kLeaderboardTopRequest;
@@ -173,6 +182,9 @@ inline std::optional<EnvelopeDomain> domain_for_kind(EnvelopeMessageKind kind) {
         case EnvelopeMessageKind::kMatchLeaveResponse:
         case EnvelopeMessageKind::kMatchStatusRequest:
         case EnvelopeMessageKind::kMatchStatusResponse:
+        case EnvelopeMessageKind::kMatchFoundPush:
+        case EnvelopeMessageKind::kMatchToRoomRequest:
+        case EnvelopeMessageKind::kMatchToRoomResponse:
             return EnvelopeDomain::kMatch;
         case EnvelopeMessageKind::kLeaderboardSubmitRequest:
         case EnvelopeMessageKind::kLeaderboardSubmitResponse:

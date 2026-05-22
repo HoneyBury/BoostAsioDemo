@@ -21,6 +21,7 @@
 #include "v2/gateway/runtime_helpers.h"
 #include "v2/gateway/schema_validator.h"
 #include "v2/battle/battle_actor.h"
+#include "v2/match/match_protocol.h"
 #include "v2/player/player_actor.h"
 #include "v2/room/room_actor.h"
 #include "v2/runtime/actor_system.h"
@@ -65,11 +66,32 @@ public:
     void set_service_bridge(std::unique_ptr<GatewayServiceBridge> bridge);
     [[nodiscard]] GatewayServiceBridge* service_bridge() const noexcept { return bridge_.get(); }
 
+    // ── Match-found handling ──────────────────────────────────────────
+    // Called when a match is found (either via MatchFoundCallback in-process
+    // or via match_found push from the matchmaking backend).
+    // Automatically creates a room, joins matched players, readies them,
+    // and starts the battle. Idempotent for the same match_id.
+    void on_match_found(const v2::match::MatchResult& result);
+
 private:
     struct PendingSettlementAck {
         int expected_acks = 0;
         int received_acks = 0;
     };
+
+    // Tracks a player waiting in the match queue for auto-polling.
+    struct MatchWaitEntry {
+        std::string user_id;
+        std::string mode;
+        std::int64_t mmr;
+        SessionId session_id;
+        std::uint32_t request_id;
+    };
+
+    // ── Idempotency tracking ─────────────────────────────────────────
+    // Tracks which match_ids have already been processed for room creation.
+    // Ensures that duplicate MatchFound callbacks do not create duplicate rooms.
+    std::unordered_set<std::string> processed_match_ids_;
 
     [[nodiscard]] v2::actor::ActorRef get_or_create_player(const std::string& user_id);
     [[nodiscard]] std::string session_user_id(SessionId session_id) const;
@@ -84,6 +106,23 @@ private:
         const std::vector<v2::battle::BattleScore>& scores);
     void process_battle_finished(const v2::battle::BattleFinishedMsg& finished);
     void process_deferred_finished(const std::string& battle_id);
+
+    // ── Auto match-found flow helpers ─────────────────────────────────
+    // Sends kMatchFoundPush to all matched players.
+    void send_match_found_pushes(const v2::match::MatchResult& result,
+                                  const std::string& room_id);
+
+    // Creates a room from a MatchResult and joins all players.
+    // Returns the room_id on success, empty string on failure.
+    std::string create_room_from_match(const v2::match::MatchResult& result);
+
+    // Sets all matched players ready in the room.
+    void ready_all_players(const v2::match::MatchResult& result,
+                           const std::string& room_id);
+
+    // Starts a battle for the given room (via bridge or local).
+    void start_battle_for_room(const std::string& room_id,
+                               const std::string& user_id);
 
     void emit(std::uint16_t message_id,
               SessionId session_id,

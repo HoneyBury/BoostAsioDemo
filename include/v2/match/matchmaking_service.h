@@ -3,6 +3,7 @@
 // v3.0.0 B4: Raft consensus for leader election
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -66,6 +67,13 @@ class MatchmakingService {
 public:
     explicit MatchmakingService(std::uint16_t port);
     ~MatchmakingService();
+
+    /// Callback invoked when a match is successfully found and committed.
+    /// The callback receives the full MatchResult (match_id, players, mode, mmr).
+    /// This is called from the matchmaker thread -- implementations MUST NOT
+    /// block and SHOULD dispatch work to their own threads/io_contexts.
+    using MatchFoundCallback = std::function<void(const MatchResult& result)>;
+    void set_match_found_callback(MatchFoundCallback cb);
 
     void start();
     void stop();

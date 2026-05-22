@@ -1,5 +1,6 @@
 #include "v2/gateway/gateway_service_bridge.h"
 
+#include "app/logging.h"
 #include "v2/config/feature_flags.h"
 #include "v2/service/service_id.h"
 #include "v2/tracing/trace_context.h"
@@ -253,6 +254,8 @@ GatewayServiceBridge::resolve_backend(
         }
 
         if (chosen_node.has_value()) {
+            LOG_INFO("GatewayServiceBridge: resolved {} via cluster router → {}:{}",
+                     svc_name, chosen_node->host, chosen_node->port);
             return ResolvedBackend{
                 .config = BackendConfig{.host = chosen_node->host, .port = chosen_node->port},
                 .connection_key = connection_key_for(*chosen_node),
@@ -260,6 +263,8 @@ GatewayServiceBridge::resolve_backend(
                 .from_cluster = true,
             };
         }
+        LOG_INFO("GatewayServiceBridge: cluster router returned no healthy instance for {}",
+                 svc_name);
     }
 
     std::scoped_lock lock(mutex_);
@@ -267,6 +272,8 @@ GatewayServiceBridge::resolve_backend(
     if (!slot.config) {
         return std::nullopt;
     }
+    LOG_WARN("GatewayServiceBridge: falling back to static config for {} → {}:{}",
+             service_name_for(service), slot.config->host, slot.config->port);
     return ResolvedBackend{
         .config = *slot.config,
         .connection_key = "__static__",

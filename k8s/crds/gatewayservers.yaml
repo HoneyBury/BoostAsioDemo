@@ -79,6 +79,29 @@ spec:
                 readyReplicas:
                   type: integer
                   minimum: 0
+                desiredReplicas:
+                  type: integer
+                  minimum: 0
+                failedHealthChecks:
+                  type: integer
+                  minimum: 0
+                components:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      kind:
+                        type: string
+                      ready:
+                        type: boolean
+                      replicas:
+                        type: integer
+                      available:
+                        type: integer
+                      message:
+                        type: string
                 conditions:
                   type: array
                   items:
@@ -92,6 +115,10 @@ spec:
                       lastTransitionTime:
                         type: string
                         format: date-time
+                      reason:
+                        type: string
+                      message:
+                        type: string
       subresources:
         status: {}
       additionalPrinterColumns:
@@ -104,6 +131,9 @@ spec:
         - name: Ready
           type: integer
           jsonPath: .status.readyReplicas
+        - name: Desired
+          type: integer
+          jsonPath: .status.desiredReplicas
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp

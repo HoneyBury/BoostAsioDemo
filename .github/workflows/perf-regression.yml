@@ -1,0 +1,184 @@
+name: Performance Regression
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Every Monday at 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      perf_preset:
+        description: "Performance baseline preset"
+        required: true
+        default: "baseline"
+        type: choice
+        options:
+          - smoke
+          - baseline
+          - capacity
+      perf_repetitions:
+        description: "Number of repetitions per case"
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "3"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  perf-regression:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            configure_preset: default
+            build_preset: default
+            build_dir: build/default
+          - os: windows-2022
+            configure_preset: windows-ninja-release
+            build_preset: windows-ninja-release
+            build_dir: build/windows-ninja-release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+
+      - name: Setup MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure (Release)
+        run: cmake --preset ${{ matrix.configure_preset }} -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (Release)
+        run: cmake --build --preset ${{ matrix.build_preset }} --parallel
+
+      - name: Run performance baseline
+        id: perf
+        shell: bash
+        env:
+          V2_RATE_LIMIT_CONNECTION: "100000"
+          V2_RATE_LIMIT_MESSAGE_TYPE: "200000"
+          V2_RATE_LIMIT_IP: "200000"
+          V2_RATE_LIMIT_USER: "100000"
+          V2_RATE_LIMIT_LOGIN: "50000"
+        run: |
+          OUTPUT_DIR="runtime/perf/ci-regression-$(date +%Y%m%d-%H%M%S)"
+          python scripts/collect_v2_perf_baseline.py \
+            --build-dir ${{ matrix.build_dir }} \
+            --run-preset ${{ inputs.perf_preset || 'baseline' }} \
+            --repetitions ${{ inputs.perf_repetitions || '1' }} \
+            --output-root "$OUTPUT_DIR" \
+            2>&1 | tee perf_run.log
+
+          echo "output_dir=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate performance gates
+        id: gates
+        shell: bash
+        run: |
+          SUMMARY_PATH="$(find runtime/perf -name 'summary.json' -type f | head -1)"
+          if [ -z "$SUMMARY_PATH" ]; then
+            echo "No summary.json found — performance run may have failed."
+            exit 1
+          fi
+
+          GATES_FILE="config/perf/v2_arch_baseline_gates.json"
+          python3 -c "
+import json, sys
+
+with open('$SUMMARY_PATH') as f:
+    summary = json.load(f)
+with open('$GATES_FILE') as f:
+    gates_config = json.load(f)
+
+scenario_gates = gates_config.get('scenario_gates', {})
+aggregates = summary.get('case_aggregates', [])
+exit_code = 0
+report_lines = ['## Performance Gate Results', '']
+report_lines.append('| Case | Metric | Observed | Warning | Critical | Verdict |')
+report_lines.append('| --- | --- | ---: | ---: | ---: | --- |')
+
+for agg in aggregates:
+    case_name = agg.get('case_name', '')
+    p99_ms = agg.get('latency_p99_ms', {}).get('median', 0)
+    p99_us = p99_ms * 1000
+
+    if 'echo' in case_name:
+        gate = scenario_gates.get('echo_p99_us', {})
+    elif 'login' in case_name:
+        gate = scenario_gates.get('login_p99_us', {})
+    elif 'battle' in case_name:
+        gate = scenario_gates.get('battle_broadcast_p99_us', {})
+    else:
+        continue
+
+    warning_threshold = gate.get('warning', float('inf'))
+    critical_threshold = gate.get('critical', float('inf'))
+
+    if p99_us >= critical_threshold:
+        verdict = 'FAIL (critical)'
+        exit_code = 1
+    elif p99_us >= warning_threshold:
+        verdict = 'WARN'
+    else:
+        verdict = 'PASS'
+
+    report_lines.append(
+        f'| {case_name} | P99 | {p99_us:.0f}us | {warning_threshold}us | '
+        f'{critical_threshold}us | {verdict} |'
+    )
+
+report = '\n'.join(report_lines)
+print(report)
+
+# Write report to GITHUB_STEP_SUMMARY
+with open('$GITHUB_STEP_SUMMARY', 'a') as outf:
+    outf.write(report + '\n')
+
+sys.exit(exit_code)
+"
+        continue-on-error: true
+
+      - name: Generate performance report
+        if: always()
+        shell: bash
+        run: |
+          SUMMARY_PATH="$(find runtime/perf -name 'summary.json' -type f | head -1)"
+          if [ -n "$SUMMARY_PATH" ]; then
+            REPORT_DIR="$(dirname "$SUMMARY_PATH")"
+            echo "## Performance Regression Summary" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Workflow**: ${{ github.workflow }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **OS**: ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Preset**: ${{ inputs.perf_preset || 'baseline' }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Repetitions**: ${{ inputs.perf_repetitions || '1' }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Report**: See artifact \`perf-report-${{ matrix.os }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            if [ -f "$REPORT_DIR/report.md" ]; then
+              cat "$REPORT_DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+
+      - name: Upload performance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-report-${{ matrix.os }}
+          path: |
+            runtime/perf/**
+            perf_run.log
+          if-no-files-found: warn

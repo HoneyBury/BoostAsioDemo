@@ -1,11 +1,13 @@
 {
   "service": {
     "name": "matchmaking",
-    "port": 9304,
+    "host": "0.0.0.0",
+    "port": 9306,
     "config_version": "production-matchmaking-v1"
   },
+  "log_level": "info",
   "raft": {
-    "node_id": "",
+    "node_id": "${RAFT_NODE_ID}",
     "peers": [],
     "storage_dir": "runtime/raft/matchmaking",
     "election_timeout_min_ms": 150,

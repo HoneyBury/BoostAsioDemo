@@ -11,6 +11,7 @@
 #include "app/audit_log.h"
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
@@ -1678,6 +1679,303 @@ void Runtime::push(v2::room::RoomEvent event) {
         }
     }
 }
+
+// ── Match-found handling ─────────────────────────────────────────────
+
+void Runtime::send_match_found_pushes(const v2::match::MatchResult& result,
+                                       const std::string& room_id) {
+    // Build MatchFoundPayload from the result
+    v2::match::MatchFoundPayload payload;
+    payload.match_id = result.match_id;
+    payload.mode = v2::match::to_string(result.mode);
+    payload.room_id = room_id;
+    for (const auto& pid : result.player_ids) {
+        v2::match::MatchPlayerInfo info;
+        info.user_id = pid;
+        info.mmr = result.avg_mmr;
+        payload.players.push_back(std::move(info));
+    }
+    const auto payload_str = payload.to_json_str();
+
+    // Send kMatchFoundPush to each matched player
+    for (const auto& pid : result.player_ids) {
+        const auto sid = lookup_.session_for_user(pid);
+        if (sid.has_value()) {
+            emit(net::protocol::kMatchFoundPush,
+                 *sid,
+                 0,
+                 static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                 payload_str);
+            AUDIT_LOG("match_found_push",
+                      "match_id=" + result.match_id + " user_id=" + pid +
+                          " room_id=" + room_id);
+        }
+    }
+}
+
+std::string Runtime::create_room_from_match(const v2::match::MatchResult& result) {
+    // Generate a deterministic room_id from the match_id
+    const std::string room_id = "room_" + result.match_id;
+
+    // Idempotency: if room already exists, return its id
+    if (lookup_.room(room_id) != nullptr) {
+        SPDLOG_INFO("Room {} already exists for match {}, skipping creation",
+                    room_id, result.match_id);
+        return room_id;
+    }
+
+    // Use the first player as the "owner" for room creation
+    if (result.player_ids.empty()) {
+        SPDLOG_ERROR("Cannot create room for match {}: no players", result.match_id);
+        return {};
+    }
+
+    const std::string& owner_id = result.player_ids.front();
+
+    if (bridge_) {
+        // Bridge path: delegate room creation to room_backend
+        nlohmann::json room_payload{
+            {"user_id", owner_id},
+            {"room_id", room_id},
+        };
+        auto room_result = bridge_->route(v2::service::ServiceId::kRoom,
+                                           "room_create",
+                                           room_payload.dump());
+        if (!room_result.success) {
+            SPDLOG_ERROR("Bridge room_create failed for match {}: {}",
+                         result.match_id, room_result.response_payload);
+            return {};
+        }
+
+        // Associate all matched players with the room in the lookup
+        for (const auto& pid : result.player_ids) {
+            const auto sid = lookup_.session_for_user(pid);
+            if (sid.has_value()) {
+                lookup_.set_session_room(*sid, room_id);
+            }
+        }
+
+        // Join all non-owner players to the room
+        for (std::size_t i = 1; i < result.player_ids.size(); ++i) {
+            const auto& pid = result.player_ids[i];
+            nlohmann::json join_payload{
+                {"user_id", pid},
+                {"room_id", room_id},
+            };
+            auto join_result = bridge_->route(v2::service::ServiceId::kRoom,
+                                               "room_join",
+                                               join_payload.dump());
+            if (!join_result.success) {
+                SPDLOG_WARN("Bridge room_join failed for {} in match {}: {}",
+                            pid, result.match_id, join_result.response_payload);
+            }
+        }
+
+        AUDIT_LOG("match_room_created",
+                  "match_id=" + result.match_id + " room_id=" + room_id);
+        return room_id;
+    }
+
+    // Local path: create RoomActor
+    auto room_actor = actor_system_.create_actor(
+        std::make_unique<v2::room::RoomActor>(*this));
+    lookup_.set_room(room_id, room_actor);
+
+    v2::actor::Message create;
+    create.header.kind = v2::actor::MessageKind::kUser;
+    create.payload = v2::room::CreateRoomMsg{
+        .room_id = room_id,
+        .owner_user_id = owner_id,
+        .owner_actor_id = lookup_.player(owner_id)
+                              ? lookup_.player(owner_id)->actor_id()
+                              : v2::actor::ActorId{0},
+    };
+    room_actor.tell(std::move(create));
+
+    // Assign room to all players and join non-owners
+    for (std::size_t i = 0; i < result.player_ids.size(); ++i) {
+        const auto& pid = result.player_ids[i];
+        const auto sid = lookup_.session_for_user(pid);
+        if (sid.has_value()) {
+            lookup_.set_session_room(*sid, room_id);
+        }
+
+        auto* player_ref = lookup_.player(pid);
+        if (player_ref != nullptr) {
+            v2::actor::Message assign;
+            assign.header.kind = v2::actor::MessageKind::kUser;
+            assign.payload = v2::player::RoomAssignedMsg{
+                .room_actor_id = room_actor.actor_id(),
+                .room_id = room_id,
+            };
+            player_ref->tell(std::move(assign));
+
+            if (i > 0) {
+                // Non-owner: send JoinRoomMsg
+                v2::actor::Message join;
+                join.header.kind = v2::actor::MessageKind::kUser;
+                join.payload = v2::room::JoinRoomMsg{
+                    .user_id = pid,
+                    .player_actor_id = player_ref->actor_id(),
+                };
+                room_actor.tell(std::move(join));
+            }
+        }
+    }
+
+    actor_system_.dispatch_all();
+    AUDIT_LOG("match_room_created",
+              "match_id=" + result.match_id + " room_id=" + room_id);
+    return room_id;
+}
+
+void Runtime::ready_all_players(const v2::match::MatchResult& result,
+                                 const std::string& room_id) {
+    for (const auto& pid : result.player_ids) {
+        if (bridge_) {
+            nlohmann::json ready_payload{
+                {"user_id", pid},
+                {"room_id", room_id},
+                {"ready", true},
+            };
+            auto ready_result = bridge_->route(v2::service::ServiceId::kRoom,
+                                                "room_ready",
+                                                ready_payload.dump());
+            if (!ready_result.success) {
+                SPDLOG_WARN("Bridge room_ready failed for {} in room {}: {}",
+                            pid, room_id, ready_result.response_payload);
+            }
+        } else {
+            auto* room_ref = lookup_.room(room_id);
+            if (room_ref == nullptr) {
+                SPDLOG_WARN("Room {} not found for ready_all_players", room_id);
+                continue;
+            }
+            v2::actor::Message set_ready;
+            set_ready.header.kind = v2::actor::MessageKind::kUser;
+            set_ready.payload = v2::room::SetReadyMsg{
+                .user_id = pid,
+                .ready = true,
+            };
+            room_ref->tell(std::move(set_ready));
+        }
+    }
+    if (!bridge_) {
+        actor_system_.dispatch_all();
+    }
+}
+
+void Runtime::start_battle_for_room(const std::string& room_id,
+                                     const std::string& user_id) {
+    if (bridge_) {
+        nlohmann::json battle_payload{
+            {"user_id", user_id},
+            {"room_id", room_id},
+        };
+        auto room_result = bridge_->route(v2::service::ServiceId::kRoom,
+                                           "room_start_battle",
+                                           battle_payload.dump());
+        if (!room_result.success) {
+            SPDLOG_ERROR("Bridge room_start_battle failed for room {}: {}",
+                         room_id, room_result.response_payload);
+            return;
+        }
+
+        auto room_resp = nlohmann::json::parse(
+            room_result.response_payload, nullptr, false);
+        if (room_resp.is_discarded() || room_resp.value("status", "") != "ok") {
+            SPDLOG_ERROR("start_battle_for_room rejected for room {}",
+                         room_id);
+            return;
+        }
+
+        // Handle forward cascade if present
+        if (room_resp.contains("forward")) {
+            const auto& fwd = room_resp["forward"];
+            std::string fwd_target = fwd.value("target", "");
+            std::string fwd_msg_type = fwd.value("message_type", "");
+            std::string fwd_payload = fwd.contains("payload")
+                ? fwd["payload"].dump() : "";
+
+            if (fwd_target == "battle" && !fwd_payload.empty()) {
+                auto battle_result = bridge_->route(
+                    v2::service::ServiceId::kBattle,
+                    fwd_msg_type,
+                    fwd_payload);
+
+                if (battle_result.success) {
+                    auto battle_resp = nlohmann::json::parse(
+                        battle_result.response_payload, nullptr, false);
+                    if (!battle_resp.is_discarded() &&
+                        battle_resp.value("status", "") == "ok") {
+                        std::string battle_id = battle_resp.value("battle_id", "");
+                        if (!battle_id.empty()) {
+                            battles_by_room_id_[room_id] = v2::actor::ActorRef{};
+                            room_to_battle_id_[room_id] = battle_id;
+                        }
+                        AUDIT_LOG("match_battle_started",
+                                  "room_id=" + room_id +
+                                      " battle_id=" + battle_id);
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    // Local path: send StartBattleMsg
+    auto* room_ref = lookup_.room(room_id);
+    if (room_ref == nullptr) {
+        SPDLOG_ERROR("Room {} not found for start_battle_for_room", room_id);
+        return;
+    }
+    pending_battle_start_[room_id] = PendingResponse{
+        .session_id = 0,  // no specific session for auto-start
+        .request_id = 0,
+    };
+    v2::actor::Message start;
+    start.header.kind = v2::actor::MessageKind::kUser;
+    start.payload = v2::room::StartBattleMsg{.requester_user_id = user_id};
+    room_ref->tell(std::move(start));
+    actor_system_.dispatch_all();
+}
+
+void Runtime::on_match_found(const v2::match::MatchResult& result) {
+    // Idempotency: skip if this match was already processed
+    if (!processed_match_ids_.insert(result.match_id).second) {
+        SPDLOG_INFO("Match {} already processed, skipping", result.match_id);
+        return;
+    }
+
+    SPDLOG_INFO("Processing match_found: match_id={} mode={} players={}",
+                result.match_id,
+                v2::match::to_string(result.mode),
+                fmt::join(result.player_ids, ","));
+
+    // Step 1: Create room for the match
+    const std::string room_id = create_room_from_match(result);
+    if (room_id.empty()) {
+        SPDLOG_ERROR("Failed to create room for match {}", result.match_id);
+        processed_match_ids_.erase(result.match_id);
+        return;
+    }
+
+    // Step 2: Send MatchFound push notifications to all matched players
+    send_match_found_pushes(result, room_id);
+
+    // Step 3: Set all matched players ready
+    ready_all_players(result, room_id);
+
+    // Step 4: Start battle
+    // Use the first player as the requester for battle start
+    const std::string& starter_id = result.player_ids.front();
+    start_battle_for_room(room_id, starter_id);
+
+    AUDIT_LOG("match_to_battle_complete",
+              "match_id=" + result.match_id + " room_id=" + room_id);
+}
+
+// ── Player management ────────────────────────────────────────────────
 
 v2::actor::ActorRef Runtime::get_or_create_player(const std::string& user_id) {
     auto* existing = lookup_.player(user_id);

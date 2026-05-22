@@ -114,6 +114,52 @@ DemoServer::DemoServer(std::uint16_t port,
         }
 
         load_gateway_config();
+
+        // P1c: Seed cluster_router_ member and set up health checks
+        cluster_router_ = runtime_.service_bridge()->get_cluster_router();
+        if (cluster_router_) {
+            cluster_router_->set_health_check_fn(
+                [](const v3::cluster::NodeId& node) -> bool {
+                    try {
+                        boost::asio::io_context io;
+                        boost::asio::ip::tcp::socket sock(io);
+                        boost::asio::ip::tcp::endpoint ep(
+                            boost::asio::ip::make_address(node.host),
+                            static_cast<std::uint16_t>(node.port));
+                        boost::system::error_code ec;
+                        sock.connect(ep, ec);
+                        sock.close();
+                        return !ec;
+                    } catch (...) {
+                        return false;
+                    }
+                });
+
+            auto register_backend = [&](const std::string& svc_name,
+                                        std::optional<GatewayServiceBridge::BackendConfig>& cfg) {
+                if (!cfg.has_value()) return;
+                auto registrar = std::make_shared<v2::service::ServiceRegistrar>(
+                    *cluster_router_, svc_name, cfg->host, cfg->port);
+                registrar->start();
+                service_registrars_.push_back(std::move(registrar));
+            };
+
+            register_backend("login", options_.login_backend_config);
+            register_backend("room", options_.room_backend_config);
+            register_backend("battle", options_.battle_backend_config);
+            register_backend("matchmaking", options_.matchmaking_backend_config);
+            register_backend("leaderboard", options_.leaderboard_backend_config);
+
+            health_check_running_ = true;
+            health_check_thread_ = std::make_unique<std::thread>([this]() {
+                while (health_check_running_) {
+                    std::this_thread::sleep_for(std::chrono::seconds(5));
+                    if (health_check_running_) {
+                        cluster_router_->run_health_checks();
+                    }
+                }
+            });
+        }
     }
 
     auto archive_delegate = std::make_shared<JsonFileBattleDataStore>("v2_archive");
@@ -151,6 +197,17 @@ void DemoServer::start() {
 }
 
 void DemoServer::stop() {
+    // Stop health check thread and service registrars first
+    health_check_running_ = false;
+    if (health_check_thread_ && health_check_thread_->joinable()) {
+        health_check_thread_->join();
+    }
+    health_check_thread_.reset();
+    for (auto& registrar : service_registrars_) {
+        registrar->stop();
+    }
+    service_registrars_.clear();
+
     // Stop HTTP management before tearing down sessions
     if (http_manager_) {
         http_manager_->stop();

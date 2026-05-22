@@ -1,16 +1,19 @@
 {
   "service": {
     "name": "leaderboard",
+    "host": "0.0.0.0",
     "port": 9305,
     "config_version": "production-leaderboard-v1"
   },
+  "log_level": "info",
   "redis": {
-    "host": "redis",
+    "host": "${REDIS_HOST}",
     "port": 6379,
+    "password": "${REDIS_PASSWORD}",
     "leaderboard_key": "lb:global"
   },
   "raft": {
-    "node_id": "",
+    "node_id": "${RAFT_NODE_ID}",
     "peers": [],
     "storage_dir": "runtime/raft/leaderboard",
     "election_timeout_min_ms": 150,

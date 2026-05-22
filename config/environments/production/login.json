@@ -1,11 +1,14 @@
 {
   "service": {
     "name": "login",
-    "port": 9202,
+    "host": "0.0.0.0",
+    "port": 9302,
     "config_version": "production-login-v1"
   },
+  "log_level": "info",
   "auth": {
     "mode": "production",
+    "jwt_secret": "${JWT_SECRET}",
     "jwt_issuer": "boost-gateway",
     "jwt_audience": "boost-game-client"
   }

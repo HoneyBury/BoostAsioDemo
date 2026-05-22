@@ -30,12 +30,13 @@
     "heartbeat_timeout_ms": 30000
   },
   "backends": {
-    "login": { "host": "login-backend", "port": 9202 },
-    "room": { "host": "room-backend", "port": 9302 },
-    "battle": { "host": "battle-backend", "port": 9303 },
-    "match": { "host": "matchmaking-backend", "port": 9304 },
-    "leaderboard": { "host": "leaderboard-backend", "port": 9305 }
+    "login": { "host": "127.0.0.1", "port": 9302 },
+    "room": { "host": "127.0.0.1", "port": 9303 },
+    "battle": { "host": "127.0.0.1", "port": 9304 },
+    "match": { "host": "127.0.0.1", "port": 9306 },
+    "leaderboard": { "host": "127.0.0.1", "port": 9305 }
   },
+  "log_level": "info",
   "feature_flags": {
     "v3_tls_enabled": { "enabled": false, "rollout_percentage": 0 }
   },

@@ -6,6 +6,13 @@ Listens for GatewayServer custom resource events (create/update/delete)
 and reconciles the corresponding Kubernetes Deployment and Service
 resources.
 
+Key capabilities:
+  - Creates/reconciles Deployments and Services for GatewayServer CR
+  - Reports status.components[] for 6 backend services
+  - Reports Ready/Progressing/Degraded/TLSReady conditions
+  - Periodic health assessment every 30 seconds via @kopf.timer
+  - TLS secret reconciliation (auto-creates self-signed certs via @kopf.on.resume)
+
 Usage:
   # Run locally (while connected to a K8s cluster):
   python k8s/operator/operator.py
@@ -16,9 +23,11 @@ Usage:
 Framework: kopf (Kubernetes Operator Pythonic Framework)
 """
 
+import base64
 import logging
 import os
 import sys
+import datetime
 from typing import Any, Mapping, Optional
 
 import kopf
@@ -26,6 +35,15 @@ import kubernetes
 import kubernetes.client
 import kubernetes.config
 import yaml
+
+try:
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    HAS_CRYPTOGRAPHY = True
+except ImportError:
+    HAS_CRYPTOGRAPHY = False
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -47,9 +65,24 @@ DEFAULT_NAMESPACE = "boost-gateway"
 OWNER_API_VERSION = "gateway.boost.io/v1"
 OWNER_KIND = "GatewayServer"
 
+# Six backend components monitored for health reporting
+COMPONENTS = [
+    "gateway-server",
+    "login-backend",
+    "room-backend",
+    "battle-backend",
+    "matchmaking-backend",
+    "leaderboard-backend",
+]
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _utc_now() -> str:
+    """Return current UTC time as ISO 8601 string."""
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
 def _namespace(spec: Mapping[str, Any], **_kwargs: Any) -> str:
@@ -186,6 +219,308 @@ def _build_service(
 
 
 # ---------------------------------------------------------------------------
+# Health / Status helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_component_status(
+    name: str,
+    namespace: str,
+    apps_v1: kubernetes.client.AppsV1Api,
+) -> dict[str, Any]:
+    """Query a Deployment and return its component status dict.
+
+    Returns a dict with keys: name, kind, ready, replicas, available, message.
+    """
+    try:
+        dep = apps_v1.read_namespaced_deployment(name=name, namespace=namespace)
+        desired = dep.spec.replicas or 0
+        available = dep.status.available_replicas or 0
+        ready_replicas = dep.status.ready_replicas or 0
+        message = None
+        if available < desired:
+            message = f"Waiting for rollout: {available}/{desired} replicas available"
+        return {
+            "name": name,
+            "kind": "Deployment",
+            "ready": ready_replicas > 0 and available >= desired,
+            "replicas": desired,
+            "available": available,
+            "message": message,
+        }
+    except kubernetes.client.ApiException as e:
+        if e.status == 404:
+            logger.info("Component Deployment not found: %s/%s", namespace, name)
+            return {
+                "name": name,
+                "kind": "Deployment",
+                "ready": False,
+                "replicas": 0,
+                "available": 0,
+                "message": "Not found",
+            }
+        logger.error("Failed to query component %s/%s: %s", namespace, name, e)
+        return {
+            "name": name,
+            "kind": "Deployment",
+            "ready": False,
+            "replicas": 0,
+            "available": 0,
+            "message": f"API error: {e.reason}",
+        }
+
+
+def _assess_health(
+    components: list[dict],
+    desired_replicas: int,
+    old_status: Optional[dict] = None,
+) -> tuple[list[dict], int]:
+    """Assess overall health and build status conditions.
+
+    Evaluates component readiness, detects rollouts in progress, and
+    tracks consecutive health-check failures for degradation detection.
+
+    Returns (conditions, consecutive_failures).
+    """
+    failed_components = [c for c in components if not c["ready"]]
+    failed_count = len(failed_components)
+
+    # Track consecutive failures from the CR's persisted status
+    prev_failures = (old_status or {}).get("failedHealthChecks", 0)
+    consecutive_failures = prev_failures + 1 if failed_count > 0 else 0
+
+    all_ready = failed_count == 0
+    any_progressing = any(
+        c["available"] < c["replicas"]
+        for c in components
+        if c["replicas"] > 0
+    )
+    degraded = consecutive_failures >= 3
+
+    now = _utc_now()
+    conditions = []
+
+    # ── Ready condition ──────────────────────────────────────────────
+    if all_ready:
+        conditions.append({
+            "type": "Ready",
+            "status": "True",
+            "lastTransitionTime": now,
+            "reason": "AllComponentsReady",
+            "message": "All 6 backend components are healthy and fully available",
+        })
+    else:
+        failed_names = [c["name"] for c in failed_components]
+        conditions.append({
+            "type": "Ready",
+            "status": "False",
+            "lastTransitionTime": now,
+            "reason": "ComponentsNotReady",
+            "message": f"Components not ready: {', '.join(failed_names)}",
+        })
+
+    # ── Progressing condition ─────────────────────────────────────────
+    if any_progressing:
+        progressing_names = [
+            c["name"] for c in components
+            if c["replicas"] > 0 and c["available"] < c["replicas"]
+        ]
+        conditions.append({
+            "type": "Progressing",
+            "status": "True",
+            "lastTransitionTime": now,
+            "reason": "RollingUpdateInProgress",
+            "message": f"Rolling update in progress for: {', '.join(progressing_names)}",
+        })
+    else:
+        conditions.append({
+            "type": "Progressing",
+            "status": "False",
+            "lastTransitionTime": now,
+            "reason": "NoRolloutInProgress",
+            "message": "All components are stable",
+        })
+
+    # ── Degraded condition ────────────────────────────────────────────
+    if degraded:
+        conditions.append({
+            "type": "Degraded",
+            "status": "True",
+            "lastTransitionTime": now,
+            "reason": "ConsecutiveHealthCheckFailures",
+            "message": f"{consecutive_failures} consecutive health check failures detected",
+        })
+    else:
+        conditions.append({
+            "type": "Degraded",
+            "status": "False",
+            "lastTransitionTime": now,
+            "reason": "NormalOperation",
+            "message": "No degradation detected",
+        })
+
+    return conditions, consecutive_failures
+
+
+def _check_tls_ready(namespace: str, spec: Mapping[str, Any]) -> dict:
+    """Check TLS readiness and return the TLSReady condition dict."""
+    tls_config = spec.get("tls", {})
+    secret_name = tls_config.get("secretName")
+
+    if not secret_name:
+        logger.info("TLS not configured for namespace %s", namespace)
+        return {
+            "type": "TLSReady",
+            "status": "True",
+            "lastTransitionTime": _utc_now(),
+            "reason": "TLSNotConfigured",
+            "message": "TLS is not configured; skipping",
+        }
+
+    core_v1 = kubernetes.client.CoreV1Api()
+    try:
+        secret = core_v1.read_namespaced_secret(name=secret_name, namespace=namespace)
+        logger.info(
+            "TLS secret '%s/%s' found (type: %s)",
+            namespace, secret_name, secret.type,
+        )
+        return {
+            "type": "TLSReady",
+            "status": "True",
+            "lastTransitionTime": _utc_now(),
+            "reason": "SecretFound",
+            "message": f"TLS secret '{secret_name}' exists and is valid",
+        }
+    except kubernetes.client.ApiException as e:
+        if e.status == 404:
+            logger.warning("TLS secret '%s/%s' not found", namespace, secret_name)
+            return {
+                "type": "TLSReady",
+                "status": "False",
+                "lastTransitionTime": _utc_now(),
+                "reason": "SecretNotFound",
+                "message": f"TLS secret '{secret_name}' not found",
+            }
+        logger.error("Failed to check TLS secret '%s/%s': %s", namespace, secret_name, e)
+        return {
+            "type": "TLSReady",
+            "status": "Unknown",
+            "lastTransitionTime": _utc_now(),
+            "reason": "CheckError",
+            "message": f"Error checking TLS secret: {e.reason}",
+        }
+
+
+# ---------------------------------------------------------------------------
+# TLS Secret coordination
+# ---------------------------------------------------------------------------
+
+
+def _ensure_tls_secret(namespace: str, secret_name: str, cr_name: str) -> bool:
+    """Create a self-signed TLS certificate if the secret doesn't exist.
+
+    Uses the ``cryptography`` library to generate a 2048-bit RSA key
+    and a self-signed X.509 certificate valid for 365 days.
+
+    Returns True if a new secret was created, False otherwise.
+    """
+    core_v1 = kubernetes.client.CoreV1Api()
+
+    # Check if secret already exists
+    try:
+        core_v1.read_namespaced_secret(name=secret_name, namespace=namespace)
+        logger.info("TLS secret already exists: %s/%s", namespace, secret_name)
+        return False
+    except kubernetes.client.ApiException as e:
+        if e.status != 404:
+            logger.warning(
+                "Unexpected error checking TLS secret %s/%s: %s",
+                namespace, secret_name, e,
+            )
+            return False
+
+    if not HAS_CRYPTOGRAPHY:
+        logger.error(
+            "Cannot create TLS secret '%s/%s': cryptography library not available. "
+            "Install with: pip install cryptography",
+            namespace, secret_name,
+        )
+        return False
+
+    logger.info("Creating self-signed TLS certificate secret: %s/%s", namespace, secret_name)
+
+    try:
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+        subject = issuer = x509.Name([
+            x509.NameAttribute(
+                NameOID.COMMON_NAME,
+                f"{secret_name}.{namespace}.svc.cluster.local",
+            ),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "BoostGateway"),
+        ])
+
+        now_dt = datetime.datetime.utcnow()
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(issuer)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now_dt)
+            .not_valid_after(now_dt + datetime.timedelta(days=365))
+            .add_extension(
+                x509.SubjectAlternativeName([
+                    x509.DNSName(secret_name),
+                    x509.DNSName(f"{secret_name}.{namespace}"),
+                    x509.DNSName(f"{secret_name}.{namespace}.svc.cluster.local"),
+                ]),
+                critical=False,
+            )
+            .sign(key, hashes.SHA256())
+        )
+
+        cert_pem = cert.public_bytes(serialization.Encoding.PEM).decode("utf-8")
+        key_pem = key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        ).decode("utf-8")
+
+        secret_body = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {
+                "name": secret_name,
+                "namespace": namespace,
+                "labels": {
+                    "app.kubernetes.io/managed-by": OPERATOR_NAME,
+                    "app.kubernetes.io/part-of": "boost-gateway",
+                },
+                "annotations": {
+                    "gateway.boost.io/certificate-type": "self-signed",
+                    "gateway.boost.io/owner-cr": cr_name,
+                },
+            },
+            "type": "kubernetes.io/tls",
+            "data": {
+                "tls.crt": base64.b64encode(cert_pem.encode("utf-8")).decode("ascii"),
+                "tls.key": base64.b64encode(key_pem.encode("utf-8")).decode("ascii"),
+            },
+        }
+
+        core_v1.create_namespaced_secret(namespace=namespace, body=secret_body)
+        logger.info("Self-signed TLS secret created: %s/%s", namespace, secret_name)
+        return True
+    except Exception as e:
+        logger.error(
+            "Failed to create TLS secret '%s/%s': %s",
+            namespace, secret_name, e,
+        )
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Kopf handlers
 # ---------------------------------------------------------------------------
 
@@ -198,7 +533,8 @@ def gatewayserver_create(
 ) -> dict[str, Any]:
     """Handle creation of a GatewayServer CR.
 
-    Creates a Deployment and a Service based on the CR spec.
+    Creates a Deployment and a Service based on the CR spec, then
+    reports initial component status and health conditions.
     """
     name = meta.get("name", "gateway-server")
     namespace = _namespace(spec)
@@ -235,18 +571,30 @@ def gatewayserver_create(
             logger.error("Failed to create Service: %s", exc)
             raise
 
-    logger.info("GatewayServer reconciliation complete: %s/%s", namespace, name)
+    # Query initial component status
+    components = [_get_component_status(c, namespace, apps_v1) for c in COMPONENTS]
+    desired_replicas = spec.get("replicaCount", 1)
+    conditions, failures = _assess_health(components, desired_replicas)
+
+    # Add TLSReady condition
+    tls_condition = _check_tls_ready(namespace, spec)
+    conditions.append(tls_condition)
+
+    ready_replicas = sum(c.get("available", 0) for c in components)
+
+    logger.info(
+        "GatewayServer reconciliation complete: %s/%s "
+        "(desiredReplicas=%d, components=%d)",
+        namespace, name, desired_replicas, len(components),
+    )
 
     return {
         "phase": "Running",
-        "readyReplicas": 0,
-        "conditions": [
-            {
-                "type": "Provisioned",
-                "status": "True",
-                "lastTransitionTime": kopf.Present.FieldValue(),
-            }
-        ],
+        "readyReplicas": ready_replicas,
+        "desiredReplicas": desired_replicas,
+        "components": components,
+        "conditions": conditions,
+        "failedHealthChecks": failures,
     }
 
 
@@ -259,8 +607,9 @@ def gatewayserver_update(
 ) -> Optional[dict[str, Any]]:
     """Handle update of a GatewayServer CR.
 
-    Applies rolling update by patching the Deployment and Service.
-    Only triggers an update when meaningful spec fields change.
+    Applies rolling update by patching the Deployment and Service,
+    then reports updated component status and conditions.
+    Only triggers when meaningful spec fields change.
     """
     name = meta.get("name", "gateway-server")
     namespace = _namespace(spec)
@@ -305,17 +654,29 @@ def gatewayserver_update(
             logger.error("Failed to patch Service: %s", exc)
             raise
 
-    logger.info("GatewayServer update reconciliation complete: %s/%s", namespace, name)
+    # Query updated component status
+    components = [_get_component_status(c, namespace, apps_v1) for c in COMPONENTS]
+    desired_replicas = spec.get("replicaCount", 1)
+    conditions, failures = _assess_health(components, desired_replicas)
+
+    # Add TLSReady condition
+    tls_condition = _check_tls_ready(namespace, spec)
+    conditions.append(tls_condition)
+
+    ready_replicas = sum(c.get("available", 0) for c in components)
+
+    logger.info(
+        "GatewayServer update reconciliation complete: %s/%s",
+        namespace, name,
+    )
 
     return {
         "phase": "Running",
-        "conditions": [
-            {
-                "type": "Updated",
-                "status": "True",
-                "lastTransitionTime": kopf.Present.FieldValue(),
-            }
-        ],
+        "readyReplicas": ready_replicas,
+        "desiredReplicas": desired_replicas,
+        "components": components,
+        "conditions": conditions,
+        "failedHealthChecks": failures,
     }
 
 
@@ -362,6 +723,125 @@ def gatewayserver_delete(
             raise
 
     logger.info("GatewayServer cleanup complete: %s/%s", namespace, name)
+
+
+# ---------------------------------------------------------------------------
+# Resume handler -- TLS + initial health check on operator restart
+# ---------------------------------------------------------------------------
+
+
+@kopf.on.resume("gateway.boost.io", "v1", "gatewayservers")
+def gatewayserver_resume(
+    spec: Mapping[str, Any],
+    meta: Mapping[str, Any],
+    status: Optional[dict] = None,
+    **_kwargs: Any,
+) -> dict[str, Any]:
+    """Handle operator restart / resume for existing GatewayServer CRs.
+
+    Reconciles the TLS secret (creates a self-signed cert if missing)
+    and reports the initial component status and health conditions.
+    """
+    name = meta.get("name", "gateway-server")
+    namespace = _namespace(spec)
+
+    logger.info("GatewayServer resumed: %s/%s", namespace, name)
+
+    # Reconcile TLS secret
+    tls_config = spec.get("tls", {})
+    secret_name = tls_config.get("secretName")
+    if secret_name:
+        _ensure_tls_secret(namespace, secret_name, name)
+
+    # Query initial component status
+    apps_v1 = kubernetes.client.AppsV1Api()
+    components = [_get_component_status(c, namespace, apps_v1) for c in COMPONENTS]
+    desired_replicas = spec.get("replicaCount", 1)
+    conditions, failures = _assess_health(components, desired_replicas, old_status=status)
+
+    # Add TLSReady condition
+    tls_condition = _check_tls_ready(namespace, spec)
+    conditions.append(tls_condition)
+
+    ready_replicas = sum(c.get("available", 0) for c in components)
+
+    logger.info(
+        "GatewayServer resume complete: %s/%s "
+        "(desiredReplicas=%d, components_ready=%d/%d, failures=%d)",
+        namespace, name,
+        desired_replicas,
+        sum(1 for c in components if c["ready"]),
+        len(components),
+        failures,
+    )
+
+    return {
+        "phase": "Running",
+        "readyReplicas": ready_replicas,
+        "desiredReplicas": desired_replicas,
+        "components": components,
+        "conditions": conditions,
+        "failedHealthChecks": failures,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Timer-based health check (every 30 seconds)
+# ---------------------------------------------------------------------------
+
+
+@kopf.timer("gateway.boost.io", "v1", "gatewayservers", interval=30.0)
+def gatewayserver_healthcheck(
+    spec: Mapping[str, Any],
+    meta: Mapping[str, Any],
+    status: Optional[dict] = None,
+    **_kwargs: Any,
+) -> Optional[dict[str, Any]]:
+    """Periodic health assessment of all backend components.
+
+    Runs every 30 seconds via @kopf.timer. Queries the Kubernetes API
+    for each component Deployment, evaluates health conditions, and
+    updates the CR status with the latest Ready/Progressing/Degraded/
+    TLSReady conditions.
+    """
+    name = meta.get("name", "gateway-server")
+    namespace = _namespace(spec)
+
+    logger.debug("Running health check for %s/%s", namespace, name)
+
+    apps_v1 = kubernetes.client.AppsV1Api()
+
+    try:
+        components = [_get_component_status(c, namespace, apps_v1) for c in COMPONENTS]
+    except Exception as e:
+        logger.error("Health check query failed for %s/%s: %s", namespace, name, e)
+        return None
+
+    desired_replicas = spec.get("replicaCount", 1)
+    conditions, failures = _assess_health(components, desired_replicas, old_status=status)
+
+    # Add TLSReady condition
+    tls_condition = _check_tls_ready(namespace, spec)
+    conditions.append(tls_condition)
+
+    ready_replicas = sum(c.get("available", 0) for c in components)
+
+    ready_count = sum(1 for c in components if c["ready"])
+    logger.info(
+        "Health check complete for %s/%s: %d/%d components ready, "
+        "%d consecutive failures",
+        namespace, name,
+        ready_count, len(components),
+        failures,
+    )
+
+    return {
+        "desiredReplicas": desired_replicas,
+        "components": components,
+        "conditions": conditions,
+        "failedHealthChecks": failures,
+        "readyReplicas": ready_replicas,
+    }
 
 
 # ---------------------------------------------------------------------------

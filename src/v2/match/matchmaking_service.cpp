@@ -8,6 +8,8 @@
 #include "v2/service/envelope_adapter.h"
 #include "v3/cluster/raft.h"
 
+#include <spdlog/spdlog.h>
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -409,6 +411,10 @@ public:
         return raft_config_;
     }
 
+    void set_match_found_callback(MatchFoundCallback cb) {
+        match_found_callback_ = std::move(cb);
+    }
+
 private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
@@ -417,6 +423,7 @@ private:
     std::unique_ptr<Matchmaker> matchmaker_;
     std::mutex matches_mutex_;
     std::unordered_map<std::string, MatchResult> pending_matches_;
+    MatchFoundCallback match_found_callback_;
 
     // v3.0.0: Raft consensus members
     v3::cluster::RaftConfig raft_config_;
@@ -609,6 +616,19 @@ private:
         matchmaker_->commit_match(result);
         std::lock_guard lock(matches_mutex_);
         pending_matches_[result.match_id] = result;
+
+        // Notify the upper-layer callback (e.g. Runtime or test harness)
+        // that a match has been found. The callback receives a copy of the
+        // result and can dispatch room creation / battle start on its own
+        // thread or io_context.
+        if (match_found_callback_) {
+            try {
+                match_found_callback_(result);
+            } catch (const std::exception& e) {
+                // Callback must not throw; log and continue.
+                SPDLOG_ERROR("MatchFoundCallback threw: {}", e.what());
+            }
+        }
     }
 
     void apply_match_purge(MatchMode mode, const std::vector<std::string>& user_ids) {
@@ -688,6 +708,10 @@ bool MatchmakingService::is_raft_leader() const { return impl_->is_raft_leader()
 void MatchmakingService::set_tls_config(
     std::optional<v3::cluster::TlsSessionConfig> tls_config) {
     impl_->set_tls_config(std::move(tls_config));
+}
+
+void MatchmakingService::set_match_found_callback(MatchFoundCallback cb) {
+    impl_->set_match_found_callback(std::move(cb));
 }
 
 }  // namespace v2::match

@@ -53,6 +53,7 @@ add_executable(project_v2_unit_tests
     unit/raft_test.cpp
     unit/otel_persistence_test.cpp
     unit/k8s_operator_test.cpp
+    unit/operator_status_test.cpp
     unit/v3_integration_test.cpp
     unit/sdk_protocol_test.cpp
     unit/error_paths_test.cpp
@@ -89,6 +90,10 @@ add_executable(project_v2_integration_tests
     integration/backend_health_test.cpp
     integration/data_layer_test.cpp
     integration/service_bus_integrity_test.cpp
+    integration/process_supervisor_test.cpp
+    integration/cluster_router_e2e_test.cpp
+    integration/matchmaking_e2e_test.cpp
+    integration/windows_platform_test.cpp
 )
 target_link_libraries(project_v2_integration_tests
     PRIVATE

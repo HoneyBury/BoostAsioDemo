@@ -178,6 +178,27 @@ spec:
                   enum: [Pending, Running, Draining, Stopped]
                 readyReplicas:
                   type: integer
+                desiredReplicas:
+                  type: integer
+                failedHealthChecks:
+                  type: integer
+                components:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      kind:
+                        type: string
+                      ready:
+                        type: boolean
+                      replicas:
+                        type: integer
+                      available:
+                        type: integer
+                      message:
+                        type: string
                 conditions:
                   type: array
                   items:
@@ -187,9 +208,14 @@ spec:
                         type: string
                       status:
                         type: string
+                        enum: ["True", "False", "Unknown"]
                       lastTransitionTime:
                         type: string
                         format: date-time
+                      reason:
+                        type: string
+                      message:
+                        type: string
       subresources:
         status: {}
       additionalPrinterColumns:
@@ -199,6 +225,12 @@ spec:
         - name: Phase
           type: string
           jsonPath: .status.phase
+        - name: Ready
+          type: integer
+          jsonPath: .status.readyReplicas
+        - name: Desired
+          type: integer
+          jsonPath: .status.desiredReplicas
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp

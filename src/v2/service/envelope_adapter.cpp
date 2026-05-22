@@ -14,7 +14,7 @@ struct MessageTypeMapping {
     EnvelopeMessageKind typed_kind;
 };
 
-constexpr std::array<MessageTypeMapping, 22> kMessageTypeMappings{{
+constexpr std::array<MessageTypeMapping, 25> kMessageTypeMappings{{
     {"login_request", EnvelopeMessageKind::kLoginRequest},
     {"login_response", EnvelopeMessageKind::kLoginResponse},
     {"room_create", EnvelopeMessageKind::kRoomCreateRequest},
@@ -37,6 +37,9 @@ constexpr std::array<MessageTypeMapping, 22> kMessageTypeMappings{{
     {"leaderboard_top_response", EnvelopeMessageKind::kLeaderboardTopResponse},
     {"leaderboard_rank", EnvelopeMessageKind::kLeaderboardRankRequest},
     {"leaderboard_rank_response", EnvelopeMessageKind::kLeaderboardRankResponse},
+    {"match_found_push", EnvelopeMessageKind::kMatchFoundPush},
+    {"match_to_room", EnvelopeMessageKind::kMatchToRoomRequest},
+    {"match_to_room_response", EnvelopeMessageKind::kMatchToRoomResponse},
 }};
 
 [[nodiscard]] v3::proto::EnvelopeMeta to_meta(const BackendEnvelope& envelope) {

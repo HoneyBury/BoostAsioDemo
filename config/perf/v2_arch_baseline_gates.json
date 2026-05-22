@@ -30,5 +30,10 @@
       "typed_envelope_json_roundtrip": {"metric": "p99_us", "threshold": 100.0, "direction": "max"},
       "backend_typed_adapter_roundtrip": {"metric": "p99_us", "threshold": 100.0, "direction": "max"}
     }
+  },
+  "scenario_gates": {
+    "echo_p99_us": {"warning": 100, "critical": 500},
+    "login_p99_us": {"warning": 500, "critical": 2000},
+    "battle_broadcast_p99_us": {"warning": 1000, "critical": 5000}
   }
 }

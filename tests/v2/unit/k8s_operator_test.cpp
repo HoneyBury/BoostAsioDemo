@@ -1,4 +1,7 @@
 // v3.0.0 Phase 17+18: K8s operator + SDK multi-language validation tests
+//
+// Tests validate the presence and structure of the Python-based kopf
+// operator, its CRD, Helm chart, and supporting deployment scripts.
 
 #include <gtest/gtest.h>
 #include <fstream>
@@ -32,78 +35,57 @@ bool file_contains(const std::string& path, const std::string& text) {
 // ─── K8s Operator ────────────────────────────────────────────────────────
 
 TEST(K8sOperatorTest, CrdExistsAndValid) {
-    auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
+    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
     EXPECT_FALSE(crd.empty()) << "CRD file missing";
     EXPECT_NE(crd.find("CustomResourceDefinition"), std::string::npos);
-    EXPECT_NE(crd.find("boostgatewayclusters.gateway.boost.io"), std::string::npos);
-    EXPECT_NE(crd.find("BoostGatewayCluster"), std::string::npos);
+    EXPECT_NE(crd.find("gatewayservers.gateway.boost.io"), std::string::npos);
+    EXPECT_NE(crd.find("GatewayServer"), std::string::npos);
     EXPECT_NE(crd.find("openAPIV3Schema"), std::string::npos);
+    EXPECT_NE(crd.find("subresources"), std::string::npos);
 }
 
-TEST(K8sOperatorTest, RbacExistsAndValid) {
-    auto rbac = read_file(path("operator/boostgateway-operator/config/rbac/role.yaml"));
-    EXPECT_FALSE(rbac.empty()) << "RBAC file missing";
-    EXPECT_NE(rbac.find("ServiceAccount"), std::string::npos);
-    EXPECT_NE(rbac.find("ClusterRole"), std::string::npos);
-    EXPECT_NE(rbac.find("boostgatewayclusters"), std::string::npos);
+TEST(K8sOperatorTest, PythonOperatorFileExists) {
+    auto op = read_file(path("k8s/operator/operator.py"));
+    EXPECT_FALSE(op.empty()) << "operator.py missing";
+    EXPECT_NE(op.find("kopf"), std::string::npos);
+    EXPECT_NE(op.find("GatewayServer"), std::string::npos);
+    EXPECT_NE(op.find("kubernetes"), std::string::npos);
+    EXPECT_NE(op.find("@kopf.on.create"), std::string::npos);
+    EXPECT_NE(op.find("@kopf.on.update"), std::string::npos);
+    EXPECT_NE(op.find("@kopf.on.delete"), std::string::npos);
+}
+
+TEST(K8sOperatorTest, RequirementsFileExists) {
+    auto req = read_file(path("k8s/operator/requirements.txt"));
+    EXPECT_FALSE(req.empty()) << "requirements.txt missing";
+    EXPECT_NE(req.find("kopf"), std::string::npos);
+    EXPECT_NE(req.find("kubernetes"), std::string::npos);
+    EXPECT_NE(req.find("cryptography"), std::string::npos);
+}
+
+TEST(K8sOperatorTest, DeployScriptExists) {
+    auto deploy = read_file(path("k8s/operator/deploy-operator.ps1"));
+    EXPECT_FALSE(deploy.empty()) << "deploy-operator.ps1 missing";
+    EXPECT_NE(deploy.find("GatewayServer"), std::string::npos);
+    EXPECT_NE(deploy.find("kubectl"), std::string::npos);
+
+    auto sh = read_file(path("k8s/operator/deploy-operator.sh"));
+    EXPECT_FALSE(sh.empty()) << "deploy-operator.sh missing";
+    EXPECT_NE(sh.find("kubectl"), std::string::npos);
 }
 
 TEST(K8sOperatorTest, HelmChartExists) {
-    auto chart = read_file(path("env/k8s/helm/boost-gateway/Chart.yaml"));
+    auto chart = read_file(path("k8s/helm/gateway-server/Chart.yaml"));
     EXPECT_FALSE(chart.empty()) << "Helm Chart.yaml missing";
-    EXPECT_NE(chart.find("boost-gateway"), std::string::npos);
+    EXPECT_NE(chart.find("gateway-server"), std::string::npos);
+    EXPECT_NE(chart.find("boost-asio"), std::string::npos);
 
-    auto values = read_file(path("env/k8s/helm/boost-gateway/values.yaml"));
+    auto values = read_file(path("k8s/helm/gateway-server/values.yaml"));
     EXPECT_FALSE(values.empty()) << "Helm values.yaml missing";
-    EXPECT_NE(values.find("gateway:"), std::string::npos);
-    EXPECT_NE(values.find("login:"), std::string::npos);
-    EXPECT_NE(values.find("battle:"), std::string::npos);
-    EXPECT_NE(values.find("redis:"), std::string::npos);
-}
-
-TEST(K8sOperatorTest, OperatorScaffoldExists) {
-    auto go_mod = read_file(path("operator/boostgateway-operator/go.mod"));
-    EXPECT_FALSE(go_mod.empty()) << "operator go.mod missing";
-    EXPECT_NE(go_mod.find("controller-runtime"), std::string::npos);
-
-    auto main = read_file(path("operator/boostgateway-operator/main.go"));
-    EXPECT_FALSE(main.empty()) << "operator main.go missing";
-    EXPECT_NE(main.find("BoostGatewayClusterReconciler"), std::string::npos);
-
-    auto controller = read_file(
-        path("operator/boostgateway-operator/internal/controller/boostgatewaycluster_controller.go"));
-    EXPECT_FALSE(controller.empty()) << "operator controller missing";
-    EXPECT_NE(controller.find("Reconcile"), std::string::npos);
-    EXPECT_NE(controller.find("Deployment"), std::string::npos);
-    EXPECT_NE(controller.find("Service"), std::string::npos);
-    EXPECT_NE(controller.find("StatefulSet"), std::string::npos);
-    EXPECT_NE(controller.find("ConfigMap"), std::string::npos);
-    EXPECT_NE(controller.find("Secret"), std::string::npos);
-    EXPECT_NE(controller.find("RAFT_PEERS"), std::string::npos);
-    EXPECT_NE(controller.find("RAFT_NODE_ID"), std::string::npos);
-}
-
-TEST(K8sOperatorTest, OperatorControllerTestsExist) {
-    auto controller_test = read_file(
-        path("operator/boostgateway-operator/internal/controller/boostgatewaycluster_controller_test.go"));
-    EXPECT_FALSE(controller_test.empty()) << "operator controller test missing";
-    EXPECT_NE(controller_test.find("fake.NewClientBuilder"), std::string::npos);
-    EXPECT_NE(controller_test.find("Reconcile"), std::string::npos);
-    EXPECT_NE(controller_test.find("ConfigMap"), std::string::npos);
-    EXPECT_NE(controller_test.find("StatefulSet"), std::string::npos);
-    EXPECT_NE(controller_test.find("SecretTypeTLS"), std::string::npos);
-}
-
-TEST(K8sOperatorTest, KindAndSampleConfigExist) {
-    auto sample = read_file(
-        path("operator/boostgateway-operator/config/samples/gateway_v1alpha1_boostgatewaycluster.yaml"));
-    EXPECT_FALSE(sample.empty()) << "sample custom resource missing";
-    EXPECT_NE(sample.find("kind: BoostGatewayCluster"), std::string::npos);
-    EXPECT_NE(sample.find("gateway:"), std::string::npos);
-
-    auto kind_cfg = read_file(path("operator/boostgateway-operator/hack/kind-config.yaml"));
-    EXPECT_FALSE(kind_cfg.empty()) << "kind config missing";
-    EXPECT_NE(kind_cfg.find("kind: Cluster"), std::string::npos);
+    EXPECT_NE(values.find("replicaCount"), std::string::npos);
+    EXPECT_NE(values.find("service:"), std::string::npos);
+    EXPECT_NE(values.find("config:"), std::string::npos);
+    EXPECT_NE(values.find("autoscaling:"), std::string::npos);
 }
 
 TEST(K8sOperatorTest, OperatorSmokeScriptAssertsStatusComponentsAndConditions) {
@@ -114,6 +96,62 @@ TEST(K8sOperatorTest, OperatorSmokeScriptAssertsStatusComponentsAndConditions) {
     EXPECT_NE(smoke.find("\"Degraded\": \"False\""), std::string::npos);
     EXPECT_NE(smoke.find("\"TLSReady\": \"False\""), std::string::npos);
     EXPECT_NE(smoke.find("required_components"), std::string::npos);
+}
+
+// ─── New Operator Status Field Tests ─────────────────────────────────────
+
+TEST(K8sOperatorTest, OperatorHasStatusConditions) {
+    auto op = read_file(path("k8s/operator/operator.py"));
+    EXPECT_NE(op.find("Ready"), std::string::npos)
+        << "operator.py must define a 'Ready' status condition";
+    EXPECT_NE(op.find("Progressing"), std::string::npos)
+        << "operator.py must define a 'Progressing' status condition";
+    EXPECT_NE(op.find("Degraded"), std::string::npos)
+        << "operator.py must define a 'Degraded' status condition";
+    EXPECT_NE(op.find("TLSReady"), std::string::npos)
+        << "operator.py must define a 'TLSReady' status condition";
+}
+
+TEST(K8sOperatorTest, OperatorHasComponentsArray) {
+    auto op = read_file(path("k8s/operator/operator.py"));
+    EXPECT_NE(op.find("components"), std::string::npos)
+        << "operator.py must reference 'components' array in status";
+}
+
+TEST(K8sOperatorTest, OperatorHasDesiredReplicas) {
+    auto op = read_file(path("k8s/operator/operator.py"));
+    EXPECT_NE(op.find("desiredReplicas"), std::string::npos)
+        << "operator.py must reference 'desiredReplicas' in status";
+}
+
+TEST(K8sOperatorTest, OperatorHasTimerBasedHealthCheck) {
+    auto op = read_file(path("k8s/operator/operator.py"));
+    EXPECT_NE(op.find("@kopf.timer"), std::string::npos)
+        << "operator.py must use @kopf.timer for periodic health checks";
+}
+
+TEST(K8sOperatorTest, OperatorHasResumeHandler) {
+    auto op = read_file(path("k8s/operator/operator.py"));
+    EXPECT_NE(op.find("@kopf.on.resume"), std::string::npos)
+        << "operator.py must use @kopf.on.resume for TLS secret reconciliation";
+}
+
+TEST(K8sOperatorTest, CrdHasDesiredReplicasInStatus) {
+    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
+    EXPECT_NE(crd.find("desiredReplicas"), std::string::npos)
+        << "CRD must define desiredReplicas in status schema";
+    EXPECT_NE(crd.find("failedHealthChecks"), std::string::npos)
+        << "CRD must define failedHealthChecks in status schema";
+    EXPECT_NE(crd.find("components"), std::string::npos)
+        << "CRD must define components array in status schema";
+}
+
+TEST(K8sOperatorTest, CrdHasEnhancedConditions) {
+    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
+    EXPECT_NE(crd.find("reason"), std::string::npos)
+        << "CRD conditions must include 'reason' field";
+    EXPECT_NE(crd.find("message"), std::string::npos)
+        << "CRD conditions must include 'message' field";
 }
 
 // ─── SDK Multi-language ──────────────────────────────────────────────────

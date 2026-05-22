@@ -22,6 +22,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -1851,6 +1852,21 @@ TEST(V2BackendRoutingTest, TlsConfigDisabledRoutesNormally) {
 
 TEST(V2BackendRoutingTest, BackendTlsListenerCompletesLoginRequest) {
     app::logging::init("project_tests");
+
+    // Check that TLS certificate files exist before proceeding.
+    // On Windows CI environments, certificates may not be provisioned.
+    {
+        const auto& cert_path = "certs/server.crt";
+        const auto& key_path = "certs/server.key";
+        const auto& ca_path = "certs/ca.crt";
+        auto file_exists = [](const char* path) {
+            std::ifstream f(path);
+            return f.good();
+        };
+        if (!file_exists(cert_path) || !file_exists(key_path) || !file_exists(ca_path)) {
+            GTEST_SKIP() << "TLS certificate files not found in certs/ — skipping TLS test";
+        }
+    }
 
     v3::cluster::TlsSessionConfig tls_cfg;
     tls_cfg.cert.cert_chain_path = "certs/server.crt";

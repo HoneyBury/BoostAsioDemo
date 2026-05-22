@@ -13,6 +13,8 @@
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 #include "v2/service/service_registry.h"
+#include "v2/service/service_registrar.h"
+#include "v3/cluster/cluster_router.h"
 #include "v3/cluster/tls_config.h"
 
 #include <cstdint>
@@ -125,6 +127,12 @@ private:
     // v3.1.0: Feature flags and security policy
     std::shared_ptr<v2::config::FeatureFlags> feature_flags_;
     std::optional<v3::cluster::SecurityPolicy> security_policy_;
+
+    // v3.0.0: Cluster router integration — health check thread and registrars
+    std::shared_ptr<v3::cluster::ClusterRouter> cluster_router_;
+    std::unique_ptr<std::thread> health_check_thread_;
+    std::atomic<bool> health_check_running_{false};
+    std::vector<std::shared_ptr<v2::service::ServiceRegistrar>> service_registrars_;
 };
 
 }  // namespace v2::gateway

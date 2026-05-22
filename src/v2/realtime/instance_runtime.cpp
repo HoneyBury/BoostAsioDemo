@@ -1,3 +1,4 @@
+#include "v2/perf/hot_path.h"
 #include "v2/realtime/instance_runtime.h"
 #include "app/audit_log.h"
 
@@ -253,6 +254,7 @@ public:
         }
     }
 
+    BOOST_HOT_PATH
     TickStats tick_instance(const std::string& instance_id,
                             std::uint32_t frame_number,
                             std::int64_t tick_start_ms) {
@@ -514,6 +516,7 @@ Snapshot InstanceRuntime::get_resume_snapshot(
     return impl_->get_resume_snapshot(instance_id, user_id);
 }
 
+BOOST_HOT_PATH
 TickStats InstanceRuntime::tick_instance(
     const std::string& instance_id, std::uint32_t frame_number,
     std::int64_t tick_start_ms) {

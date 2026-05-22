@@ -1,0 +1,52 @@
+// v3.0.0: Gateway service gRPC definition.
+// PoC for Stage E dual-stack (TCP + gRPC) support.
+syntax = "proto3";
+package boost.gateway.v3;
+
+// Gateway service handles client-facing authentication and session management.
+service Gateway {
+  // Authenticate a client session.
+  rpc RequestLogin(LoginRequest) returns (LoginResponse);
+
+  // Terminate an authenticated client session.
+  rpc RequestLogout(LogoutRequest) returns (LogoutResponse);
+
+  // Liveness probe for health-check endpoints.
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message LoginRequest {
+  string user_id = 1;
+  string token = 2;
+  string display_name = 3;
+}
+
+message LoginResponse {
+  string user_id = 1;
+  string display_name = 2;
+  string role = 3;
+  bool is_duplicate = 4;
+  string room_id = 5;
+  int32 error_code = 6;
+  string error_message = 7;
+}
+
+message LogoutRequest {
+  string user_id = 1;
+  string session_id = 2;
+}
+
+message LogoutResponse {
+  bool success = 1;
+  int32 error_code = 2;
+  string error_message = 3;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  uint64 uptime_seconds = 2;
+  uint32 active_sessions = 3;
+  string version = 4;
+}

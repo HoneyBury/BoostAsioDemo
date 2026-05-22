@@ -11,6 +11,7 @@ include(GNUInstallDirs)
 
 option(ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(ENABLE_TESTING "Build tests" ON)
+option(BOOST_BUILD_GRPC "Build gRPC support (requires protoc and grpc_cpp_plugin)" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,6 +41,7 @@ add_subdirectory(src)
 add_subdirectory(sdk)
 add_subdirectory(examples)
 add_subdirectory(demo/games)
+add_subdirectory(proto)   # Proto/gRPC code generation (no-op when BOOST_BUILD_GRPC=OFF)
 
 if(ENABLE_TESTING)
     add_subdirectory(tests)
@@ -108,6 +110,7 @@ install(FILES
     docs/performance-baseline.md
     docs/v3-production-readiness-plan.md
     docs/v3-release-checklist.md
+    docs/grpc-poc-summary.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
 )
 

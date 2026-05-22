@@ -317,10 +317,11 @@
 - 路由与服务注册 — 路由层已有，待服务发现
 - 热点路径优化 — BufferPool + batch send 已做，待广播锁优化
 
-### 阶段 E：协议与跨语言 (新增)
+### 阶段 E：协议与跨语言 ✅ PoC 已完成
 
-- protobuf / flatbuffers 评估与选型
-- 客户端（C#/Java/JS）协议兼容层
+- protobuf / flatbuffers 评估与选型 ✅ gRPC PoC 完成
+- gRPC 双协议栈（TCP + gRPC 共存）✅ PoC 完成
+- 客户端（C#/Java/JS）协议兼容层 — 待实战
 - 大包压缩（利用 flags kCompressed 位）
 - 消息分片传输
 

@@ -31,3 +31,10 @@ target_include_directories(tank_battle_demo
 if(COMMAND boost_gateway_stage_runtime_dlls)
     boost_gateway_stage_runtime_dlls(tank_battle_demo)
 endif()
+
+# gRPC adapter (optional, linked when BOOST_BUILD_GRPC=ON)
+if(BOOST_BUILD_GRPC)
+    target_compile_definitions(tank_battle_demo PRIVATE BOOST_BUILD_GRPC)
+    target_link_libraries(tank_battle_demo PRIVATE project_proto)
+    add_dependencies(tank_battle_demo generate_v3_proto generate_v3_grpc)
+endif()

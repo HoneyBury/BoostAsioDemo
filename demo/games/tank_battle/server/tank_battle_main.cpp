@@ -25,6 +25,10 @@
 #include "v2/service/backend_server.h"
 #include "v2/service/envelope_adapter.h"
 
+#ifdef BOOST_BUILD_GRPC
+#include "v2/grpc/grpc_adapter.h"
+#endif
+
 #include <nlohmann/json.hpp>
 #include "app/audit_log.h"
 #include "app/logging.h"
@@ -49,6 +53,10 @@ v2::leaderboard::LeaderboardService* g_leaderboard = nullptr;
 std::string g_leaderboard_host = "127.0.0.1";
 std::uint16_t g_leaderboard_port = 9305;
 
+#ifdef BOOST_BUILD_GRPC
+v2::grpc::GrpcGatewayAdapter* g_grpc_adapter = nullptr;
+#endif
+
 // ─── Signal handler ─────────────────────────────────────────────────────
 
 void handle_signal(int) {
@@ -64,6 +72,8 @@ struct DemoArgs {
     std::uint16_t port = 9301;
     std::uint16_t room_port = 9302;
     std::uint16_t leaderboard_port = 9305;
+    bool grpc_mode = false;
+    std::uint16_t grpc_port = 50051;
 };
 
 DemoArgs parse_args(int argc, char* argv[]) {
@@ -79,11 +89,19 @@ DemoArgs parse_args(int argc, char* argv[]) {
         } else if (arg.substr(0, 19) == "--leaderboard-port=") {
             args.leaderboard_port = static_cast<std::uint16_t>(
                 std::stoi(arg.substr(19)));
+        } else if (arg == "--grpc") {
+            args.grpc_mode = true;
+        } else if (arg.substr(0, 12) == "--grpc-port=") {
+            args.grpc_port = static_cast<std::uint16_t>(
+                std::stoi(arg.substr(12)));
+            args.grpc_mode = true;
         } else if (arg.substr(0, 7) == "--help") {
             std::cout << "Usage: tank_battle_demo [options]\n"
                       << "  --port=PORT              tank command server (default: 9301)\n"
                       << "  --room-port=PORT         room backend service (default: 9302)\n"
                       << "  --leaderboard-port=PORT  leaderboard service (default: 9305)\n"
+                      << "  --grpc                   enable gRPC gateway mode\n"
+                      << "  --grpc-port=PORT         gRPC server port (default: 50051)\n"
                       << "  --help                   show this help\n";
             std::exit(0);
         }
@@ -315,6 +333,21 @@ int main(int argc, char* argv[]) {
         g_server = &server;
         server.start();
 
+#ifdef BOOST_BUILD_GRPC
+        // ── 4b. gRPC Gateway (optional, when --grpc flag is set) ──────
+        v2::grpc::GrpcGatewayAdapter grpc_adapter(args.grpc_port);
+        if (args.grpc_mode) {
+            if (grpc_adapter.start()) {
+                g_grpc_adapter = &grpc_adapter;
+                std::cout << "[grpc] gateway listening on port "
+                          << grpc_adapter.port() << std::endl;
+            } else {
+                std::cerr << "[grpc] failed to start gRPC gateway on port "
+                          << args.grpc_port << std::endl;
+            }
+        }
+#endif
+
         std::cout << std::endl;
         std::cout << "=== All services started ===" << std::endl;
         std::cout << "  tank_battle_demo: command server on port "
@@ -323,6 +356,12 @@ int main(int argc, char* argv[]) {
                   << room_service.local_port() << std::endl;
         std::cout << "  tank_battle_demo: leaderboard on port "
                   << leaderboard_service.local_port() << std::endl;
+#ifdef BOOST_BUILD_GRPC
+        if (args.grpc_mode) {
+            std::cout << "  tank_battle_demo: gRPC gateway on port "
+                      << grpc_adapter.port() << std::endl;
+        }
+#endif
         std::cout << "=== Running (Ctrl+C to stop) ===" << std::endl;
 
         // ── 5. Main tick loop ────────────────────────────────────────
@@ -356,6 +395,14 @@ int main(int argc, char* argv[]) {
         g_server = nullptr;
         g_room = nullptr;
         g_leaderboard = nullptr;
+
+#ifdef BOOST_BUILD_GRPC
+        if (g_grpc_adapter) {
+            g_grpc_adapter->stop();
+            g_grpc_adapter = nullptr;
+            std::cout << "[grpc] gateway stopped" << std::endl;
+        }
+#endif
 
         std::cout << "=== tank_battle_demo: stopped ===" << std::endl;
 

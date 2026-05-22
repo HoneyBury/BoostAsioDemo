@@ -2,7 +2,39 @@
 
 #include <utility>
 
+#include <spdlog/spdlog.h>
+
 namespace game::gateway {
+
+// ── Helpers ────────────────────────────────────────────────────────────
+
+void SessionManager::publish_snapshot() {
+    // mutex_ must be held by the caller.
+    auto new_snap = std::make_shared<const std::unordered_map<SessionKey, SessionRecord>>(sessions_);
+    snapshot_.store(std::move(new_snap), std::memory_order_release);
+}
+
+void SessionManager::handle_overload(const SessionPtr& session) {
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                       now - last_overload_warn_time_)
+                       .count();
+
+    // Rate-limit warning to once every 10 seconds.
+    if (elapsed >= 10) {
+        SPDLOG_WARN("[SessionManager] Session overload: pending={} remote={}",
+                    session->pending_write_count(),
+                    session->remote_endpoint());
+        last_overload_warn_time_ = now;
+        ++overload_warn_count_;
+    }
+
+    if (overload_handler_) {
+        overload_handler_(session, session->pending_write_count());
+    }
+}
+
+// ── Lifecycle ──────────────────────────────────────────────────────────
 
 std::uint64_t SessionManager::add_session(const SessionPtr& session) {
     std::scoped_lock lock(mutex_);
@@ -13,6 +45,8 @@ std::uint64_t SessionManager::add_session(const SessionPtr& session) {
         .session_id = session_id,
         .session = session,
     };
+
+    publish_snapshot();
     return session_id;
 }
 
@@ -34,6 +68,7 @@ void SessionManager::remove_session(const SessionPtr& session) {
     }
 
     sessions_.erase(it);
+    publish_snapshot();
 }
 
 std::vector<SessionManager::SessionPtr> SessionManager::all_sessions() const {
@@ -78,16 +113,16 @@ std::optional<SessionManager::LoginContext> SessionManager::login_context_of(con
 SessionManager::Snapshot SessionManager::snapshot() const {
     std::scoped_lock lock(mutex_);
 
-    Snapshot snapshot;
-    snapshot.active_sessions = sessions_.size();
+    Snapshot snap;
+    snap.active_sessions = sessions_.size();
 
     for (const auto& [_, record] : sessions_) {
         if (record.authenticated) {
-            ++snapshot.authenticated_sessions;
+            ++snap.authenticated_sessions;
         }
     }
 
-    return snapshot;
+    return snap;
 }
 
 SessionManager::SessionPtr SessionManager::authenticate(const SessionPtr& session, LoginContext context) {
@@ -123,7 +158,40 @@ SessionManager::SessionPtr SessionManager::authenticate(const SessionPtr& sessio
     record.authenticated = true;
     record.login_context = std::move(context);
     user_index_[record.login_context.user_id] = key;
+
+    publish_snapshot();
     return replaced_session;
+}
+
+// ── Lock-free broadcast ────────────────────────────────────────────────
+
+void SessionManager::broadcast(std::uint16_t message_id,
+                                std::uint32_t request_id,
+                                std::int32_t error_code,
+                                const std::string& body,
+                                std::uint8_t flags,
+                                bool high_priority) {
+    // Grab the current atomically-published snapshot.
+    auto snap = snapshot_.load(std::memory_order_acquire);
+    if (!snap || snap->empty()) {
+        return;
+    }
+
+    for (const auto& [key, record] : *snap) {
+        (void)key;
+        if (!record.authenticated || !record.session) {
+            continue;
+        }
+
+        // Backpressure check: skip overloaded sessions.
+        if (record.session->pending_write_count() >= max_pending_per_session_) {
+            handle_overload(record.session);
+            continue;
+        }
+
+        record.session->send(message_id, request_id, error_code,
+                             body, flags, high_priority);
+    }
 }
 
 }  // namespace game::gateway

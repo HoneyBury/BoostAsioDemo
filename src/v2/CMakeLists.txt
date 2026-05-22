@@ -1,18 +1,20 @@
 add_library(project_v2 STATIC
     actor/actor.cpp
     actor/actor_ref.cpp
+    aoi/aoi_grid.cpp
+    aoi/aoi_system.cpp
+    aoi/spatial_grid.cpp
     battle/battle_actor.cpp
     battle/battle_snapshot.cpp
     battle/runtime_world.cpp
     battle/game_systems.cpp
-    aoi/aoi_system.cpp
-    aoi/spatial_grid.cpp
     common/module_marker.cpp
     diagnostics/diagnostics_manager.cpp
     diagnostics/health_check.cpp
     data/replay_format.cpp
     data/write_behind_store.cpp
     data/cached_data_store.cpp
+    ecs/parallel_system_executor.cpp
     ecs/world.cpp
     gateway/battle_data_store.cpp
     service/backend_envelope.cpp
@@ -37,6 +39,7 @@ add_library(project_v2 STATIC
     gateway/session_adapter.cpp
     io/io_engine.cpp
     memory/arena.cpp
+    perf/perf_counter.cpp
     player/player_actor.cpp
     realtime/instance_runtime.cpp
     room/room_actor.cpp
@@ -61,3 +64,23 @@ target_link_libraries(project_v2
         OpenSSL::Crypto
 )
 apply_project_warnings(project_v2)
+
+# ─── gRPC server sources (conditional on BOOST_BUILD_GRPC) ─────────────────
+if(BOOST_BUILD_GRPC)
+  target_sources(project_v2 PRIVATE
+    grpc/gateway_grpc_server.cpp
+  )
+
+  target_link_libraries(project_v2
+    PUBLIC
+      project_proto
+  )
+
+  target_compile_definitions(project_v2
+    PRIVATE
+      BOOST_BUILD_GRPC
+  )
+
+  # Ensure proto/gRPC stubs are generated before compiling gRPC sources.
+  add_dependencies(project_v2 generate_v3_proto generate_v3_grpc)
+endif()

@@ -1,0 +1,39 @@
+# Grafana Agent Configuration for Boost Gateway
+# Scrapes Prometheus metrics endpoints and ships to remote storage.
+server:
+  http_listen_port: 12345
+  grpc_listen_port: 0
+
+metrics:
+  wal_directory: /tmp/agent/wal
+  global:
+    scrape_interval: 15s
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+  configs:
+    - name: default
+      scrape_configs:
+        - job_name: gateway-server
+          static_configs:
+            - targets: ["gateway-server:8080"]
+              labels:
+                service: gateway-server
+        - job_name: gateway-operator
+          static_configs:
+            - targets: ["gateway-server-operator:8080"]
+              labels:
+                service: gateway-operator
+      remote_write:
+        - url: http://prometheus:9090/api/v1/write
+
+logs:
+  configs:
+    - name: default
+      scrape_configs:
+        - job_name: gateway-server-logs
+          static_configs:
+            - targets: ["gateway-server:8080"]
+              labels:
+                service: gateway-server
+      clients:
+        - url: http://loki:3100/loki/api/v1/push

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "v2/perf/hot_path.h"
 #include "v2/realtime/types.h"
 #include "v2/realtime/instance_plugin.h"
 
@@ -107,9 +108,9 @@ public:
     // ─── Tick / advance ──────────────────────────────────────────
 
     // Tick a single instance. Called by the tick timer or manually.
-    TickStats tick_instance(const std::string& instance_id,
-                            std::uint32_t frame_number,
-                            std::int64_t tick_start_ms);
+    BOOST_HOT_PATH TickStats tick_instance(const std::string& instance_id,
+                                           std::uint32_t frame_number,
+                                           std::int64_t tick_start_ms);
 
     // Tick all running instances. Returns stats for each.
     std::vector<TickStats> tick_all(std::int64_t tick_start_ms);

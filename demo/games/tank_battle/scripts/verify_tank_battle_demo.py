@@ -113,13 +113,14 @@ def check_p2_room_lobby(demo_root: Path, errors: list, warnings: list) -> bool:
     return ok
 
 
-def check_p3_realtime_runtime(errors: list, warnings: list) -> bool:
+def check_p3_realtime_runtime(demo_root: Path, errors: list, warnings: list) -> bool:
     """Verify realtime instance runtime interfaces exist in framework."""
     ok = True
 
-    runtime_header = Path("include/v2/realtime/instance_runtime.h")
-    plugin_header = Path("include/v2/realtime/instance_plugin.h")
-    types_header = Path("include/v2/realtime/types.h")
+    repo_root = demo_root.parent.parent.parent
+    runtime_header = repo_root / "include/v2/realtime/instance_runtime.h"
+    plugin_header = repo_root / "include/v2/realtime/instance_plugin.h"
+    types_header = repo_root / "include/v2/realtime/types.h"
 
     for h in [runtime_header, plugin_header, types_header]:
         ok &= check_file(h, "P3:runtime_header", errors)
@@ -146,8 +147,8 @@ def check_p4_simulation(demo_root: Path, build_dir: Path, errors: list, warnings
         # Check that no tank symbols leaked into framework
         try:
             rc, out, err = run_cmd(
-                ["rg", "-n", "Tank|Bullet|Collision", "--include", "*.h",
-                 "-g", "!demo/games/*", "include/"], demo_root.parent.parent.parent)
+                ["rg", "-n", "Tank|Bullet|Collision",
+                 "-g", "*.h", "-g", "!demo/games/*", "include/"], demo_root.parent.parent.parent)
             if out.strip():
                 warnings.append(f"P4:pollution: tank types found outside demo: {out.strip()}")
         except Exception:
@@ -164,12 +165,12 @@ def check_p5_settlement(demo_root: Path, errors: list, warnings: list) -> bool:
     return ok
 
 
-def check_p6_resume(errors: list, warnings: list) -> bool:
+def check_p6_resume(demo_root: Path, errors: list, warnings: list) -> bool:
     """Verify resume/reconnect support in runtime."""
     ok = True
 
-    # Check instance_runtime.h has resume methods
-    runtime_h = Path("include/v2/realtime/instance_runtime.h")
+    repo_root = demo_root.parent.parent.parent
+    runtime_h = repo_root / "include/v2/realtime/instance_runtime.h"
     if runtime_h.is_file():
         content = runtime_h.read_text(encoding='utf-8')
         if "get_resume_snapshot" not in content:
@@ -180,17 +181,18 @@ def check_p6_resume(errors: list, warnings: list) -> bool:
     return ok
 
 
-def check_p7_regression(build_dir: Path, errors: list, warnings: list) -> bool:
+def check_p7_regression(demo_root: Path, errors: list, warnings: list) -> bool:
     """Verify regression gates."""
     ok = True
 
+    repo_root = demo_root.parent.parent.parent
     # Check that SDK full-flow still works (basic file existence)
     sdk_scripts = [
         "scripts/verify_sdk_full_flow_client.py",
         "scripts/verify_release_candidate.py",
     ]
     for s in sdk_scripts:
-        script_path = Path(s)
+        script_path = repo_root / s
         if script_path.is_file():
             # Just verify the script exists
             pass
@@ -235,7 +237,7 @@ def main():
 
     # P3: Realtime runtime
     print("[P3] Checking realtime instance runtime...")
-    checkpoint_results["P3"] = check_p3_realtime_runtime(errors, warnings)
+    checkpoint_results["P3"] = check_p3_realtime_runtime(demo_root, errors, warnings)
 
     # P4: Simulation
     print("[P4] Checking tank simulation...")
@@ -247,11 +249,11 @@ def main():
 
     # P6: Resume
     print("[P6] Checking resume/reconnect...")
-    checkpoint_results["P6"] = check_p6_resume(errors, warnings)
+    checkpoint_results["P6"] = check_p6_resume(demo_root, errors, warnings)
 
     # P7: Regression
     print("[P7] Checking regression gates...")
-    checkpoint_results["P7"] = check_p7_regression(build_dir, errors, warnings)
+    checkpoint_results["P7"] = check_p7_regression(demo_root, errors, warnings)
 
     # Summary
     print()

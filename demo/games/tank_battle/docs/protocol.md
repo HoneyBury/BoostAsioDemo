@@ -82,6 +82,78 @@ Sent by the tank plugin when the battle ends:
 }
 ```
 
+## Room Protocol
+
+Room operations use the framework `backend_envelope` protocol. Operations are
+routed by `message_type`; the framework does not interpret the room payload.
+
+### room_list
+
+List rooms with optional filters and pagination:
+
+```json
+{
+  "message_type": "room_list",
+  "payload": {
+    "visibility": "public",
+    "status": "waiting",
+    "page": 1,
+    "page_size": 20
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "status": "ok",
+  "rooms": [{"room_id": "...", "member_count": 2, ...}],
+  "total": 10,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 1
+}
+```
+
+### room_detail
+
+Get full room details including members:
+
+```json
+{
+  "message_type": "room_detail",
+  "payload": {"room_id": "room_001"}
+}
+```
+
+### room_kick
+
+Owner removes a member from the room:
+
+```json
+{
+  "message_type": "room_kick",
+  "payload": {"user_id": "alice", "room_id": "room_001", "target_user_id": "bob"}
+}
+```
+
+### transfer_owner
+
+Transfer room ownership to another member:
+
+```json
+{
+  "message_type": "transfer_owner",
+  "payload": {"user_id": "alice", "room_id": "room_001", "new_owner_id": "bob"}
+}
+```
+
+### Settlement
+
+The battle settlement is delivered as a `settlement` push after the instance
+finishes. The settlement payload structure is defined in the settlement section below.
+
 ## Error Codes
 
 | code | meaning |

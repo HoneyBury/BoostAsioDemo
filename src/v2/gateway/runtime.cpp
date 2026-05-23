@@ -238,6 +238,13 @@ void Runtime::set_service_bridge(std::unique_ptr<GatewayServiceBridge> bridge) {
     bridge_ = std::move(bridge);
 }
 
+void Runtime::mark_session_authenticated(SessionId session_id,
+                                         const std::string& user_id,
+                                         v2::auth::Role role) {
+    lookup_.set_session_user(session_id, user_id);
+    set_session_role(session_id, role);
+}
+
 bool Runtime::handle(const GatewayCommand& command) {
     // v2.2.0: Setup cross-service trace context for distributed tracing
     if (bridge_) {
@@ -320,21 +327,9 @@ bool Runtime::handle(const GatewayCommand& command) {
                                     closed.header.kind = v2::actor::MessageKind::kUser;
                                     closed.payload = v2::player::SessionClosedMsg{.session_id = *old_session};
                                     player_ref->tell(std::move(closed));
-                                    actor_system_.dispatch_all();
                                 }
                             }
                         }
-
-                        auto player = get_or_create_player(login_body->user_id);
-
-                        v2::actor::Message bind;
-                        bind.header.kind = v2::actor::MessageKind::kUser;
-                        bind.payload = v2::player::BindSessionMsg{
-                            .session_id = command.session_id,
-                            .connection_id = command.session_id,
-                        };
-                        player.tell(std::move(bind));
-                        actor_system_.dispatch_all();
 
                         lookup_.set_session_user(command.session_id, login_body->user_id);
                         emit(net::protocol::kLoginResponse,
@@ -1213,17 +1208,17 @@ bool Runtime::handle(const GatewayCommand& command) {
             };
             bridge_route(bridge_.get(),
                          v2::service::ServiceId::kMatchmaking,
-                         "match_join",
-                         payload.dump(),
-                         [&](const nlohmann::json& resp) {
-                             emit(net::protocol::kMatchJoinResponse,
+                          "match_join",
+                          payload.dump(),
+                          [&](const nlohmann::json& resp) {
+                              emit(net::protocol::kMatchJoinResponse,
                                   command.session_id,
                                   command.request_id,
                                   static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                                   resp.dump());
-                         },
-                         [&](const std::string& reason) {
-                             emit(net::protocol::kErrorResponse,
+                          },
+                          [&](const std::string& reason) {
+                              emit(net::protocol::kErrorResponse,
                                   command.session_id,
                                   command.request_id,
                                   static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
@@ -2050,6 +2045,31 @@ v2::actor::ActorRef Runtime::get_or_create_player(const std::string& user_id) {
 
 std::string Runtime::session_user_id(SessionId session_id) const {
     return lookup_.user_id_for(session_id);
+}
+
+std::string Runtime::session_room_id(SessionId session_id) const {
+    return lookup_.room_id_for(session_id);
+}
+
+void Runtime::mark_session_room(SessionId session_id, const std::string& room_id) {
+    lookup_.set_session_room(session_id, room_id);
+}
+
+void Runtime::clear_session_room(SessionId session_id) {
+    lookup_.erase_session_room(session_id);
+}
+
+void Runtime::mark_room_battle(const std::string& room_id, const std::string& battle_id) {
+    room_to_battle_id_[room_id] = battle_id;
+}
+
+std::string Runtime::battle_id_for_room(const std::string& room_id) const {
+    auto it = room_to_battle_id_.find(room_id);
+    return it != room_to_battle_id_.end() ? it->second : std::string{};
+}
+
+const std::unordered_map<SessionId, std::string>& Runtime::session_users() const {
+    return lookup_.session_users();
 }
 
 std::optional<SessionId> Runtime::session_id_for_user(const std::string& user_id) const {

@@ -2,7 +2,7 @@
 
 更新时间：2026-05-18
 
-本文档是 v3.3.2 生产稳定化 P0 的部署事实源，覆盖云服务器、Docker Compose、systemd、Kubernetes、监控、备份、回滚和发布后验证。当前目标是稳定现有 6 服务拓扑，不扩展新的业务模块。
+本文档是 v3.3.2 生产稳定化 P0 的部署事实源，覆盖云服务器、Docker Compose、systemd、Kubernetes、监控、备份、回滚和发布后验证。当前目标是稳定现有 gateway + 5 backend 拓扑，不扩展新的业务模块。
 
 ## 生产拓扑
 
@@ -20,6 +20,11 @@ prometheus:9090 -> scrapes gateway /metrics, prometheus self, redis-exporter, op
 alertmanager:9093 -> receives Prometheus alerts
 grafana:3000 -> dashboard backed by Prometheus
 ```
+
+说明：
+- 当前默认部署口径下，Docker Compose、systemd、Kubernetes 都按 `gateway -> login/room/battle/matchmaking/leaderboard` 五后端装配。
+- 其中 `leaderboard` 默认可进入业务闭环，但 Redis 持久化仍是可选后端；Redis 不可用时后端会降级到内存路径。
+- `TankBattlePlugin`、`GatewayGrpcServer` 和 TLS profile 不属于默认部署拓扑：前者是 demo/plugin 侧能力，gRPC 为 `BOOST_BUILD_GRPC` 条件编译实验能力，TLS 为 opt-in profile，默认生产链路仍是 plain TCP。
 
 生产暴露边界：
 

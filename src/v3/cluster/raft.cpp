@@ -35,6 +35,15 @@ RaftNode::RaftNode(RaftConfig config)
 RaftNode::~RaftNode() { stop(); }
 
 void RaftNode::start() {
+    {
+        std::lock_guard lock(mutex_);
+        if (peers_.size() == 1 && peers_.front().id == config_.node_id) {
+            if (current_term_ == 0) {
+                current_term_ = 1;
+            }
+            become_leader();
+        }
+    }
     running_ = true;
     thread_ = std::thread([this]() { run(); });
 }

@@ -198,12 +198,7 @@ public:
             std::move(handlers));
         server_->start();
 
-        // Batch C: Default single-node Raft if not explicitly configured
-        if (raft_config_.node_id.empty()) {
-            raft_config_.node_id = "leaderboard_default";
-            raft_config_.storage_dir = "runtime/data/raft/leaderboard";
-        }
-        if (!raft_config_.node_id.empty()) {
+        if (!raft_config_.node_id.empty() && !raft_config_.peers.empty()) {
             raft_node_ = std::make_unique<v3::cluster::RaftNode>(raft_config_);
             raft_node_->set_rpc_sender(make_raft_rpc_sender());
             raft_node_->on_become_leader([this]() {

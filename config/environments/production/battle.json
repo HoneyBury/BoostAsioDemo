@@ -2,7 +2,7 @@
   "service": {
     "name": "battle",
     "host": "0.0.0.0",
-    "port": 9304,
+    "port": 9303,
     "config_version": "production-battle-v1"
   },
   "log_level": "info"

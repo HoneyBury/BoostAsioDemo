@@ -153,15 +153,24 @@ std::optional<BackendEnvelope> BackendConnection::do_send(BackendEnvelope reques
     }
     request.source_service = ServiceId::kGateway;
 
+    const auto original_correlation_id = request.correlation_id;
+    const auto original_message_type = request.message_type;
+    const auto original_target = request.target_service;
+
     if (ssl_stream_) {
         if (!write_frame(*ssl_stream_, request)) {
             last_failure_stage_ = FailureStage::kWrite;
+            LOG_WARN("BackendConnection write failed target={} msg={} corr_id={} tls=1",
+                     to_string(original_target), original_message_type, original_correlation_id);
             close();
             return std::nullopt;
         }
         auto response = read_frame(*ssl_stream_, options_.timeout);
         if (!response) {
             last_failure_stage_ = FailureStage::kRead;
+            LOG_WARN("BackendConnection read timed out target={} msg={} corr_id={} tls=1 timeout_ms={}",
+                     to_string(original_target), original_message_type, original_correlation_id,
+                     options_.timeout.count());
             close();
             return std::nullopt;
         }
@@ -170,6 +179,8 @@ std::optional<BackendEnvelope> BackendConnection::do_send(BackendEnvelope reques
 
     if (!write_frame(*socket_, request)) {
         last_failure_stage_ = FailureStage::kWrite;
+        LOG_WARN("BackendConnection write failed target={} msg={} corr_id={} tls=0",
+                 to_string(original_target), original_message_type, original_correlation_id);
         close();
         return std::nullopt;
     }
@@ -177,6 +188,9 @@ std::optional<BackendEnvelope> BackendConnection::do_send(BackendEnvelope reques
     auto response = read_frame(*socket_, options_.timeout);
     if (!response) {
         last_failure_stage_ = FailureStage::kRead;
+        LOG_WARN("BackendConnection read timed out target={} msg={} corr_id={} tls=0 timeout_ms={}",
+                 to_string(original_target), original_message_type, original_correlation_id,
+                 options_.timeout.count());
         close();
         return std::nullopt;
     }

@@ -344,12 +344,12 @@ TEST(WindowsPlatformTest, IocpSessionPriorityOrdering) {
     tcp::acceptor acceptor(server_io, tcp::endpoint(tcp::v4(), 0));
     const auto endpoint = acceptor.local_endpoint();
 
-    std::promise<tcp::socket> accepted_socket;
+    std::promise<std::optional<tcp::socket>> accepted_socket;
     acceptor.async_accept(
         [&accepted_socket](boost::system::error_code ec, tcp::socket socket) mutable {
             // On Windows IOCP, accept errors can occur; set the promise anyway
             if (ec) {
-                accepted_socket.set_value(tcp::socket(std::error_code()));
+                accepted_socket.set_value(std::nullopt);
                 return;
             }
             accepted_socket.set_value(std::move(socket));
@@ -364,12 +364,12 @@ TEST(WindowsPlatformTest, IocpSessionPriorityOrdering) {
     options.max_pending_write_bytes = 1024 * 1024;
 
     auto accepted = accepted_socket.get_future().get();
-    if (!accepted.is_open()) {
+    if (!accepted.has_value() || !accepted->is_open()) {
         GTEST_SKIP() << "accept failed on IOCP";
         return;
     }
 
-    auto session = std::make_shared<net::Session>(std::move(accepted), options);
+    auto session = std::make_shared<net::Session>(std::move(*accepted), options);
 
     // Send mixed priority (normal/high) packets without starting io_context yet
     session->send(4006, 1, 0, "push-1");            // normal priority

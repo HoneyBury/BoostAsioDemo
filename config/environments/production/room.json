@@ -2,7 +2,7 @@
   "service": {
     "name": "room",
     "host": "0.0.0.0",
-    "port": 9303,
+    "port": 9302,
     "config_version": "production-room-v1"
   },
   "log_level": "info",

@@ -5,7 +5,6 @@
 #include "net/packet_codec.h"
 #include "net/packet_compressor.h"
 #include "net/packet_fragment.h"
-
 #include <atomic>
 #include <algorithm>
 #include <utility>
@@ -224,7 +223,6 @@ void Session::do_read_body() {
                                               packet.message_id,
                                               packet.body.size(),
                                               trace_id);
-
                                     const PacketMessage message{
                                         .message_id = packet.message_id,
                                         .request_id = packet.request_id,
@@ -255,7 +253,11 @@ void Session::do_read_body() {
                                 }
 
                                 if (!self->stopped_ && !self->backpressure_active_) {
-                                    self->do_read_header();
+                                    asio::post(self->strand_, [self]() {
+                                        if (!self->stopped_ && !self->backpressure_active_) {
+                                            self->do_read_header();
+                                        }
+                                    });
                                 } else if (self->backpressure_active_) {
                                     LOG_DEBUG("Session {} read paused (backpressure)", self->remote_endpoint());
                                 }

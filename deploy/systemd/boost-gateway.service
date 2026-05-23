@@ -12,7 +12,9 @@ ExecStart=/usr/local/bin/v2_gateway_demo \
     --http-port 9080 \
     --login-host 127.0.0.1 --login-port 9202 \
     --room-host 127.0.0.1 --room-port 9302 \
-    --battle-host 127.0.0.1 --battle-port 9303
+    --battle-host 127.0.0.1 --battle-port 9303 \
+    --matchmaking-host 127.0.0.1 --matchmaking-port 9304 \
+    --leaderboard-host 127.0.0.1 --leaderboard-port 9305
 WorkingDirectory=/var/lib/boost-gateway
 Restart=on-failure
 RestartSec=3s

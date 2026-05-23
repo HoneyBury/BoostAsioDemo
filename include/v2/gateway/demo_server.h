@@ -17,7 +17,9 @@
 #include "v3/cluster/cluster_router.h"
 #include "v3/cluster/tls_config.h"
 
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <optional>
 #include <mutex>
 #include <memory>
@@ -90,6 +92,9 @@ public:
 private:
     void do_accept();
     void dispatch_write(SessionId session_id, SessionWriteTask task);
+    void enqueue_packet(SessionId session_id, v2::io::IoSession::PacketMessage message);
+    void start_gateway_worker();
+    void stop_gateway_worker();
     void load_gateway_config();
     void start_config_watcher();
     void reload_backend_configs();
@@ -133,6 +138,12 @@ private:
     std::unique_ptr<std::thread> health_check_thread_;
     std::atomic<bool> health_check_running_{false};
     std::vector<std::shared_ptr<v2::service::ServiceRegistrar>> service_registrars_;
+    std::mutex gateway_queue_mutex_;
+    std::condition_variable gateway_queue_cv_;
+    std::deque<std::pair<SessionId, v2::io::IoSession::PacketMessage>> gateway_queue_;
+    std::unique_ptr<std::thread> gateway_worker_;
+    bool gateway_worker_stopping_ = false;
+    std::mutex gateway_handle_mutex_;
 };
 
 }  // namespace v2::gateway

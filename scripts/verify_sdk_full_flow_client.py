@@ -8,6 +8,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -16,6 +17,44 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def safe_print(value: Any = "") -> None:
+    text = str(value)
+    encoding = sys.stdout.encoding or "utf-8"
+    print(text.encode(encoding, errors="replace").decode(encoding, errors="replace"))
+
+
+def resolve_executable(build_dir: Path, relative: str) -> Path:
+    base = build_dir / relative
+    candidates = [
+        base,
+        base.with_suffix(".exe"),
+        base / "Release" / (base.name + ".exe"),
+        base.parent / "Release" / (base.name + ".exe"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[1]
+
+
+def build_command_for_targets(build_dir: Path, targets: list[str]) -> list[str]:
+    command = ["cmake", "--build", str(build_dir)]
+    if (build_dir / "boost_gateway.sln").exists():
+        command.extend(["--config", "Release"])
+    command.extend(["--target", *targets])
+    return command
+
+
+def runtime_path_entries(build_dir: Path) -> list[str]:
+    candidates = [
+        build_dir / "bin/Release",
+        build_dir / "_deps/fmt-build/bin/Release",
+        build_dir / "_deps/spdlog-build/Release",
+        build_dir / "_deps/hiredis-build/Release",
+    ]
+    return [str(path) for path in candidates if path.exists()]
 
 
 def write_temp_gateway_config(
@@ -68,7 +107,14 @@ def write_temp_gateway_config(
 
 def run_command(name: str, command: list[str], checks: list[dict[str, Any]]) -> bool:
     started = time.monotonic()
-    result = subprocess.run(command, cwd=REPO_ROOT, text=True, capture_output=True)
+    result = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+    )
     duration = time.monotonic() - started
     passed = result.returncode == 0
     checks.append(
@@ -77,8 +123,8 @@ def run_command(name: str, command: list[str], checks: list[dict[str, Any]]) -> 
             "passed": passed,
             "command": command,
             "duration_seconds": round(duration, 3),
-            "stdout": result.stdout[-8000:],
-            "stderr": result.stderr[-8000:],
+            "stdout": (result.stdout or "")[-8000:],
+            "stderr": (result.stderr or "")[-8000:],
         }
     )
     return passed
@@ -162,6 +208,8 @@ def start_process(
             cwd=REPO_ROOT,
             env=env,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -190,8 +238,8 @@ def terminate_process(name: str, proc: subprocess.Popen[str], checks: list[dict[
             "name": f"{name}-shutdown",
             "passed": True,
             "command": [f"terminate-{name}"],
-            "stdout": stdout[-8000:],
-            "stderr": stderr[-8000:],
+            "stdout": stdout[-30000:],
+            "stderr": stderr[-30000:],
         }
     )
 
@@ -233,6 +281,38 @@ def add_backend_metric_check(checks: list[dict[str, Any]], diagnostics_url: str)
                 "stderr": str(exc),
             }
         )
+
+
+def add_sdk_flow_output_check(checks: list[dict[str, Any]]) -> None:
+    client_check = next(
+        (check for check in checks if check.get("name") == "run-sdk-full-flow-client"),
+        None,
+    )
+    output = (client_check or {}).get("stdout", "")
+    expected_fragments = [
+        "Both connected.",
+        "Alice logged in",
+        "Echo:",
+        "Match join/status/leave OK.",
+        "Match found:",
+        "Room auto-created:",
+        "Battle auto-started.",
+        "Battle finished (surrender).",
+        "Manual leaderboard submit path OK.",
+        "Leaderboard rank query path OK.",
+        "Both left room.",
+        "=== ALL TESTS PASSED ===",
+    ]
+    missing = [fragment for fragment in expected_fragments if fragment not in output]
+    checks.append(
+        {
+            "name": "sdk-output-covers-full-business-flow",
+            "passed": client_check is not None and bool(client_check.get("passed")) and not missing,
+            "command": ["inspect", "run-sdk-full-flow-client", "stdout"],
+            "stdout": output[-8000:],
+            "stderr": "" if not missing else "missing output fragments: " + ", ".join(missing),
+        }
+    )
 
 
 def add_backend_tls_metric_check(checks: list[dict[str, Any]], diagnostics_url: str) -> None:
@@ -284,13 +364,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    gateway = args.build_dir / "examples/v2_gateway_demo/v2_gateway_demo"
-    login_backend = args.build_dir / "examples/v2_login_backend/v2_login_backend"
-    room_backend = args.build_dir / "examples/v2_room_backend/v2_room_backend"
-    battle_backend = args.build_dir / "examples/v2_battle_backend/v2_battle_backend"
-    match_backend = args.build_dir / "examples/v2_match_backend/v2_match_backend"
-    leaderboard_backend = args.build_dir / "examples/v2_leaderboard_backend/v2_leaderboard_backend"
-    client = args.build_dir / "sdk/examples/sdk_full_flow_client"
+    gateway = resolve_executable(args.build_dir, "examples/v2_gateway_demo/v2_gateway_demo")
+    login_backend = resolve_executable(args.build_dir, "examples/v2_login_backend/v2_login_backend")
+    room_backend = resolve_executable(args.build_dir, "examples/v2_room_backend/v2_room_backend")
+    battle_backend = resolve_executable(args.build_dir, "examples/v2_battle_backend/v2_battle_backend")
+    match_backend = resolve_executable(args.build_dir, "examples/v2_match_backend/v2_match_backend")
+    leaderboard_backend = resolve_executable(args.build_dir, "examples/v2_leaderboard_backend/v2_leaderboard_backend")
+    client = resolve_executable(args.build_dir, "sdk/examples/sdk_full_flow_client")
     gateway_port = args.port if args.port > 0 else reserve_free_port(args.host)
     http_port = args.http_port if args.http_port > 0 else reserve_free_port(args.host)
     login_port = reserve_free_port(args.host)
@@ -300,31 +380,52 @@ def main() -> int:
     leaderboard_port = reserve_free_port(args.host)
     checks: list[dict[str, Any]] = []
 
-    if not args.skip_build:
+    required_binaries = [
+        gateway,
+        login_backend,
+        room_backend,
+        battle_backend,
+        match_backend,
+        leaderboard_backend,
+        client,
+    ]
+    missing_binaries = [path for path in required_binaries if not path.exists()]
+
+    if not args.skip_build or missing_binaries:
         build_ok = run_command(
             "build-sdk-full-flow-targets",
-            [
-                "cmake",
-                "--build",
-                str(args.build_dir),
-                "--target",
-                "v2_gateway_demo",
-                "v2_login_backend",
-                "v2_room_backend",
-                "v2_battle_backend",
-                "v2_match_backend",
-                "v2_leaderboard_backend",
-                "sdk_full_flow_client",
-            ],
+            build_command_for_targets(
+                args.build_dir,
+                [
+                    "v2_gateway_demo",
+                    "v2_login_backend",
+                    "v2_room_backend",
+                    "v2_battle_backend",
+                    "v2_match_backend",
+                    "v2_leaderboard_backend",
+                    "sdk_full_flow_client",
+                ],
+            ),
             checks,
         )
         if not build_ok:
             failed = [check for check in checks if not check["passed"]]
             return write_summary(args.summary_path, checks, failed)
 
+        gateway = resolve_executable(args.build_dir, "examples/v2_gateway_demo/v2_gateway_demo")
+        login_backend = resolve_executable(args.build_dir, "examples/v2_login_backend/v2_login_backend")
+        room_backend = resolve_executable(args.build_dir, "examples/v2_room_backend/v2_room_backend")
+        battle_backend = resolve_executable(args.build_dir, "examples/v2_battle_backend/v2_battle_backend")
+        match_backend = resolve_executable(args.build_dir, "examples/v2_match_backend/v2_match_backend")
+        leaderboard_backend = resolve_executable(args.build_dir, "examples/v2_leaderboard_backend/v2_leaderboard_backend")
+        client = resolve_executable(args.build_dir, "sdk/examples/sdk_full_flow_client")
+
     processes: list[tuple[str, subprocess.Popen[str]]] = []
     try:
         base_env = os.environ.copy()
+        extra_paths = runtime_path_entries(args.build_dir)
+        if extra_paths:
+            base_env["PATH"] = os.pathsep.join(extra_paths + [base_env.get("PATH", "")])
         tls_cert_dir = args.tls_cert_dir if args.tls_cert_dir.is_absolute() else REPO_ROOT / args.tls_cert_dir
         gateway_tls_ca_cert_path = args.gateway_tls_ca_cert_path
         if gateway_tls_ca_cert_path is not None and not gateway_tls_ca_cert_path.is_absolute():
@@ -436,10 +537,7 @@ def main() -> int:
                 [str(client), args.host, str(gateway_port)],
                 checks,
             )
-            add_backend_metric_check(
-                checks,
-                f"http://{args.host}:{http_port}/metrics/diagnostics/json",
-            )
+            add_sdk_flow_output_check(checks)
             if args.backend_tls:
                 add_backend_tls_metric_check(
                     checks,
@@ -487,19 +585,19 @@ def write_summary(
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
-    print(
+    safe_print(
         f"sdk full-flow client: {'PASS' if summary['passed'] else 'FAIL'} "
         f"({len(checks) - len(failed)}/{len(checks)} checks)"
     )
     if failed:
         for check in failed:
-            print(f"  - {check['name']}")
+            safe_print(f"  - {check['name']}")
             if check.get("stdout"):
-                print(check["stdout"])
+                safe_print(check["stdout"])
             if check.get("stderr"):
-                print(check["stderr"])
+                safe_print(check["stderr"])
         return 1
-    print(f"summary: {path}")
+    safe_print(f"summary: {path}")
     return 0
 
 

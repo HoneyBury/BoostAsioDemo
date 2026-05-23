@@ -21,7 +21,6 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
     if (envelope == nullptr) {
         return;
     }
-
     if (rate_limit_policy_) {
         const auto limit_result = rate_limit_policy_(*envelope, envelope->session_id);
         if (!limit_result.allowed) {

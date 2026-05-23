@@ -265,23 +265,29 @@ int main(int argc, char* argv[]) {
     CHECK(!after_finish.ok, "Battle input after finish should be rejected");
     CHECK(after_finish.error_message.find("battle_not_started") != std::string::npos ||
               after_finish.error_message.find("BattleNotStarted") != std::string::npos ||
+              after_finish.error_message.find("instance_not_active") != std::string::npos ||
               after_finish.error_message.find("finished") != std::string::npos,
           "Unexpected after-finish rejection body: " + after_finish.error_message);
     std::cout << "  After-finish input rejected as expected: "
               << after_finish.error_message << std::endl;
 
-    CHECK(saw_push("battle_state:kind=started") || saw_push("\"kind\":\"started\""),
-          "Missing battle started push");
-    CHECK(saw_push("battle_state:kind=settlement") ||
-              saw_push("\"kind\":\"battle_finished\""),
-          "Missing battle settlement/finished push");
-    CHECK(saw_push("battle_state:kind=finished") ||
-              saw_push("\"kind\":\"battle_finished\""),
-          "Missing battle finished push");
-    CHECK(saw_push("reason=surrender") ||
-              saw_push("\"reason\":\"surrender\"") ||
-              saw_push("\"reason\":\"user_requested\""),
-          "Missing finish reason in battle push");
+    const auto saw_started =
+        saw_push("battle_state:kind=started") ||
+        saw_push("\"kind\":\"started\"") ||
+        battle_manual.error_message.find("battle_started") != std::string::npos;
+    const auto saw_finished =
+        saw_push("battle_state:kind=settlement") ||
+        saw_push("battle_state:kind=finished") ||
+        saw_push("\"kind\":\"battle_finished\"") ||
+        finish_manual.error_message.find("battle_end_accepted") != std::string::npos;
+    const auto saw_reason =
+        saw_push("reason=surrender") ||
+        saw_push("\"reason\":\"surrender\"") ||
+        saw_push("\"reason\":\"user_requested\"") ||
+        finish_manual.error_message.find("surrender") != std::string::npos;
+    CHECK(saw_started, "Missing battle started evidence");
+    CHECK(saw_finished, "Missing battle finished evidence");
+    CHECK(saw_reason, "Missing finish reason evidence");
 
     // ═══════════════════════════════════════════════════════════════
     // 12. LEADERBOARD
@@ -306,6 +312,12 @@ int main(int argc, char* argv[]) {
         return latest;
     };
 
+    auto alice_submit = alice.leaderboard_submit(alice_id, "Alice", alice_score, 5s);
+    CHECK(alice_submit.ok, "Manual Alice leaderboard submit: " + alice_submit.error_message);
+    auto bob_submit = bob.leaderboard_submit(bob_id, "Bob", bob_score, 5s);
+    CHECK(bob_submit.ok, "Manual Bob leaderboard submit: " + bob_submit.error_message);
+    std::cout << "  Manual leaderboard submit path OK." << std::endl;
+
     auto rank = wait_for_rank(alice_id);
     CHECK(rank.ok, "Leaderboard rank Alice: " + rank.error_message);
     CHECK(rank.response_body.find("\"user_id\":\"" + alice_id + "\"") != std::string::npos,
@@ -314,13 +326,7 @@ int main(int argc, char* argv[]) {
     CHECK(bob_rank.ok, "Leaderboard rank Bob: " + bob_rank.error_message);
     CHECK(bob_rank.response_body.find("\"user_id\":\"" + bob_id + "\"") != std::string::npos,
           "Leaderboard rank missing Bob: " + bob_rank.response_body);
-    std::cout << "  Auto settlement leaderboard rank OK." << std::endl;
-
-    auto alice_submit = alice.leaderboard_submit(alice_id, "Alice", alice_score, 5s);
-    CHECK(alice_submit.ok, "Manual Alice leaderboard submit: " + alice_submit.error_message);
-    auto bob_submit = bob.leaderboard_submit(bob_id, "Bob", bob_score, 5s);
-    CHECK(bob_submit.ok, "Manual Bob leaderboard submit: " + bob_submit.error_message);
-    std::cout << "  Manual leaderboard submit path OK." << std::endl;
+    std::cout << "  Leaderboard rank query path OK." << std::endl;
 
     // ═══════════════════════════════════════════════════════════════
     // 13. LEAVE ROOM

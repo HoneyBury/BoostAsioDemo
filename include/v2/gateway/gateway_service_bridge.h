@@ -19,6 +19,11 @@
 #include <unordered_map>
 #include <vector>
 
+class ClusterRouterE2ETest_GatewayBridgeUsesClusterRouterWhenSet_Test;
+class ClusterRouterE2ETest_GatewayBridgeFallsBackToStaticWhenClusterRouterReturnsNone_Test;
+class ClusterRouterE2ETest_GatewayBridgeReturnsNulloptWhenBothClusterAndStaticEmpty_Test;
+class ClusterRouterE2ETest_GatewayBridgeClusterRouterShardAffinity_Test;
+
 namespace v2::config {
 class FeatureFlags;
 }  // namespace v2::config
@@ -117,6 +122,11 @@ public:
     void shutdown();
 
 private:
+    friend class ::ClusterRouterE2ETest_GatewayBridgeUsesClusterRouterWhenSet_Test;
+    friend class ::ClusterRouterE2ETest_GatewayBridgeFallsBackToStaticWhenClusterRouterReturnsNone_Test;
+    friend class ::ClusterRouterE2ETest_GatewayBridgeReturnsNulloptWhenBothClusterAndStaticEmpty_Test;
+    friend class ::ClusterRouterE2ETest_GatewayBridgeClusterRouterShardAffinity_Test;
+
     struct ResolvedBackend {
         BackendConfig config;
         std::string connection_key;

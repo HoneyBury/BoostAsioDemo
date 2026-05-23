@@ -30,10 +30,10 @@
     "heartbeat_timeout_ms": 30000
   },
   "backends": {
-    "login": { "host": "127.0.0.1", "port": 9302 },
-    "room": { "host": "127.0.0.1", "port": 9303 },
-    "battle": { "host": "127.0.0.1", "port": 9304 },
-    "match": { "host": "127.0.0.1", "port": 9306 },
+    "login": { "host": "127.0.0.1", "port": 9202 },
+    "room": { "host": "127.0.0.1", "port": 9302 },
+    "battle": { "host": "127.0.0.1", "port": 9303 },
+    "match": { "host": "127.0.0.1", "port": 9304 },
     "leaderboard": { "host": "127.0.0.1", "port": 9305 }
   },
   "log_level": "info",

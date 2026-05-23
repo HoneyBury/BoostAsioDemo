@@ -2,7 +2,7 @@
   "service": {
     "name": "matchmaking",
     "host": "0.0.0.0",
-    "port": 9306,
+    "port": 9304,
     "config_version": "production-matchmaking-v1"
   },
   "log_level": "info",

@@ -6,6 +6,8 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <algorithm>
+#include <optional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -42,41 +44,57 @@ public:
         auto e = protocol::encode(mid, rid, 0, body); boost::system::error_code ec; asio::write(socket_, asio::buffer(e), ec); return !ec;
     }
     protocol::DecodedPacket read(std::chrono::milliseconds timeout) {
-        protocol::LengthHeader h{};
         auto deadline = std::chrono::steady_clock::now() + timeout;
-        if (!read_exact(reinterpret_cast<char*>(h.data()), h.size(), deadline)) return {};
-        auto len = protocol::decode_length(h);
-        std::vector<char> p(len);
-        if (!read_exact(p.data(), p.size(), deadline)) return {};
-        return protocol::decode_payload(p);
-    }
-    bool has_data() { boost::system::error_code ec; socket_.available(ec); return !ec && socket_.available() > 0; }
-private:
-    bool read_exact(char* data, std::size_t size, std::chrono::steady_clock::time_point deadline) {
-        std::size_t offset = 0;
-        while (offset < size && std::chrono::steady_clock::now() < deadline) {
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (auto packet = try_decode_buffered()) return *packet;
+
             boost::system::error_code ec;
             const auto available = socket_.available(ec);
             if (ec) {
                 connected_ = false;
-                return false;
+                return {};
             }
             if (available == 0) {
                 std::this_thread::sleep_for(5ms);
                 continue;
             }
-            const auto chunk = std::min<std::size_t>(available, size - offset);
-            const auto n = socket_.read_some(asio::buffer(data + offset, chunk), ec);
+
+            std::vector<char> chunk(available);
+            const auto n = socket_.read_some(asio::buffer(chunk), ec);
             if (ec) {
                 connected_ = false;
-                return false;
+                return {};
             }
-            offset += n;
+            read_buffer_.insert(read_buffer_.end(), chunk.begin(), chunk.begin() + static_cast<std::ptrdiff_t>(n));
         }
-        return offset == size;
+        return {};
+    }
+    bool has_data() { boost::system::error_code ec; socket_.available(ec); return !ec && socket_.available() > 0; }
+private:
+    std::optional<protocol::DecodedPacket> try_decode_buffered() {
+        if (read_buffer_.size() < protocol::kLengthHeaderSize) {
+            return std::nullopt;
+        }
+        protocol::LengthHeader h{};
+        std::copy_n(read_buffer_.begin(), h.size(), h.begin());
+        const auto len = protocol::decode_length(h);
+        if (len < protocol::kFixedMetadataSize || len > 1024U * 1024U) {
+            connected_ = false;
+            read_buffer_.clear();
+            return std::nullopt;
+        }
+        const auto frame_size = protocol::kLengthHeaderSize + len;
+        if (read_buffer_.size() < frame_size) {
+            return std::nullopt;
+        }
+        std::vector<char> payload(read_buffer_.begin() + protocol::kLengthHeaderSize,
+                                  read_buffer_.begin() + static_cast<std::ptrdiff_t>(frame_size));
+        read_buffer_.erase(read_buffer_.begin(),
+                           read_buffer_.begin() + static_cast<std::ptrdiff_t>(frame_size));
+        return protocol::decode_payload(payload);
     }
 
-    boost::asio::io_context io_context_; tcp::socket socket_{io_context_}; std::atomic<bool> connected_{false};
+    boost::asio::io_context io_context_; tcp::socket socket_{io_context_}; std::atomic<bool> connected_{false}; std::vector<char> read_buffer_;
 };
 
 class SdkClient::Impl {
@@ -114,7 +132,8 @@ class SdkClient::Impl {
     protocol::DecodedPacket expect(std::uint16_t req, const std::string& body, std::chrono::milliseconds to, std::uint16_t exp) {
         std::lock_guard<std::mutex> io_lock(io_mutex_);
         if (!conn_.is_connected()) return {.error_code = static_cast<std::int32_t>(SdkError::kNotConnected), .body = to_string(SdkError::kNotConnected)};
-        auto rid = next_++; if (!conn_.send(req, rid, body)) return {.error_code = static_cast<std::int32_t>(SdkError::kSendFailed), .body = to_string(SdkError::kSendFailed)};
+        auto rid = next_++;
+        if (!conn_.send(req, rid, body)) return {.error_code = static_cast<std::int32_t>(SdkError::kSendFailed), .body = to_string(SdkError::kSendFailed)};
         auto dl = std::chrono::steady_clock::now() + to;
         while (std::chrono::steady_clock::now() < dl) {
             auto p = conn_.read(std::chrono::milliseconds(100)); if (p.message_id == 0) continue;

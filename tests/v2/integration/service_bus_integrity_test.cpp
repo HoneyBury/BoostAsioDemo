@@ -4,9 +4,11 @@
 //   correlation_id matching, error propagation, trace context propagation.
 
 #include "app/logging.h"
+#include "net/protocol.h"
 #include "v2/auth/jwt_validator.h"
 #include "v2/gateway/demo_server.h"
 #include "v2/gateway/gateway_service_bridge.h"
+#include "v2/gateway/session_adapter.h"
 #include "v2/leaderboard/leaderboard_service.h"
 #include "v2/battle/battle_backend_service.h"
 #include "v2/login/login_backend_service.h"
@@ -39,6 +41,12 @@ namespace {
 
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
+
+struct LoggingBootstrap {
+    LoggingBootstrap() { app::logging::init("project_tests"); }
+};
+
+const LoggingBootstrap kLoggingBootstrap{};
 
 constexpr const char* kRs256PrivateKey = R"(-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDdKPKcv8FJB88T
@@ -947,6 +955,101 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughMatchBackend) {
     EXPECT_EQ(decoded->domain, v3::proto::EnvelopeDomain::kMatch);
     EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kMatchJoinResponse);
     EXPECT_TRUE(decoded->payload.value("queued", false));
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, GatewayBridgeRoundTripsThroughMatchBackend) {
+    v2::match::MatchmakingService service(0);
+    v2::match::MatchmakingConfig cfg;
+    cfg.match_check_interval_ms = 1000;
+    service.set_matchmaking_config(cfg);
+    service.start();
+
+    v2::gateway::GatewayServiceBridge bridge(
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = service.local_port(),
+            .timeout = std::chrono::milliseconds(5000),
+            .connect_timeout = std::chrono::milliseconds(1000),
+        },
+        std::nullopt);
+
+    auto result = bridge.route(
+        v2::service::ServiceId::kMatchmaking,
+        "match_join",
+        R"({"user_id":"alice","mmr":1200,"mode":"1v1"})");
+
+    bridge.shutdown();
+    service.stop();
+
+    ASSERT_TRUE(result.success);
+    auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+    ASSERT_FALSE(doc.is_discarded());
+    EXPECT_EQ(doc.value("status", ""), "ok");
+    EXPECT_TRUE(doc.value("queued", false));
+}
+
+TEST(ServiceBusIntegrity, GatewayActorMatchJoinRoundTripsThroughMatchBackend) {
+    v2::match::MatchmakingService service(0);
+    v2::match::MatchmakingConfig cfg;
+    cfg.match_check_interval_ms = 1000;
+    service.set_matchmaking_config(cfg);
+    service.start();
+
+    v2::runtime::ActorSystem actor_system;
+
+    class CollectingSink final : public v2::gateway::DownstreamSessionWriteSink {
+    public:
+        void deliver(v2::gateway::SessionWrite write) override {
+            writes.push_back(std::move(write));
+        }
+        std::vector<v2::gateway::SessionWrite> writes;
+    } downstream;
+
+    v2::gateway::SessionAdapter adapter(actor_system, &downstream);
+    v2::gateway::Runtime runtime(actor_system, adapter);
+    auto bridge = std::make_unique<v2::gateway::GatewayServiceBridge>(
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = service.local_port(),
+            .timeout = std::chrono::milliseconds(5000),
+            .connect_timeout = std::chrono::milliseconds(1000),
+        },
+        std::nullopt);
+    runtime.set_service_bridge(std::move(bridge));
+    auto gateway = runtime.create_gateway_actor();
+    adapter.bind_gateway(gateway);
+
+    auto login_writes = adapter.handle_incoming(
+        v2::gateway::ClientEnvelope{
+            .session_id = 1,
+            .protocol_message_id = ::net::protocol::kLoginRequest,
+            .request_id = 1,
+            .body = "alice|token:alice|alice",
+        });
+    ASSERT_FALSE(login_writes.empty());
+    ASSERT_EQ(login_writes.back().envelope.protocol_message_id, ::net::protocol::kLoginResponse);
+
+    auto writes = adapter.handle_incoming(
+        v2::gateway::ClientEnvelope{
+            .session_id = 1,
+            .protocol_message_id = ::net::protocol::kMatchJoinRequest,
+            .request_id = 2,
+            .body = "alice|1200|1v1",
+        });
+
+    ASSERT_FALSE(writes.empty());
+    const auto& response = writes.back().envelope;
+    EXPECT_EQ(response.protocol_message_id, ::net::protocol::kMatchJoinResponse);
+    EXPECT_EQ(response.error_code, static_cast<std::int32_t>(::net::protocol::ErrorCode::kOk));
+    EXPECT_NE(response.body.find("\"queued\":true"), std::string::npos);
 
     service.stop();
 }

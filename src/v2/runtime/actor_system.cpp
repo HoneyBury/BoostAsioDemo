@@ -80,7 +80,7 @@ v2::actor::ActorRef ActorSystem::create_actor(
 #ifndef NDEBUG
 bool ActorSystem::is_on_owner_core() const noexcept {
     if (!io_engine_ || !dispatch_owner_core_.has_value()) {
-        // No io_engine or not in a dispatch context â€” cannot verify, assume OK.
+        // No io_engine or not in a dispatch context â€?cannot verify, assume OK.
         return true;
     }
     const auto current = io_engine_->current_core_id();
@@ -114,8 +114,9 @@ void ActorSystem::send(v2::actor::Message message) {
     }
 #endif
 
+    const auto target_actor = message.header.target_actor;
     cell->mailbox.push_back(std::move(message));
-    enqueue_ready_actor(message.header.target_actor, *cell);
+    enqueue_ready_actor(target_actor, *cell);
 }
 
 void ActorSystem::send_after(v2::actor::Message message, std::size_t dispatch_delay) {
@@ -314,8 +315,9 @@ std::size_t ActorSystem::drain_mailbox_and_dispatch(std::uint32_t core_id) {
     for (auto& msg : messages) {
         auto* cell = find_cell(msg.header.target_actor);
         if (cell == nullptr) continue;
+        const auto target_actor = msg.header.target_actor;
         cell->mailbox.push_back(std::move(msg));
-        enqueue_ready_actor(msg.header.target_actor, *cell);
+        enqueue_ready_actor(target_actor, *cell);
     }
 
     return dispatch_ready(core_id);

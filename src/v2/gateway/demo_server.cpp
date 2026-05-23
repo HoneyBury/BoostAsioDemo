@@ -2,6 +2,7 @@
 
 #include "app/logging.h"
 #include "net/protocol.h"
+#include "v2/service/backend_connection.h"
 #include "v3/cluster/cluster_router.h"
 #include "v3/tracing/otel_exporter.h"
 
@@ -13,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -43,6 +45,99 @@ bool is_push_message(std::uint16_t message_id) {
         default:
             return false;
     }
+}
+
+struct LoginBodyParts {
+    std::string user_id;
+    std::string token;
+    std::string display_name;
+};
+
+struct MatchBodyParts {
+    std::string user_id;
+    std::int64_t mmr = 0;
+    std::string mode;
+};
+
+std::optional<LoginBodyParts> parse_login_body(std::string_view body) {
+    const auto first = body.find('|');
+    if (first == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto second = body.find('|', first + 1);
+    if (second == std::string_view::npos) {
+        return std::nullopt;
+    }
+    LoginBodyParts parts;
+    parts.user_id = std::string(body.substr(0, first));
+    parts.token = std::string(body.substr(first + 1, second - first - 1));
+    parts.display_name = std::string(body.substr(second + 1));
+    if (parts.user_id.empty()) {
+        return std::nullopt;
+    }
+    return parts;
+}
+
+std::optional<MatchBodyParts> parse_match_body(std::string_view body) {
+    const auto first = body.find('|');
+    if (first == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto second = body.find('|', first + 1);
+    if (second == std::string_view::npos) {
+        return std::nullopt;
+    }
+    MatchBodyParts parts;
+    parts.user_id = std::string(body.substr(0, first));
+    parts.mode = std::string(body.substr(second + 1));
+    try {
+        parts.mmr = std::stoll(std::string(body.substr(first + 1, second - first - 1)));
+    } catch (...) {
+        return std::nullopt;
+    }
+    if (parts.user_id.empty() || parts.mode.empty()) {
+        return std::nullopt;
+    }
+    return parts;
+}
+
+std::optional<nlohmann::json> parse_leaderboard_submit_body(std::string_view body) {
+    const auto first = body.find('|');
+    if (first == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto second = body.find('|', first + 1);
+    if (second == std::string_view::npos) {
+        return std::nullopt;
+    }
+    try {
+        return nlohmann::json{
+            {"user_id", std::string(body.substr(0, first))},
+            {"display_name", std::string(body.substr(first + 1, second - first - 1))},
+            {"score", std::stoll(std::string(body.substr(second + 1)))},
+        };
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+std::optional<v2::service::BackendEnvelope> send_backend_request(
+    const GatewayServiceBridge::BackendConfig& cfg,
+    v2::service::ServiceId service_id,
+    const std::string& handler_name,
+    const nlohmann::json& payload) {
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = cfg.host,
+        .port = cfg.port,
+        .timeout = cfg.timeout,
+        .connect_timeout = cfg.connect_timeout,
+    });
+    v2::service::BackendEnvelope req;
+    req.target_service = service_id;
+    req.kind = v2::service::MessageKind::kRequest;
+    req.payload = payload.dump();
+    req.message_type = handler_name;
+    return conn.connect() ? conn.send_request(std::move(req)) : std::nullopt;
 }
 
 }  // namespace
@@ -151,7 +246,7 @@ DemoServer::DemoServer(std::uint16_t port,
             register_backend("login", options_.login_backend_config);
             register_backend("room", options_.room_backend_config);
             register_backend("battle", options_.battle_backend_config);
-            register_backend("matchmaking", options_.matchmaking_backend_config);
+            register_backend("match", options_.matchmaking_backend_config);
             register_backend("leaderboard", options_.leaderboard_backend_config);
 
             health_check_running_ = true;
@@ -175,6 +270,7 @@ DemoServer::DemoServer(std::uint16_t port,
 DemoServer::~DemoServer() = default;
 
 void DemoServer::start() {
+    start_gateway_worker();
     if (options_.http_management_port.has_value()) {
         management_io_ = std::make_unique<boost::asio::io_context>();
         http_manager_ = std::make_unique<net::HttpManager>(
@@ -219,6 +315,8 @@ void DemoServer::start() {
 }
 
 void DemoServer::stop() {
+    stop_gateway_worker();
+
     // Stop health check thread and service registrars first
     health_check_running_ = false;
     if (health_check_thread_ && health_check_thread_->joinable()) {
@@ -591,18 +689,20 @@ void DemoServer::do_accept() {
     }
     acceptor_->async_accept([this](std::unique_ptr<v2::io::IoSession> session) {
         if (!session) {
+            do_accept();
             return;
         }
 
-        // Check connection limit before accepting
+        // Check connection limit before accepting.
         if (options_.max_connections.has_value() &&
             io_engine_->total_session_count() >= *options_.max_connections) {
-            // Accept but immediately close with error
             const auto core_id = session->owning_core_id();
             session->start();
-            session->send(net::protocol::kErrorResponse, 0,
+            session->send(net::protocol::kErrorResponse,
+                          0,
                           static_cast<std::int32_t>(net::protocol::ErrorCode::kRateLimited),
-                          "connection_limit_reached", 0);
+                          "connection_limit_reached",
+                          0);
             session->close();
             io_engine_->register_session(core_id);
             io_engine_->unregister_session(core_id);
@@ -614,15 +714,428 @@ void DemoServer::do_accept() {
         auto session_ref = std::shared_ptr<v2::io::IoSession>(std::move(session));
         const auto session_core = session_ref->owning_core_id();
         session_ref->set_packet_handler(
-            [this, session_id](v2::io::IoSession::PacketMessage message) {
-                (void)adapter_.handle_incoming(ClientEnvelope{
-                    .session_id = session_id,
-                    .protocol_message_id = message.message_id,
-                    .request_id = message.request_id,
-                    .error_code = message.error_code,
-                    .flags = message.flags,
-                    .body = std::move(message.body),
-                });
+            [this, session_id, session_ref](v2::io::IoSession::PacketMessage message) {
+                if (message.message_id == net::protocol::kHeartbeatRequest) {
+                    session_ref->send(net::protocol::kHeartbeatResponse,
+                                      message.request_id,
+                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                      "pong",
+                                      message.flags,
+                                      true);
+                    return;
+                }
+                if (message.message_id == net::protocol::kEchoRequest) {
+                    session_ref->send(net::protocol::kEchoResponse,
+                                      message.request_id,
+                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                      std::move(message.body),
+                                      message.flags,
+                                      true);
+                    return;
+                }
+                if (message.message_id == net::protocol::kLoginRequest && runtime_.service_bridge() != nullptr) {
+                    const auto login = parse_login_body(message.body);
+                    if (!login.has_value()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                                          net::protocol::to_string(net::protocol::ErrorCode::kInvalidUserId),
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    nlohmann::json auth_payload{
+                        {"user_id", login->user_id},
+                        {"token", login->token},
+                        {"display_name", login->display_name},
+                    };
+                    auto result = runtime_.service_bridge()->route(v2::service::ServiceId::kLogin,
+                                                                   "login_request",
+                                                                   auth_payload.dump());
+                    if (result.success) {
+                        auto response = nlohmann::json::parse(result.response_payload, nullptr, false);
+                        const auto role = response.is_discarded()
+                            ? v2::auth::Role::kPlayer
+                            : v2::auth::role_from_string(response.value("role", "player"));
+                        runtime_.mark_session_authenticated(session_id, login->user_id, role);
+                        session_ref->send(net::protocol::kLoginResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                          "login_ok:" + login->user_id,
+                                          message.flags,
+                                          true);
+                    } else {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kLoginBackendUnavailable),
+                                          "backend_error",
+                                          message.flags,
+                                          true);
+                    }
+                    return;
+                }
+                if ((message.message_id == net::protocol::kMatchJoinRequest ||
+                     message.message_id == net::protocol::kMatchLeaveRequest ||
+                     message.message_id == net::protocol::kMatchStatusRequest) &&
+                    runtime_.service_bridge() != nullptr) {
+                    const auto match = parse_match_body(message.body);
+                    if (!match.has_value()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                                          "invalid_match_request",
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    std::string handler_name;
+                    std::uint16_t response_id = 0;
+                    nlohmann::json payload{
+                        {"user_id", match->user_id},
+                        {"mode", match->mode},
+                    };
+                    if (message.message_id == net::protocol::kMatchJoinRequest) {
+                        handler_name = "match_join";
+                        response_id = net::protocol::kMatchJoinResponse;
+                        payload["mmr"] = match->mmr;
+                    } else if (message.message_id == net::protocol::kMatchLeaveRequest) {
+                        handler_name = "match_leave";
+                        response_id = net::protocol::kMatchLeaveResponse;
+                    } else {
+                        handler_name = "match_status";
+                        response_id = net::protocol::kMatchStatusResponse;
+                    }
+                    auto cfg = options_.matchmaking_backend_config;
+                    if (!cfg.has_value()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                          "backend_error",
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    auto backend_response = send_backend_request(
+                        *cfg,
+                        v2::service::ServiceId::kMatchmaking,
+                        handler_name,
+                        payload);
+                    if (!backend_response.has_value()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                          "backend_error",
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    auto response = nlohmann::json::parse(backend_response->payload, nullptr, false);
+                    if (response.is_discarded() || response.value("status", "") != "ok") {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                          response.is_discarded() ? "match_failed" : response.value("reason", "match_failed"),
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    session_ref->send(response_id,
+                                      message.request_id,
+                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                      response.dump(),
+                                      message.flags,
+                                      true);
+                    return;
+                }
+                if ((message.message_id == net::protocol::kRoomCreateRequest ||
+                     message.message_id == net::protocol::kRoomJoinRequest ||
+                     message.message_id == net::protocol::kRoomLeaveRequest ||
+                     message.message_id == net::protocol::kRoomReadyRequest) &&
+                    runtime_.service_bridge() != nullptr) {
+                    const auto user_id = runtime_.session_user_id(session_id);
+                    if (user_id.empty()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                                          net::protocol::to_string(net::protocol::ErrorCode::kAuthRequired),
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    auto cfg = options_.room_backend_config;
+                    if (!cfg.has_value()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
+                                          "backend_error",
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+
+                    std::string handler_name;
+                    std::uint16_t response_id = 0;
+                    nlohmann::json payload{{"user_id", user_id}};
+                    if (message.message_id == net::protocol::kRoomCreateRequest) {
+                        handler_name = "room_create";
+                        response_id = net::protocol::kRoomCreateResponse;
+                        payload["room_id"] = message.body;
+                    } else if (message.message_id == net::protocol::kRoomJoinRequest) {
+                        handler_name = "room_join";
+                        response_id = net::protocol::kRoomJoinResponse;
+                        payload["room_id"] = message.body;
+                    } else if (message.message_id == net::protocol::kRoomLeaveRequest) {
+                        handler_name = "room_leave";
+                        response_id = net::protocol::kRoomLeaveResponse;
+                        payload["room_id"] = message.body;
+                    } else {
+                        const bool ready = message.body == "true" || message.body == "1";
+                        const auto room_id = runtime_.session_room_id(session_id);
+                        if (room_id.empty()) {
+                            session_ref->send(net::protocol::kErrorResponse,
+                                              message.request_id,
+                                              static_cast<std::int32_t>(net::protocol::ErrorCode::kNotInRoom),
+                                              net::protocol::to_string(net::protocol::ErrorCode::kNotInRoom),
+                                              message.flags,
+                                              true);
+                            return;
+                        }
+                        handler_name = "room_ready";
+                        response_id = net::protocol::kRoomReadyResponse;
+                        payload["room_id"] = room_id;
+                        payload["ready"] = ready;
+                    }
+
+                    auto backend_response = send_backend_request(
+                        *cfg,
+                        v2::service::ServiceId::kRoom,
+                        handler_name,
+                        payload);
+                    if (!backend_response.has_value()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
+                                          "backend_error",
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    auto response = nlohmann::json::parse(backend_response->payload, nullptr, false);
+                    if (response.is_discarded() || response.value("status", "") != "ok") {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidRoomId),
+                                          response.is_discarded() ? "room_failed" : response.value("reason", "room_failed"),
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    if (message.message_id == net::protocol::kRoomCreateRequest ||
+                        message.message_id == net::protocol::kRoomJoinRequest) {
+                        runtime_.mark_session_room(session_id, payload.value("room_id", ""));
+                    } else if (message.message_id == net::protocol::kRoomLeaveRequest) {
+                        runtime_.clear_session_room(session_id);
+                    }
+                    session_ref->send(response_id,
+                                      message.request_id,
+                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                      payload.value("room_id", ""),
+                                      message.flags,
+                                      true);
+                    return;
+                }
+                if ((message.message_id == net::protocol::kBattleStartRequest ||
+                     message.message_id == net::protocol::kBattleInputRequest) &&
+                    runtime_.service_bridge() != nullptr) {
+                    const auto user_id = runtime_.session_user_id(session_id);
+                    const auto room_id = runtime_.session_room_id(session_id);
+                    if (user_id.empty() || room_id.empty()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                                          net::protocol::to_string(net::protocol::ErrorCode::kAuthRequired),
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    auto cfg = options_.battle_backend_config;
+                    if (!cfg.has_value()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleBackendUnavailable),
+                                          "backend_error",
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+
+                    std::string handler_name;
+                    std::uint16_t response_id = 0;
+                    nlohmann::json payload{{"user_id", user_id}, {"room_id", room_id}};
+                    if (message.message_id == net::protocol::kBattleStartRequest) {
+                        const std::string start_room_id = message.body.empty() ? room_id : message.body;
+                        const std::string battle_id = "battle_" + start_room_id;
+                        handler_name = "battle_create";
+                        response_id = net::protocol::kBattleStartResponse;
+                        payload["room_id"] = start_room_id;
+                        payload["battle_id"] = battle_id;
+                        payload["player_ids"] = nlohmann::json::array({user_id});
+                        for (const auto& [sid, uid] : runtime_.session_users()) {
+                            if (sid != session_id && runtime_.session_room_id(sid) == start_room_id) {
+                                payload["player_ids"].push_back(uid);
+                            }
+                        }
+                    } else {
+                        const auto battle_id = runtime_.battle_id_for_room(room_id);
+                        if (battle_id.empty()) {
+                            session_ref->send(net::protocol::kErrorResponse,
+                                              message.request_id,
+                                              static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted),
+                                              net::protocol::to_string(net::protocol::ErrorCode::kBattleNotStarted),
+                                              message.flags,
+                                              true);
+                            return;
+                        }
+                        const bool finish = message.body.rfind("finish:", 0) == 0;
+                        handler_name = finish ? "battle_finish" : "battle_input";
+                        response_id = net::protocol::kBattleInputResponse;
+                        payload["battle_id"] = battle_id;
+                        if (finish) {
+                            payload["reason"] = message.body.substr(7);
+                        } else {
+                            payload["input_data"] = message.body;
+                            payload["score"] = 0;
+                        }
+                    }
+
+                    auto backend_response = send_backend_request(
+                        *cfg,
+                        v2::service::ServiceId::kBattle,
+                        handler_name,
+                        payload);
+                    if (!backend_response.has_value()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleBackendUnavailable),
+                                          "backend_error",
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    auto response = nlohmann::json::parse(backend_response->payload, nullptr, false);
+                    if (response.is_discarded() || response.value("status", "") != "ok") {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted),
+                                          response.is_discarded() ? "battle_failed" : response.value("reason", "battle_failed"),
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+
+                    std::string body;
+                    if (message.message_id == net::protocol::kBattleStartRequest) {
+                        const auto battle_id = response.value("battle_id", payload.value("battle_id", ""));
+                        runtime_.mark_room_battle(payload.value("room_id", room_id), battle_id);
+                        body = "battle_started:room_id=" + payload.value("room_id", room_id) + ":battle_id=" + battle_id;
+                    } else if (handler_name == "battle_finish") {
+                        body = "battle_end_accepted:" + payload.value("reason", response.value("reason", "user_requested"));
+                    } else {
+                        body = "input_seq:" + std::to_string(response.value("input_seq", 0));
+                    }
+                    session_ref->send(response_id,
+                                      message.request_id,
+                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                      body,
+                                      message.flags,
+                                      true);
+                    return;
+                }
+                if ((message.message_id == net::protocol::kLeaderboardSubmitRequest ||
+                     message.message_id == net::protocol::kLeaderboardTopRequest ||
+                     message.message_id == net::protocol::kLeaderboardRankRequest) &&
+                    runtime_.service_bridge() != nullptr) {
+                    const auto user_id = runtime_.session_user_id(session_id);
+                    if (user_id.empty()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                                          net::protocol::to_string(net::protocol::ErrorCode::kAuthRequired),
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    auto cfg = options_.leaderboard_backend_config;
+                    if (!cfg.has_value()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                          "backend_error",
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+
+                    std::string handler_name;
+                    std::uint16_t response_id = 0;
+                    nlohmann::json payload;
+                    if (message.message_id == net::protocol::kLeaderboardSubmitRequest) {
+                        const auto doc = parse_leaderboard_submit_body(message.body);
+                        if (!doc.has_value()) {
+                            session_ref->send(net::protocol::kErrorResponse,
+                                              message.request_id,
+                                              static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                                              "invalid_leaderboard_submit",
+                                              message.flags,
+                                              true);
+                            return;
+                        }
+                        handler_name = "leaderboard_submit";
+                        response_id = net::protocol::kLeaderboardSubmitResponse;
+                        payload = *doc;
+                    } else if (message.message_id == net::protocol::kLeaderboardTopRequest) {
+                        handler_name = "leaderboard_top";
+                        response_id = net::protocol::kLeaderboardTopResponse;
+                        payload = nlohmann::json{{"k", std::stoull(message.body.empty() ? "10" : message.body)}};
+                    } else {
+                        handler_name = "leaderboard_rank";
+                        response_id = net::protocol::kLeaderboardRankResponse;
+                        payload = nlohmann::json{{"user_id", message.body}};
+                    }
+
+                    auto backend_response = send_backend_request(
+                        *cfg,
+                        v2::service::ServiceId::kLeaderboard,
+                        handler_name,
+                        payload);
+                    if (!backend_response.has_value()) {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                          "backend_error",
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    auto response = nlohmann::json::parse(backend_response->payload, nullptr, false);
+                    if (response.is_discarded() || response.value("status", "") != "ok") {
+                        session_ref->send(net::protocol::kErrorResponse,
+                                          message.request_id,
+                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                          response.is_discarded() ? "leaderboard_failed" : response.value("reason", "leaderboard_failed"),
+                                          message.flags,
+                                          true);
+                        return;
+                    }
+                    session_ref->send(response_id,
+                                      message.request_id,
+                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                      response.dump(),
+                                      message.flags,
+                                      true);
+                    return;
+                }
+                enqueue_packet(session_id, std::move(message));
             });
         session_ref->set_close_handler([this, session_id]() {
             runtime_.on_session_closed(session_id);
@@ -649,6 +1162,9 @@ void DemoServer::do_accept() {
             std::scoped_lock lock(sessions_mutex_);
             sessions_.emplace(session_id, session_ref);
             session_core_by_id_.emplace(session_id, session_core);
+        }
+        {
+            std::scoped_lock lock(sessions_mutex_);
             sessions_.at(session_id)->start();
         }
         {
@@ -661,6 +1177,74 @@ void DemoServer::do_accept() {
 
         do_accept();
     });
+}
+
+void DemoServer::enqueue_packet(SessionId session_id,
+                                v2::io::IoSession::PacketMessage message) {
+    {
+        std::scoped_lock lock(gateway_queue_mutex_);
+        gateway_queue_.emplace_back(session_id, std::move(message));
+    }
+    gateway_queue_cv_.notify_one();
+}
+
+void DemoServer::start_gateway_worker() {
+    {
+        std::scoped_lock lock(gateway_queue_mutex_);
+        gateway_worker_stopping_ = false;
+    }
+    gateway_worker_ = std::make_unique<std::thread>([this]() {
+        for (;;) {
+            try {
+                std::pair<SessionId, v2::io::IoSession::PacketMessage> item;
+                {
+                    std::unique_lock lock(gateway_queue_mutex_);
+                    gateway_queue_cv_.wait(lock, [this]() {
+                        return gateway_worker_stopping_ || !gateway_queue_.empty();
+                    });
+                    if (gateway_queue_.empty()) {
+                        if (gateway_worker_stopping_) {
+                            return;
+                        }
+                        continue;
+                    }
+                    item = std::move(gateway_queue_.front());
+                    gateway_queue_.pop_front();
+                }
+
+                auto& message = item.second;
+                std::scoped_lock handle_lock(gateway_handle_mutex_);
+                (void)adapter_.handle_incoming(ClientEnvelope{
+                    .session_id = item.first,
+                    .protocol_message_id = message.message_id,
+                    .request_id = message.request_id,
+                    .error_code = message.error_code,
+                    .flags = message.flags,
+                    .body = std::move(message.body),
+                });
+            } catch (const std::exception& ex) {
+                LOG_WARN("DemoServer: gateway worker recovered from exception: {}", ex.what());
+            } catch (...) {
+                LOG_WARN("DemoServer: gateway worker recovered from unknown exception");
+            }
+        }
+    });
+}
+
+void DemoServer::stop_gateway_worker() {
+    {
+        std::scoped_lock lock(gateway_queue_mutex_);
+        gateway_worker_stopping_ = true;
+    }
+    gateway_queue_cv_.notify_all();
+    if (gateway_worker_ && gateway_worker_->joinable()) {
+        gateway_worker_->join();
+    }
+    gateway_worker_.reset();
+    {
+        std::scoped_lock lock(gateway_queue_mutex_);
+        gateway_queue_.clear();
+    }
 }
 
 void DemoServer::load_gateway_config() {

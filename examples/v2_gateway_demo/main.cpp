@@ -16,6 +16,7 @@
 #include "v2/io/io_engine.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
+#include "v2/platform/highres_timer.h"
 
 namespace {
 
@@ -133,6 +134,7 @@ parse_backend_config(int argc, char* argv[],
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    const v2::platform::HighResTimer hi_res_timer;
     app::logging::init("v2_gateway_demo");
     app::crash::install_crash_handler();
 

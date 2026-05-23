@@ -1,6 +1,7 @@
 #include "app/config.h"
 #include "app/logging.h"
 #include "v2/room/room_backend_service.h"
+#include "v2/platform/highres_timer.h"
 
 #include <atomic>
 #include <chrono>
@@ -25,6 +26,7 @@ void handle_signal(int) {
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    const v2::platform::HighResTimer hi_res_timer;
     app::logging::init("v2_room_backend");
 
     const auto config_path = app::config::resolve_backend_config_path(

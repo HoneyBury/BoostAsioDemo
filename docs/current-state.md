@@ -51,6 +51,31 @@
 - N1 性能刻度（perf scaling）：`demo/games/tank_battle/tests/perf_test.cpp` 新增 500 实例 × 50  ticks 基准规格（保守阈值 100 TPS），覆盖 2/20/100/500 四级并发刻度用于 CI 性能回归。
 - N5 SDK Python 示例：`demo/games/tank_battle/client_sdk_adapter/python_demo.py` 作为坦克大战 Python SDK demo，走通 connect→login→room→battle→move→finish→leaderboard→disconnect 全生命周期，输出 JSON 摘要并支持 `--n5-demo` 集成到 `verify_tank_battle_demo.py` 验证脚本。
 
+## P0 性能优化轮次（2026-05-23）
+
+本机 Windows Release + 5 后端拓扑下完成 P0 收束，4 项性能修复 + 基线验证：
+
+### 修复项
+- **后端连接池扩容**: `gateway_service_bridge.cpp` 默认池 1→4，压测覆盖 8
+- **战斗路由线程卸载**: `runtime.cpp` 默认工作线程 0→4
+- **CircuitBreaker 线程安全**: `circuit_breaker.h/.cpp` 添加 mutex 保护
+- **Windows 高精度定时器**: `v2::platform::HighResTimer` RAII 封装 `timeBeginPeriod(1)`，消除 15.6ms 休眠粒度
+
+### 基线结果（Release, 3 轮）
+| 场景 | 阈值 | 优化前 | 优化后 |
+|------|------|--------|--------|
+| echo-100 | P99 ≤ 50ms | 100ms ❌ | **1ms** ✅ |
+| echo-1000 | P99 ≤ 50ms | 150ms ❌ | **5ms** ✅ |
+| battle-20 | P99 ≤ 100ms | 750ms ❌ | **10ms** ✅ |
+| battle-100 | P99 ≤ 250ms | 5000ms ❌ | **200ms** ✅ |
+
+后端正向延迟从 ~30ms 降至 ~2.5ms，echo 吞吐最高 17,846/s，battle 吞吐 1,424/s。详见 `docs/performance-baseline-windows-p0.md`。
+
+### 稳定性
+- Unit tests: **772 通过 / 63 跳过（Redis 依赖）/ 0 失败**（Release 构建）
+- Capacity baseline: P99 尾部无明显退化
+- 已知遗留：`project_v2_integration_tests` 因 `resolve_backend` private 访问编译失败（预存问题），Windows 环境下集成测试需修复后方可运行
+
 ## 保留边界
 
 - 2h/8h soak、10K 连接生产容量基线、跨节点 Redis/Raft、更完整 Operator rollback/probe E2E、更完整角色化 RBAC、外部 OTel collector 长稳、Prometheus P99 告警灵敏度多轮实测和 generated gRPC transport PoC 仍属于固定 runner/后续专项；默认生产主链仍是 SDK + TCP gateway + BackendEnvelope + 五后端 + Redis。

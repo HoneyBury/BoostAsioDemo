@@ -2,6 +2,7 @@
 #include "app/config.h"
 #include "app/logging.h"
 #include "v2/match/matchmaking_service.h"
+#include "v2/platform/highres_timer.h"
 #include "v3/cluster/raft.h"
 
 #include <chrono>
@@ -59,6 +60,7 @@ std::optional<v3::cluster::RaftConfig> to_raft_config(
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    const v2::platform::HighResTimer hi_res_timer;
     app::logging::init("v2_match_backend");
 
     const auto config_path = app::config::resolve_backend_config_path(

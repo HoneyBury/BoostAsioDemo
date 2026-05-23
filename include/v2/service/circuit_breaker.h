@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 
 namespace v2::service {
 
@@ -31,9 +32,9 @@ public:
     void on_failure();
 
     [[nodiscard]] bool allow_request();
-    [[nodiscard]] CircuitBreakerState state() const noexcept { return state_; }
-    [[nodiscard]] std::uint32_t failure_count() const noexcept { return failure_count_; }
-    [[nodiscard]] std::uint32_t half_open_requests() const noexcept { return half_open_requests_; }
+    [[nodiscard]] CircuitBreakerState state() const noexcept;
+    [[nodiscard]] std::uint32_t failure_count() const noexcept;
+    [[nodiscard]] std::uint32_t half_open_requests() const noexcept;
 
     void configure(CircuitBreakerOptions options);
     void reset();
@@ -42,6 +43,7 @@ private:
     void transition_to(CircuitBreakerState new_state);
     [[nodiscard]] bool is_timeout_expired() const;
 
+    mutable std::mutex mutex_;
     CircuitBreakerOptions options_;
     CircuitBreakerState state_{CircuitBreakerState::kClosed};
     std::uint32_t failure_count_{0};

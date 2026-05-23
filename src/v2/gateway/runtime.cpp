@@ -168,7 +168,7 @@ v2::actor::ActorRef Runtime::create_gateway_actor() {
     }
     if (battle_route_worker_count_ == 0) {
         battle_route_worker_count_ = read_uint32_override(
-            "V2_BATTLE_ROUTE_WORKERS", 0);
+            "V2_BATTLE_ROUTE_WORKERS", 4);
     }
     start_battle_route_workers();
     auto rate_limiter = std::make_shared<RateLimiter>(load_rate_limiter_config());
@@ -2303,7 +2303,7 @@ bool Runtime::should_emit_battle_frame_push(const std::string& room_id,
 bool Runtime::battle_route_offload_enabled() {
     if (battle_route_worker_count_ == 0) {
         battle_route_worker_count_ = read_uint32_override(
-            "V2_BATTLE_ROUTE_WORKERS", 0);
+            "V2_BATTLE_ROUTE_WORKERS", 4);
     }
     return battle_route_worker_count_ > 0;
 }

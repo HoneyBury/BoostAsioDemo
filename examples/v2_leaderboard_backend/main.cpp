@@ -8,6 +8,7 @@
 #include "v3/persistence/redis_connection_pool.h"
 #include "v3/persistence/redis_leaderboard.h"
 #include "v3/persistence/redis_event_store.h"
+#include "v2/platform/highres_timer.h"
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -64,6 +65,7 @@ std::optional<v3::cluster::RaftConfig> to_raft_config(
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    const v2::platform::HighResTimer hi_res_timer;
     app::logging::init("v2_leaderboard_backend");
 
     const auto config_path = app::config::resolve_backend_config_path(

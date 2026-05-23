@@ -1,3 +1,6 @@
+// windows.h NOMINMAX guard — must precede any include that pulls in windows.h
+#include "v2/platform/highres_timer.h"
+
 #include "app/logging.h"
 #include "net/packet_codec.h"
 #include "net/protocol.h"
@@ -1002,6 +1005,7 @@ nlohmann::json to_json(const BenchResult& r) {
 // ---------------------------------------------------------------------------
 
 int main(int argc, char* argv[]) {
+    const v2::platform::HighResTimer hi_res_timer;
     app::logging::init("v2_gateway_pressure");
 
     const auto config = parse_args(argc, argv);

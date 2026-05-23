@@ -8,6 +8,7 @@ CircuitBreaker::CircuitBreaker(CircuitBreakerOptions options)
     : options_(options) {}
 
 void CircuitBreaker::on_success() {
+    std::lock_guard<std::mutex> lock(mutex_);
     switch (state_) {
         case CircuitBreakerState::kClosed:
             failure_count_ = 0;
@@ -24,6 +25,7 @@ void CircuitBreaker::on_success() {
 }
 
 void CircuitBreaker::on_failure() {
+    std::lock_guard<std::mutex> lock(mutex_);
     switch (state_) {
         case CircuitBreakerState::kClosed:
             ++failure_count_;
@@ -40,6 +42,7 @@ void CircuitBreaker::on_failure() {
 }
 
 bool CircuitBreaker::allow_request() {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (state_ == CircuitBreakerState::kOpen) {
         if (is_timeout_expired()) {
             transition_to(CircuitBreakerState::kHalfOpen);
@@ -50,7 +53,23 @@ bool CircuitBreaker::allow_request() {
     return true;
 }
 
+CircuitBreakerState CircuitBreaker::state() const noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return state_;
+}
+
+std::uint32_t CircuitBreaker::failure_count() const noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return failure_count_;
+}
+
+std::uint32_t CircuitBreaker::half_open_requests() const noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return half_open_requests_;
+}
+
 void CircuitBreaker::configure(CircuitBreakerOptions options) {
+    std::lock_guard<std::mutex> lock(mutex_);
     options_ = options;
     reset();
 }

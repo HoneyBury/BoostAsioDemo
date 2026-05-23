@@ -69,6 +69,15 @@
 - **EchoPlugin**（`examples/realtime_echo_plugin/`）：SPI 最小示例
 - **TankPlugin**（`demo/games/tank_battle/`）：独立仿真适配 demo
 
+### R7 模块收束（2026-05-23）
+
+将此前仅 demo/unit-test 覆盖的模块接入生产主流程：
+
+- **P0 持久化层**：`persistence/*.cpp` 编译入 `project_v2`，`ReplayStorage` 接入 `BattleBackendService`
+- **P1 内存架构**：`BumpArena` + `ObjectPool<EntityHandle>` 注入 `SimpleWorld` ECS 实体管理
+- **P1+P2 诊断**：`DiagnosticsManager`/`HealthCheck` 注入 gateway `Runtime`，`diag_wrap` 覆盖后端 handler
+- **P1+P2 鉴权**：`Authorizer` RBAC 集成 gateway 消息分发路径
+
 ### 新增 ECS 系统
 
 当前 ECS 管线已从最初规划的 7 系统扩展到 9 系统：

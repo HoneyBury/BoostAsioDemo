@@ -57,6 +57,37 @@
 - 主线定位为企业级高性能实时服务框架。坦克大战和后续游戏/实时系统样例必须放在 `demo/games/` 作为业务验证 demo，不能把碰撞、地图、胜负、得分公式等业务规则写入 gateway、login、room、leaderboard 或公共 SDK。框架与业务边界以 `docs/realtime-framework-modernization-plan.md`、`docs/realtime-framework-module-boundaries.md`、`docs/realtime-framework-sdk-boundary.md` 和 `demo/games/README.md` 为准。
 - 默认 CI/release workflow 使用有界 smoke 门禁，避免长时间占用终端或 runner。
 - 文档出现编码显示异常时，以 UTF-8 文件内容和 CI 校验结果为准，PowerShell 控制台乱码不代表文件编码错误。
+- `include/v2/gateway/runtime.h` 在 Windows Dev Drive 上存在 OS 级文件锁（Error 32），已通过 `include_override/` 目录 + CMake 包含路径优先策略绕过，锁文件需系统重启后才能释放。
+
+## R7 模块收束（2026-05-23）
+
+基于”模块已实现但未接入生产主流程“的分析，对以下模块进行了收束，将 demo/unit-test-only 的功能接入实际项目路径：
+
+### P0 持久化层 — 编译接入生产构建
+
+- `persistence/writebehind.cpp`、`persistence/replay_storage.cpp`、`persistence/storage_engine_sqlite.cpp`、`persistence/player_data.cpp` 已加入 `project_v2` 静态库构建
+- `BOOST_BUILD_SQLITE` CMake 选项：启用后自动检测 sqlite3 并定义 `HAS_SQLITE`
+- `ReplayStorage` 已接入 `BattleBackendService`：战斗结算时自动保存 replay
+- 接入点：`examples/v2_battle_backend/main.cpp` 通过 `set_replay_storage_dir()` 配置 replay 存储目录
+
+### P1 内存架构 — ECS Entity 存储集成
+
+- `BumpArena` 注入 `SimpleWorld`：`create_entity()` 优先从 arena 分配 `EntityStorage`，arena 不可用时回退到堆分配
+- `ObjectPool<EntityHandle>` 接入实体销毁路径：`destroy_entity()` 将 handle 回收到池中
+- Entity 生命周期现在完全由 arena/pool 管理，不再依赖单 `generations_` map
+
+### P1+P2 诊断 & 鉴权 — Gateway Runtime 集成
+
+- `DiagnosticsManager` / `HealthCheck` 通过 forward declaration + `unique_ptr` 注入 `Runtime`，避免循环依赖
+- `DemoServer` 已将 `BackendMetrics` 和 `ServiceRegistry` 数据源接入诊断
+- `LoginBackendService` / `RoomBackendService` 全部 handler 使用 `diag_wrap` 包装（try-catch + SPDLOG）
+- `Authorizer` RBAC 接入消息分发：`Runtime::handle()` 中 `is_session_allowed()` 在 JWT 验证后执行角色化权限检查
+- `set_session_role()` / `is_session_allowed()` 接口已暴露，Player 默认角色新增 match（6001/6004/6006）和 leaderboard（7001/7003/7005）消息 ID
+
+### 未解决问题
+
+- `include/v2/gateway/runtime.h` OS 级文件锁需系统重启后才能释放
+- `project_v2_unit_tests.exe` 存在预先存在的 SdkClient 链接失败（`error_paths_test.obj`），不影响项目库和可执行文件构建
 
 ## 当前阶段结论
 

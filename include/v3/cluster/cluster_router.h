@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -114,6 +115,21 @@ public:
     /// Start draining a node (stop routing new requests, wait for existing).
     void start_drain(const std::string& service_name, const NodeId& node);
 
+    // ── Remote routing ────────────────────────────────────────────────
+
+    /// Send a message to an actor on a remote node.
+    /// @param node_id  Target node name (NodeId::node_name)
+    /// @param actor_id Target actor ID as a decimal string
+    /// @param payload  Message content
+    /// @return true if the message was accepted for delivery
+    bool send_to(const std::string& node_id,
+                 const std::string& actor_id,
+                 const std::string& payload);
+
+    /// Set the local node ID so the router can distinguish local vs. remote
+    /// nodes for RemoteActorRef creation.
+    void set_local_node_id(NodeId node);
+
     // ── Stats ─────────────────────────────────────────────────────────
 
     [[nodiscard]] std::size_t total_services() const;
@@ -130,6 +146,10 @@ private:
     std::unordered_map<std::string, RouteEntry> routes_;
     std::unordered_map<std::string, std::uint32_t> failure_counts_;
     std::unordered_map<std::string, std::uint32_t> success_counts_;
+
+    struct RemoteRoutingData;
+    std::unique_ptr<RemoteRoutingData> remote_routing_;
+    std::optional<NodeId> local_node_id_;
 };
 
 }  // namespace v3::cluster

@@ -319,6 +319,9 @@ void fill_backend_from_store(const ConfigStore& store, BackendServiceConfig& con
     if (const auto value = store.get_uint32("battle.max_frames")) {
         config.battle_max_frames = *value;
     }
+    if (const auto value = store.get_string("battle.archive_path")) {
+        config.archive_path = *value;
+    }
     if (store.get_bool("tls.enabled").value_or(false)) {
         auto tls = v3::cluster::default_tls_config();
         if (const auto value = store.get_string("tls.cert_chain_path")) {
@@ -450,6 +453,9 @@ void apply_backend_env_overlay(const std::string& service_name, BackendServiceCo
 
     if (const auto value = read_uint32(env_value("V2_BATTLE_MAX_FRAMES"))) {
         config.battle_max_frames = *value;
+    }
+    if (const auto value = env_value("V2_BATTLE_ARCHIVE_PATH")) {
+        config.archive_path = *value;
     }
 }
 

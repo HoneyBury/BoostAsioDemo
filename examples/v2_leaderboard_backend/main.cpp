@@ -7,6 +7,7 @@
 #include "v3/persistence/redis_client.h"
 #include "v3/persistence/redis_connection_pool.h"
 #include "v3/persistence/redis_leaderboard.h"
+#include "v3/persistence/redis_event_store.h"
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -109,7 +110,17 @@ int main(int argc, char* argv[]) {
             auto redis_lb = std::make_shared<v3::persistence::RedisLeaderboard>(
                 std::move(lb_config), pool);
             service.set_redis_leaderboard(std::move(redis_lb));
-            std::cout << "Redis leaderboard enabled ("
+
+            // Wire RedisEventStore for score event recording
+            v3::persistence::RedisEventStore::Config es_config;
+            es_config.redis.host = config.redis.host;
+            es_config.redis.port = config.redis.port;
+            es_config.redis.password = config.redis.password;
+            auto event_store = std::make_shared<v3::persistence::RedisEventStore>(
+                std::move(es_config));
+            service.set_redis_event_store(std::move(event_store));
+
+            std::cout << "Redis leaderboard and event store enabled ("
                       << config.redis.host << ":" << config.redis.port << ")"
                       << std::endl;
         } else {

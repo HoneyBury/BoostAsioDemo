@@ -4,8 +4,6 @@
 
 namespace v2::service {
 
-namespace {
-
 const std::vector<ServiceManifest>& all_manifests() {
     static const std::vector<ServiceManifest> manifests = {
         gateway_manifest(),
@@ -15,8 +13,6 @@ const std::vector<ServiceManifest>& all_manifests() {
     };
     return manifests;
 }
-
-}  // namespace
 
 ServiceManifest gateway_manifest() {
     return ServiceManifest{

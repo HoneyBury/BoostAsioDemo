@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 
+#include "v2/data/cached_data_store.h"
 #include "v3/cluster/tls_config.h"
 
 namespace v2::battle {
@@ -17,6 +19,18 @@ public:
     void stop();
     [[nodiscard]] std::uint16_t local_port() const;
     void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config);
+
+    /// Select the instance plugin type used for all battle instances.
+    /// Supported values: "battle" (default, uses BattleInstancePlugin),
+    /// "tank_battle" (uses TankBattlePlugin).
+    void set_instance_type(const std::string& type);
+
+    /// Set an archive store for persisting battle snapshots and results.
+    void set_archive_store(std::unique_ptr<v2::data::CachedBattleDataStore> store);
+
+    /// Convenience: creates a JsonFileBattleDataStore wrapped in a
+    /// CachedBattleDataStore at the given path and sets it as the archive store.
+    void set_archive_path(const std::string& path);
 
 private:
     class Impl;

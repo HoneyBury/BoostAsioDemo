@@ -104,6 +104,7 @@ struct BackendServiceConfig {
     RedisServiceConfig redis;
     RaftServiceConfig raft;
     std::optional<std::uint32_t> battle_max_frames;
+    std::string archive_path;
     std::optional<v3::cluster::TlsSessionConfig> tls_config;
 };
 

@@ -17,6 +17,7 @@ struct RaftConfig;
 
 namespace v3::persistence {
 class RedisLeaderboard;
+class RedisEventStore;
 }  // namespace v3::persistence
 
 namespace v2::leaderboard {
@@ -40,6 +41,10 @@ public:
     // v3.2.0: Set Redis-backed leaderboard. Falls back to in-memory if unset.
     void set_redis_leaderboard(
         std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb);
+
+    // v3.5.0: Set Redis-backed event store for score events. Optional.
+    void set_redis_event_store(
+        std::shared_ptr<v3::persistence::RedisEventStore> event_store);
 
     // v3.4.0: Optional Raft configuration for singleton/leadered deployments.
     void set_raft_config(v3::cluster::RaftConfig config);

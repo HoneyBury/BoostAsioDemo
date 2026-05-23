@@ -2,14 +2,27 @@
 
 #include "v3/cluster/cluster_router.h"
 
+#include "v3/cluster/remote_actor.h"
+
+#include "app/audit_log.h"
+#include "app/logging.h"
+
 #include <algorithm>
+#include <chrono>
 #include <string>
 #include <vector>
 
 namespace v3::cluster {
 
+struct ClusterRouter::RemoteRoutingData {
+    // RemoteActorRefs keyed by NodeId::node_name.
+    // Protected by ClusterRouter::mutex_.
+    std::unordered_map<std::string, RemoteActorRef> refs;
+};
+
 ClusterRouter::ClusterRouter(HealthCheckConfig config)
-    : config_(std::move(config)) {}
+    : config_(std::move(config)),
+      remote_routing_(std::make_unique<RemoteRoutingData>()) {}
 
 ClusterRouter::~ClusterRouter() = default;
 
@@ -21,6 +34,14 @@ void ClusterRouter::register_service(ServiceInstance instance) {
         instance.state = ServiceState::kHealthy;
     }
 
+    // Capture node info before instance is moved into the route table
+    const bool is_remote_node = local_node_id_.has_value() &&
+                                instance.node.node_name != local_node_id_->node_name;
+    const auto node_name = instance.node.node_name;
+    const auto node_host = instance.node.host;
+    const auto node_port = instance.node.port;
+    const auto svc_name = instance.service_name;
+
     auto& route = routes_[instance.service_name];
     route.service_name = instance.service_name;
 
@@ -29,6 +50,24 @@ void ClusterRouter::register_service(ServiceInstance instance) {
         *existing = std::move(instance);
     } else {
         route.instances.push_back(std::move(instance));
+    }
+
+    // Create a RemoteActorRef when a remote node is first discovered
+    if (is_remote_node && remote_routing_->refs.find(node_name) == remote_routing_->refs.end()) {
+        NodeId remote_node;
+        remote_node.node_name = node_name;
+        remote_node.host = node_host;
+        remote_node.port = node_port;
+
+        remote_routing_->refs.emplace(
+            node_name,
+            RemoteActorRef::remote(0, remote_node));
+
+        AUDIT_LOG("cluster_remote_node_discovered",
+                  "node=" + node_name +
+                  " host=" + node_host +
+                  ":" + std::to_string(node_port) +
+                  " service=" + svc_name);
     }
 }
 
@@ -141,6 +180,89 @@ void ClusterRouter::start_drain(
         inst->state = ServiceState::kDraining;
         inst->last_heartbeat = std::chrono::steady_clock::now();
     }
+}
+
+void ClusterRouter::set_local_node_id(NodeId node) {
+    std::lock_guard lock(mutex_);
+    local_node_id_ = std::move(node);
+}
+
+bool ClusterRouter::send_to(const std::string& node_id,
+                            const std::string& actor_id,
+                            const std::string& payload) {
+    // Parse the target actor ID from its decimal string representation
+    v2::actor::ActorId target_actor = 0;
+    try {
+        target_actor = static_cast<v2::actor::ActorId>(std::stoull(actor_id));
+    } catch (const std::exception&) {
+        LOG_WARN("ClusterRouter::send_to: invalid actor_id '{}'", actor_id);
+        AUDIT_LOG("cluster_send_to_invalid_actor",
+                  "node=" + node_id + " actor_id=" + actor_id);
+        return false;
+    }
+
+    std::lock_guard lock(mutex_);
+
+    // Prevent sending via the remote path to a node that is actually local
+    if (local_node_id_.has_value() && local_node_id_->node_name == node_id) {
+        LOG_WARN("ClusterRouter::send_to: node '{}' is local, use local delivery",
+                 node_id);
+        return false;
+    }
+
+    // Look up or lazily create a RemoteActorRef for the target node
+    auto ref_it = remote_routing_->refs.find(node_id);
+    if (ref_it == remote_routing_->refs.end()) {
+        // Search the route table for the node's host/port details
+        NodeId target_node;
+        bool found = false;
+        for (const auto& [name, route] : routes_) {
+            (void)name;
+            for (const auto& inst : route.instances) {
+                if (inst.node.node_name == node_id) {
+                    target_node = inst.node;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+
+        if (!found) {
+            LOG_WARN("ClusterRouter::send_to: unknown node '{}'", node_id);
+            AUDIT_LOG("cluster_send_to_unknown_node", "node=" + node_id);
+            return false;
+        }
+
+        ref_it = remote_routing_->refs
+                     .emplace(node_id,
+                              RemoteActorRef::remote(target_actor, target_node))
+                     .first;
+
+        AUDIT_LOG("cluster_remote_ref_created",
+                  "node=" + target_node.node_name +
+                      " host=" + target_node.host +
+                      ":" + std::to_string(target_node.port));
+    }
+
+    // Build the actor message
+    v2::actor::Message msg;
+    msg.header.kind = v2::actor::MessageKind::kUser;
+    msg.header.target_actor = target_actor;
+    msg.header.created_at =
+        static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+    msg.payload = payload;
+
+    ref_it->second.tell(std::move(msg));
+
+    AUDIT_LOG("cluster_send_to",
+              "node=" + node_id +
+                  " actor_id=" + actor_id +
+                  " payload_size=" + std::to_string(payload.size()));
+    return true;
 }
 
 std::size_t ClusterRouter::total_services() const {

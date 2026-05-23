@@ -20,6 +20,9 @@ struct ServiceManifest {
 [[nodiscard]] ServiceManifest room_manifest();
 [[nodiscard]] ServiceManifest battle_manifest();
 
+/// Return all known service manifests.
+[[nodiscard]] const std::vector<ServiceManifest>& all_manifests();
+
 [[nodiscard]] ServiceId owner_of(const std::string& state_name);
 [[nodiscard]] ServiceId handler_of(const std::string& message_type);
 

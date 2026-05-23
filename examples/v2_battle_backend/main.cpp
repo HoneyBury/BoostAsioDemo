@@ -34,11 +34,32 @@ int main(int argc, char* argv[]) {
         config.port = static_cast<std::uint16_t>(std::stoi(argv[1]));
     }
 
+    // Parse optional --plugin argument
+    std::string plugin_type = "battle";
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--plugin" && i + 1 < argc) {
+            plugin_type = argv[i + 1];
+        }
+    }
+
     std::signal(SIGINT, handle_signal);
     std::signal(SIGTERM, handle_signal);
 
     v2::battle::BattleBackendService service(config.port);
     service.set_tls_config(config.tls_config);
+    if (plugin_type == "tank_battle") {
+        service.set_instance_type("tank_battle");
+        std::cout << "v2_battle_backend: using TankBattlePlugin" << std::endl;
+    } else {
+        std::cout << "v2_battle_backend: using BattleInstancePlugin (default)" << std::endl;
+    }
+
+    if (!config.archive_path.empty()) {
+        service.set_archive_path(config.archive_path);
+        std::cout << "v2_battle_backend: archive path set to "
+                  << config.archive_path << std::endl;
+    }
+
     g_service = &service;
 
     service.start();

@@ -9,6 +9,7 @@
 #include "v2/service/envelope_adapter.h"
 #include "v3/cluster/raft.h"
 #include "v3/persistence/redis_leaderboard.h"
+#include "v3/persistence/redis_event_store.h"
 
 #include <nlohmann/json.hpp>
 
@@ -220,6 +221,11 @@ public:
         redis_lb_ = std::move(redis_lb);
     }
 
+    void set_redis_event_store(
+        std::shared_ptr<v3::persistence::RedisEventStore> event_store) {
+        event_store_ = std::move(event_store);
+    }
+
     void set_raft_config(v3::cluster::RaftConfig config) {
         raft_config_ = std::move(config);
     }
@@ -251,6 +257,7 @@ private:
     std::optional<v3::cluster::TlsSessionConfig> tls_config_;
     SortedSet leaderboard_;
     std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb_;
+    std::shared_ptr<v3::persistence::RedisEventStore> event_store_;
     v3::cluster::RaftConfig raft_config_;
     std::unique_ptr<v3::cluster::RaftNode> raft_node_;
     std::atomic<bool> leader_{false};
@@ -469,9 +476,44 @@ private:
     void apply_submit(const std::string& user_id,
                       const std::string& display_name,
                       std::int64_t score) {
+        // Capture previous score before submission
+        std::int64_t previous_score = 0;
+        bool had_previous_score = false;
+        if (redis_lb_ && redis_lb_->available()) {
+            if (auto entry = redis_lb_->rank_of(user_id); entry.has_value()) {
+                previous_score = entry->score;
+                had_previous_score = true;
+            }
+        }
+        if (!had_previous_score) {
+            if (auto entry = leaderboard_.rank_of(user_id); entry.has_value()) {
+                previous_score = entry->score;
+            }
+        }
+
         leaderboard_.submit(user_id, display_name, score);
         if (redis_lb_ && redis_lb_->available()) {
             redis_lb_->submit(user_id, display_name, score);
+        }
+
+        // Record score event (optional — Redis might be down)
+        if (event_store_) {
+            nlohmann::json payload{
+                {"user_id", user_id},
+                {"score", score},
+                {"leaderboard_id", "global"},
+                {"display_name", display_name},
+                {"previous_score", previous_score},
+            };
+            v3::persistence::EventRecord event;
+            event.event_type = "score_submitted";
+            event.aggregate_id = "leaderboard:global";
+            event.payload = payload.dump();
+            try {
+                event_store_->append(std::move(event));
+            } catch (const std::exception&) {
+                // Redis might be down — leaderboard should still function
+            }
         }
     }
 
@@ -518,6 +560,11 @@ std::uint16_t LeaderboardService::local_port() const { return impl_->local_port(
 void LeaderboardService::set_redis_leaderboard(
     std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb) {
     impl_->set_redis_leaderboard(std::move(redis_lb));
+}
+
+void LeaderboardService::set_redis_event_store(
+    std::shared_ptr<v3::persistence::RedisEventStore> event_store) {
+    impl_->set_redis_event_store(std::move(event_store));
 }
 
 void LeaderboardService::set_raft_config(v3::cluster::RaftConfig config) {

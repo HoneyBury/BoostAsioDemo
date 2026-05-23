@@ -1,8 +1,10 @@
 #include "v2/gateway/gateway_service_bridge.h"
 
+#include "app/audit_log.h"
 #include "app/logging.h"
 #include "v2/config/feature_flags.h"
 #include "v2/service/service_id.h"
+#include "v2/service/service_manifest.h"
 #include "v2/tracing/trace_context.h"
 #include "v3/cluster/cluster_router.h"
 #include "v3/cluster/consistent_hash.h"
@@ -138,6 +140,41 @@ GatewayServiceBridge::GatewayServiceBridge(
     if (leaderboard_config) {
         leaderboard_slot_.config = std::move(*leaderboard_config);
     }
+
+    // Log all known service manifests and validate configured backends
+    const auto& manifests = v2::service::all_manifests();
+    LOG_INFO("GatewayServiceBridge: loaded {} service manifests", manifests.size());
+    for (const auto& m : manifests) {
+        LOG_INFO("GatewayServiceBridge: manifest service={} desc=\"{}\"",
+                 v2::service::to_string(m.service_id), m.description);
+        AUDIT_LOG("service_manifest_loaded",
+                  "service=" + std::string(v2::service::to_string(m.service_id)) +
+                      " desc=" + m.description);
+    }
+    // Validate each configured backend against the known manifest list
+    auto validate_backend = [&](const char* name,
+                                v2::service::ServiceId sid,
+                                const std::optional<BackendConfig>& cfg) {
+        if (!cfg.has_value()) return;
+        bool matched = false;
+        for (const auto& m : manifests) {
+            if (m.service_id == sid) {
+                matched = true;
+                LOG_INFO("GatewayServiceBridge: backend '{}' matches manifest: {}",
+                         name, m.description);
+                break;
+            }
+        }
+        if (!matched) {
+            LOG_INFO("GatewayServiceBridge: backend '{}' has no dedicated manifest",
+                     name);
+        }
+    };
+    validate_backend("login",     v2::service::ServiceId::kLogin,       login_config);
+    validate_backend("room",      v2::service::ServiceId::kRoom,        room_config);
+    validate_backend("battle",    v2::service::ServiceId::kBattle,      battle_config);
+    validate_backend("match",     v2::service::ServiceId::kMatchmaking, matchmaking_config);
+    validate_backend("leaderboard", v2::service::ServiceId::kLeaderboard, leaderboard_config);
 }
 
 GatewayServiceBridge::~GatewayServiceBridge() { shutdown(); }
@@ -256,6 +293,19 @@ GatewayServiceBridge::resolve_backend(
         if (chosen_node.has_value()) {
             LOG_INFO("GatewayServiceBridge: resolved {} via cluster router → {}:{}",
                      svc_name, chosen_node->host, chosen_node->port);
+
+            // Cross-reference resolved backend against known service manifests
+            const auto& manifests = v2::service::all_manifests();
+            for (const auto& m : manifests) {
+                if (m.service_id == service) {
+                    AUDIT_LOG("service_discovery_resolved",
+                              "service=" + svc_name +
+                                  " node=" + chosen_node->node_name +
+                                  " manifest_desc=" + m.description);
+                    break;
+                }
+            }
+
             return ResolvedBackend{
                 .config = BackendConfig{.host = chosen_node->host, .port = chosen_node->port},
                 .connection_key = connection_key_for(*chosen_node),

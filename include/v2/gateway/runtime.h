@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -16,6 +17,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include "v2/auth/authorizer.h"
+#include "v2/gateway/backend_metrics.h"
+#include "v2/service/service_registry.h"
 #include "v2/gateway/gateway_actor.h"
 #include "v2/gateway/gateway_service_bridge.h"
 #include "v2/gateway/runtime_helpers.h"
@@ -26,6 +30,11 @@
 #include "v2/player/player_actor.h"
 #include "v2/room/room_actor.h"
 #include "v2/runtime/actor_system.h"
+
+namespace v2::diagnostics {
+class DiagnosticsManager;
+class HealthCheck;
+}  // namespace v2::diagnostics
 
 namespace v2::gateway {
 
@@ -49,8 +58,7 @@ public:
 
     Runtime(v2::runtime::ActorSystem& actor_system,
             SessionWriteSink& write_sink,
-            BattleArchiveSink* archive_sink = nullptr)
-        : actor_system_(actor_system), write_sink_(write_sink), archive_sink_(archive_sink) {}
+            BattleArchiveSink* archive_sink = nullptr);
     ~Runtime();
 
     [[nodiscard]] v2::actor::ActorRef create_gateway_actor();
@@ -66,6 +74,24 @@ public:
     void set_archive_sink(BattleArchiveSink* sink) noexcept { archive_sink_ = sink; }
     void set_service_bridge(std::unique_ptr<GatewayServiceBridge> bridge);
     [[nodiscard]] GatewayServiceBridge* service_bridge() const noexcept { return bridge_.get(); }
+
+    // ── Diagnostics integration ─────────────────────────────────────────
+    [[nodiscard]] v2::diagnostics::DiagnosticsManager& diagnostics() noexcept { return *diagnostics_; }
+    [[nodiscard]] const v2::diagnostics::DiagnosticsManager& diagnostics() const noexcept { return *diagnostics_; }
+    [[nodiscard]] v2::diagnostics::HealthCheck& health_check() noexcept { return *health_check_; }
+    [[nodiscard]] const v2::diagnostics::HealthCheck& health_check() const noexcept { return *health_check_; }
+
+    // Wire diagnostics data sources. These delegate to the internal DiagnosticsManager.
+    void set_backend_metrics_for_diagnostics(std::shared_ptr<BackendMetrics> m);
+    void set_service_registry_for_diagnostics(std::shared_ptr<v2::service::ServiceRegistry> r);
+
+    // ── Authorizer integration ─────────────────────────────────────────
+    // Store the role for a session after successful authentication.
+    void set_session_role(SessionId session_id, v2::auth::Role role);
+    // Check if a session is authorized for a given message. If no role is
+    // stored for the session, the check is skipped (allowed by default).
+    [[nodiscard]] bool is_session_allowed(SessionId session_id,
+                                          std::uint16_t protocol_message_id) const;
 
     // ── Match-found handling ──────────────────────────────────────────
     // Called when a match is found (either via MatchFoundCallback in-process
@@ -170,6 +196,13 @@ private:
     BattleArchiveSink* archive_sink_ = nullptr;
     std::unique_ptr<GatewayServiceBridge> bridge_;
     SchemaValidator schema_validator_;
+
+    // ── Diagnostics & health check ─────────────────────────────────────
+    std::unique_ptr<v2::diagnostics::DiagnosticsManager> diagnostics_;
+    std::unique_ptr<v2::diagnostics::HealthCheck> health_check_;
+
+    // ── Session role tracking (Authorizer) ──────────────────────────────
+    std::unordered_map<SessionId, v2::auth::Role> session_roles_;
 };
 
 }  // namespace v2::gateway

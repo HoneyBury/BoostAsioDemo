@@ -6,18 +6,45 @@
 namespace v2::ecs {
 
 SimpleWorld::SimpleWorld() = default;
-SimpleWorld::~SimpleWorld() = default;
+
+SimpleWorld::~SimpleWorld() {
+    for (auto& [id, storage] : entity_storage_) {
+        if (storage && !storage->arena_allocated) {
+            delete storage;
+        }
+    }
+}
+
+void SimpleWorld::set_allocator(std::unique_ptr<v2::memory::BumpArena> arena) {
+    arena_ = std::move(arena);
+}
 
 EntityHandle SimpleWorld::create_entity() {
     const auto entity_id = next_entity_id_++;
-    auto& generation = generations_[entity_id];
-    if (generation == 0) {
-        generation = 1;
+
+    // Allocate entity storage (arena if available, otherwise heap)
+    EntityStorage* storage = nullptr;
+    if (arena_) {
+        storage = static_cast<EntityStorage*>(arena_->allocate(sizeof(EntityStorage)));
     }
-    return EntityHandle{
-        .id = entity_id,
-        .generation = generation,
-    };
+    if (storage) {
+        storage->generation = 1;
+        storage->arena_allocated = true;
+    } else {
+        storage = new EntityStorage{1, false};
+    }
+    entity_storage_[entity_id] = storage;
+
+    // Acquire handle from pool
+    EntityHandle* slot = handle_pool_.acquire();
+    if (slot) {
+        slot->id = entity_id;
+        slot->generation = storage->generation;
+        handle_map_[entity_id] = slot;
+        return *slot;
+    }
+
+    return EntityHandle{.id = entity_id, .generation = storage->generation};
 }
 
 void SimpleWorld::destroy_entity(EntityHandle entity) {
@@ -28,15 +55,30 @@ void SimpleWorld::destroy_entity(EntityHandle entity) {
         (void)type_id;
         store.components.erase(entity.id);
     }
-    ++generations_[entity.id];
+
+    // Free entity storage
+    auto sit = entity_storage_.find(entity.id);
+    if (sit != entity_storage_.end()) {
+        if (!sit->second->arena_allocated) {
+            delete sit->second;
+        }
+        entity_storage_.erase(sit);
+    }
+
+    // Release handle back to pool
+    auto hit = handle_map_.find(entity.id);
+    if (hit != handle_map_.end()) {
+        handle_pool_.release(hit->second);
+        handle_map_.erase(hit);
+    }
 }
 
 bool SimpleWorld::exists(EntityHandle entity) const {
     if (!entity.valid()) {
         return false;
     }
-    const auto it = generations_.find(entity.id);
-    return it != generations_.end() && it->second == entity.generation;
+    const auto it = entity_storage_.find(entity.id);
+    return it != entity_storage_.end() && it->second->generation == entity.generation;
 }
 
 void SimpleWorld::tick(const FrameContext& ctx) {

@@ -1,6 +1,8 @@
 #include "v2/gateway/runtime.h"
 
 #include "net/protocol.h"
+#include "v2/diagnostics/diagnostics_manager.h"
+#include "v2/diagnostics/health_check.h"
 #include "v2/gateway/battle_data_store.h"
 #include "v2/gateway/battle_protocol_codec.h"
 #include "v2/gateway/gateway_command_parser.h"
@@ -119,8 +121,44 @@ std::string build_replay_payload(const v2::battle::BattleSettlementPreparedMsg& 
 
 }  // namespace
 
+Runtime::Runtime(v2::runtime::ActorSystem& actor_system,
+                 SessionWriteSink& write_sink,
+                 BattleArchiveSink* archive_sink)
+    : actor_system_(actor_system)
+    , write_sink_(write_sink)
+    , archive_sink_(archive_sink)
+    , diagnostics_(std::make_unique<v2::diagnostics::DiagnosticsManager>())
+    , health_check_(std::make_unique<v2::diagnostics::HealthCheck>()) {}
+
 Runtime::~Runtime() {
     stop_battle_route_workers();
+}
+
+void Runtime::set_session_role(SessionId session_id, v2::auth::Role role) {
+    session_roles_[session_id] = role;
+}
+
+bool Runtime::is_session_allowed(SessionId session_id,
+                                  std::uint16_t protocol_message_id) const {
+    auto it = session_roles_.find(session_id);
+    if (it == session_roles_.end()) {
+        // No role stored — skip the check (allowed by default).
+        // This covers unauthenticated sessions and the local auth path.
+        return true;
+    }
+    return v2::auth::Authorizer::instance().is_allowed(it->second, protocol_message_id);
+}
+
+void Runtime::set_backend_metrics_for_diagnostics(
+    std::shared_ptr<BackendMetrics> m) {
+    diagnostics_->set_backend_metrics(m);
+    health_check_->set_backend_metrics(std::move(m));
+}
+
+void Runtime::set_service_registry_for_diagnostics(
+    std::shared_ptr<v2::service::ServiceRegistry> r) {
+    diagnostics_->set_service_registry(r);
+    health_check_->set_service_registry(std::move(r));
 }
 
 v2::actor::ActorRef Runtime::create_gateway_actor() {
@@ -178,6 +216,7 @@ void Runtime::on_session_closed(SessionId session_id) {
 
     pending_battle_input_.erase(session_id);
     pending_battle_end_.erase(session_id);
+    session_roles_.erase(session_id);
     lookup_.erase_session(session_id);
 
     if (!user_id.empty() && !room_id.empty()) {
@@ -204,6 +243,18 @@ bool Runtime::handle(const GatewayCommand& command) {
     if (bridge_) {
         auto trace_ctx = v2::tracing::TraceContext::create_root();
         bridge_->set_trace_context(trace_ctx.trace_id, trace_ctx.current_span_id);
+    }
+
+    // v2.2.0: RBAC check via Authorizer
+    // Only enforced for sessions with a stored role (post-login sessions).
+    // Unauthenticated sessions (no role) bypass the check.
+    if (!is_session_allowed(command.session_id, command.protocol_message_id)) {
+        emit(net::protocol::kErrorResponse,
+             command.session_id,
+             command.request_id,
+             static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+             "permission_denied");
+        return true;
     }
 
     switch (command.type) {
@@ -246,6 +297,11 @@ bool Runtime::handle(const GatewayCommand& command) {
                     auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
                     if (!resp.is_discarded() && resp.value("status", "") == "ok") {
                         bool is_duplicate = resp.value("is_duplicate", false);
+
+                        // Store role for Authorizer RBAC checks
+                        std::string role_str = resp.value("role", "player");
+                        set_session_role(command.session_id,
+                                         v2::auth::role_from_string(role_str));
 
                         // Kick old session on duplicate login
                         if (is_duplicate) {
@@ -1415,6 +1471,11 @@ bool Runtime::handle(const GatewayCommand& command) {
         case GatewayCommandType::kUnknown:
             return false;
     }
+
+    // v2.2.0: Diagnostics snapshot available via diagnostics().collect()
+    // for external polling (HTTP metrics endpoint, health check).
+    // The DiagnosticsManager is wired via set_backend_metrics_for_diagnostics()
+    // and set_service_registry_for_diagnostics().
 
     return false;
 }

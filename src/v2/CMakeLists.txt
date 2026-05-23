@@ -54,6 +54,10 @@ add_library(project_v2 STATIC
     security/anti_cheat.cpp
     test/fault_injector.cpp
     runtime/actor_system.cpp
+    persistence/writebehind.cpp
+    persistence/replay_storage.cpp
+    persistence/storage_engine_sqlite.cpp
+    persistence/player_data.cpp
 )
 target_include_directories(project_v2
     PUBLIC
@@ -68,6 +72,26 @@ target_link_libraries(project_v2
         OpenSSL::Crypto
 )
 apply_project_warnings(project_v2)
+
+# SQLite-backed persistence (disabled by default)
+# Enable with: cmake -B build -DBOOST_BUILD_SQLITE=ON
+if(BOOST_BUILD_SQLITE)
+  target_compile_definitions(project_v2
+    PRIVATE
+      HAS_SQLITE
+  )
+
+  find_package(sqlite3 QUIET)
+  if(sqlite3_FOUND)
+    target_link_libraries(project_v2
+      PUBLIC
+        sqlite3
+    )
+  else()
+    message(WARNING "BOOST_BUILD_SQLITE=ON but sqlite3 not found — "
+                    "persistence stubs will compile without SQLite support")
+  endif()
+endif()
 
 # gRPC gateway (experimental, disabled by default)
 # Enable with: cmake -B build -DBOOST_BUILD_GRPC=ON

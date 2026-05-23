@@ -32,6 +32,11 @@ public:
     /// CachedBattleDataStore at the given path and sets it as the archive store.
     void set_archive_path(const std::string& path);
 
+    /// Set a directory for async replay storage.  Creates a ReplayStorage
+    /// at <path>/replays.  Replay frames are automatically saved on battle
+    /// finish when this is set.
+    void set_replay_storage_dir(const std::string& path);
+
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;

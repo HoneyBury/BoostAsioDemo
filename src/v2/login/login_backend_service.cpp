@@ -1,10 +1,12 @@
 #include "v2/login/login_backend_service.h"
 #include "v2/auth/jwt_validator.h"
+#include "v2/diagnostics/diagnostics_manager.h"
 #include "v2/service/backend_server.h"
 #include "v2/service/envelope_adapter.h"
 #include "v2/service/error_codes.h"
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 #include "app/audit_log.h"
 
 #include <random>
@@ -149,13 +151,34 @@ public:
 
     void start() {
         v2::service::BackendServer::HandlerMap handlers;
-        handlers["register_account"] = [this](const auto& req) { return handle_register_account(req); };
-        handlers["login_request"] = [this](const auto& req) { return handle_login_request(req); };
-        handlers["token_validate"] = [this](const auto& req) { return handle_token_validate(req); };
-        handlers["session_bind"] = [this](const auto& req) { return handle_session_bind(req); };
-        handlers["session_close"] = [this](const auto& req) { return handle_session_close(req); };
-        handlers["token_refresh"] = [this](const auto& req) { return handle_token_refresh(req); };
-        handlers["guest_login"] = [this](const auto& req) { return handle_guest_login(req); };
+
+        // Wrap handlers with diagnostics tracking.
+        auto diag_wrap = [this](const std::string& name,
+                                std::function<v2::service::BackendEnvelope(
+                                    const v2::service::BackendEnvelope&)> handler) {
+            return [this, name, handler = std::move(handler)](
+                       const v2::service::BackendEnvelope& req) {
+                SPDLOG_DEBUG("LoginBackend: handling {} request", name);
+                try {
+                    auto resp = handler(req);
+                    SPDLOG_DEBUG("LoginBackend: {} completed", name);
+                    return resp;
+                } catch (const std::exception& e) {
+                    SPDLOG_ERROR("LoginBackend: {} failed: {}", name, e.what());
+                    return make_error_response(
+                        static_cast<std::int32_t>(v2::service::ServiceErrorCode::kInternalError),
+                        e.what());
+                }
+            };
+        };
+
+        handlers["register_account"] = diag_wrap("register_account", [this](const auto& req) { return handle_register_account(req); });
+        handlers["login_request"] = diag_wrap("login_request", [this](const auto& req) { return handle_login_request(req); });
+        handlers["token_validate"] = diag_wrap("token_validate", [this](const auto& req) { return handle_token_validate(req); });
+        handlers["session_bind"] = diag_wrap("session_bind", [this](const auto& req) { return handle_session_bind(req); });
+        handlers["session_close"] = diag_wrap("session_close", [this](const auto& req) { return handle_session_close(req); });
+        handlers["token_refresh"] = diag_wrap("token_refresh", [this](const auto& req) { return handle_token_refresh(req); });
+        handlers["guest_login"] = diag_wrap("guest_login", [this](const auto& req) { return handle_guest_login(req); });
 
         server_ = std::make_unique<v2::service::BackendServer>(
             v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
@@ -181,6 +204,9 @@ private:
     BackendPlayerState state_;
     std::optional<v2::auth::JwtValidator> jwt_validator_;
     bool production_auth_required_ = false;
+
+    // v2.2.0: Diagnostics integration — snapshot collector for health /metrics
+    v2::diagnostics::DiagnosticsManager diagnostics_;
 
     v2::service::BackendEnvelope handle_register_account(
         const v2::service::BackendEnvelope& request) {

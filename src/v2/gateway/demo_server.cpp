@@ -82,6 +82,9 @@ DemoServer::DemoServer(std::uint16_t port,
     health_check_.set_backend_metrics(backend_metrics_);
     health_check_.set_service_registry(service_registry_);
 
+    runtime_.set_backend_metrics_for_diagnostics(backend_metrics_);
+    runtime_.set_service_registry_for_diagnostics(service_registry_);
+
     if (options_.login_backend_config.has_value() ||
         options_.room_backend_config.has_value() ||
         options_.battle_backend_config.has_value() ||

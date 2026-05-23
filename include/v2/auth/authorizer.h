@@ -76,6 +76,12 @@ inline void Authorizer::init_defaults() {
         3007,  // kRoomReadyRequest
         4001,  // kBattleStartRequest
         4003,  // kBattleInputRequest
+        6001,  // kMatchJoinRequest
+        6004,  // kMatchLeaveRequest
+        6006,  // kMatchStatusRequest
+        7001,  // kLeaderboardSubmitRequest
+        7003,  // kLeaderboardTopRequest
+        7005,  // kLeaderboardRankRequest
     };
 
     // Admin: all messages + admin commands

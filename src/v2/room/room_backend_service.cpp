@@ -1,9 +1,11 @@
 #include "v2/room/room_backend_service.h"
+#include "v2/diagnostics/diagnostics_manager.h"
 #include "v2/service/backend_server.h"
 #include "v2/service/envelope_adapter.h"
 #include "v2/service/error_codes.h"
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 #include "app/audit_log.h"
 
 #include <algorithm>
@@ -152,16 +154,35 @@ public:
 
     void start() {
         v2::service::BackendServer::HandlerMap handlers;
-        handlers["room_create"] = [this](const auto& req) { return handle_room_create(req); };
-        handlers["room_join"] = [this](const auto& req) { return handle_room_join(req); };
-        handlers["room_ready"] = [this](const auto& req) { return handle_room_ready(req); };
-        handlers["room_start_battle"] = [this](const auto& req) { return handle_room_start_battle(req); };
-        handlers["room_leave"] = [this](const auto& req) { return handle_room_leave(req); };
-        handlers["room_list"] = [this](const auto& req) { return handle_room_list(req); };
-        handlers["room_detail"] = [this](const auto& req) { return handle_room_detail(req); };
-        handlers["room_kick"] = [this](const auto& req) { return handle_room_kick(req); };
-        handlers["room_transfer_owner"] = [this](const auto& req) { return handle_room_transfer_owner(req); };
-        handlers["room_state_push"] = [this](const auto& req) { return handle_room_state_push(req); };
+
+        // Wrap handlers with diagnostics tracking.
+        auto diag_wrap = [this](const std::string& name,
+                                std::function<v2::service::BackendEnvelope(
+                                    const v2::service::BackendEnvelope&)> handler) {
+            return [this, name, handler = std::move(handler)](
+                       const v2::service::BackendEnvelope& req) {
+                SPDLOG_DEBUG("RoomBackend: handling {} request", name);
+                try {
+                    auto resp = handler(req);
+                    SPDLOG_DEBUG("RoomBackend: {} completed", name);
+                    return resp;
+                } catch (const std::exception& e) {
+                    SPDLOG_ERROR("RoomBackend: {} failed: {}", name, e.what());
+                    return make_error(v2::service::ServiceErrorCode::kInternalError, e.what());
+                }
+            };
+        };
+
+        handlers["room_create"] = diag_wrap("room_create", [this](const auto& req) { return handle_room_create(req); });
+        handlers["room_join"] = diag_wrap("room_join", [this](const auto& req) { return handle_room_join(req); });
+        handlers["room_ready"] = diag_wrap("room_ready", [this](const auto& req) { return handle_room_ready(req); });
+        handlers["room_start_battle"] = diag_wrap("room_start_battle", [this](const auto& req) { return handle_room_start_battle(req); });
+        handlers["room_leave"] = diag_wrap("room_leave", [this](const auto& req) { return handle_room_leave(req); });
+        handlers["room_list"] = diag_wrap("room_list", [this](const auto& req) { return handle_room_list(req); });
+        handlers["room_detail"] = diag_wrap("room_detail", [this](const auto& req) { return handle_room_detail(req); });
+        handlers["room_kick"] = diag_wrap("room_kick", [this](const auto& req) { return handle_room_kick(req); });
+        handlers["room_transfer_owner"] = diag_wrap("room_transfer_owner", [this](const auto& req) { return handle_room_transfer_owner(req); });
+        handlers["room_state_push"] = diag_wrap("room_state_push", [this](const auto& req) { return handle_room_state_push(req); });
 
         server_ = std::make_unique<v2::service::BackendServer>(
             v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
@@ -196,6 +217,9 @@ private:
     std::uint32_t cleanup_interval_ms_ = 60000;
     std::atomic<bool> cleanup_running_{false};
     std::thread cleanup_thread_;
+
+    // v2.2.0: Diagnostics integration — snapshot collector for health /metrics
+    v2::diagnostics::DiagnosticsManager diagnostics_;
 
     void start_cleanup_timer() {
         cleanup_running_ = true;

@@ -5,6 +5,7 @@
 #include "v2/battle/tank_battle_plugin.h"
 #include "v2/ecs/world.h"
 #include "v2/gateway/battle_data_store.h"
+#include "v2/persistence/replay_storage.h"
 #include "v2/realtime/instance_runtime.h"
 #include "v2/service/backend_envelope.h"
 #include "v2/service/backend_server.h"
@@ -198,6 +199,10 @@ public:
         archive_store_ = std::make_unique<v2::data::CachedBattleDataStore>(std::move(delegate), 100);
     }
 
+    void set_replay_storage_dir(const std::string& path) {
+        replay_storage_ = std::make_unique<v2::persistence::ReplayStorage>(path + "/replays");
+    }
+
 private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
@@ -207,6 +212,7 @@ private:
     SyncCapture sync_capture_;
     std::string instance_type_ = "battle";
     std::unique_ptr<v2::data::CachedBattleDataStore> archive_store_;
+    std::unique_ptr<v2::persistence::ReplayStorage> replay_storage_;
 
     // Track per-instance frame numbers.  This is needed because
     // InstanceContext does not expose the current frame; the handler
@@ -411,6 +417,26 @@ private:
                               << battle_id << ": " << e.what() << std::endl;
                 }
             }
+
+            // Store replay frame if replay storage is configured
+            if (replay_storage_) {
+                try {
+                    nlohmann::json replay_entry = {
+                        {"battle_id", battle_id},
+                        {"frame_number", tick_stats.frame_number},
+                        {"timestamp", now_ms},
+                    };
+                    auto snapshot_json = nlohmann::json::parse(
+                        snapshot.payload, nullptr, false);
+                    if (!snapshot_json.is_discarded()) {
+                        replay_entry["snapshot"] = std::move(snapshot_json);
+                    }
+                    replay_storage_->store_replay(battle_id, replay_entry);
+                } catch (const std::exception& e) {
+                    std::cout << "v2_battle_backend: failed to store replay for "
+                              << battle_id << ": " << e.what() << std::endl;
+                }
+            }
         }
 
         auto resp = make_ok({
@@ -527,6 +553,10 @@ void BattleBackendService::set_archive_store(
 
 void BattleBackendService::set_archive_path(const std::string& path) {
     impl_->set_archive_path(path);
+}
+
+void BattleBackendService::set_replay_storage_dir(const std::string& path) {
+    impl_->set_replay_storage_dir(path);
 }
 
 }  // namespace v2::battle

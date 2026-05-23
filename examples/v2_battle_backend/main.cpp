@@ -56,6 +56,7 @@ int main(int argc, char* argv[]) {
 
     if (!config.archive_path.empty()) {
         service.set_archive_path(config.archive_path);
+        service.set_replay_storage_dir(config.archive_path);
         std::cout << "v2_battle_backend: archive path set to "
                   << config.archive_path << std::endl;
     }

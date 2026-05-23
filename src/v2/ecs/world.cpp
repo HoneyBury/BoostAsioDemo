@@ -25,7 +25,7 @@ EntityHandle SimpleWorld::create_entity() {
     // Allocate entity storage (arena if available, otherwise heap)
     EntityStorage* storage = nullptr;
     if (arena_) {
-        storage = static_cast<EntityStorage*>(arena_->allocate(sizeof(EntityStorage)));
+        storage = static_cast<EntityStorage*>(arena_->alloc(sizeof(EntityStorage)));
     }
     if (storage) {
         storage->generation = 1;

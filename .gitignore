@@ -24,3 +24,4 @@ third_party/*.zip
 v2_archive/
 sdk/python/__pycache__/
 /build_p0_p7/
+demo/games/tank_battle/logs/

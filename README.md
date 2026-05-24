@@ -16,6 +16,7 @@
 ## 快速入口
 
 - 主文档入口：`docs/README.md`
+- 服务端部署快速说明：`docs/deployment-quickstart.md`
 - 当前事实源：`docs/current-state.md`
 - 架构总览：`docs/architecture-overview.md`
 - 可靠性矩阵：`docs/reliability-matrix.md`
@@ -40,6 +41,18 @@ python scripts/render_production_readiness_report.py
 ```
 
 ## 运行入口
+
+推荐优先阅读 `docs/deployment-quickstart.md`。本机 Docker/OrbStack 联调：
+
+```bash
+docker compose -f env/docker/docker-compose.yml build
+docker compose -f env/docker/docker-compose.yml up -d
+curl http://127.0.0.1:9080/health
+```
+
+客户端连接 gateway：`127.0.0.1:9201`。
+
+本机二进制开发入口：
 
 ```bash
 # gateway

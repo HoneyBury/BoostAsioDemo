@@ -1,5 +1,6 @@
 #include "v2/aoi/aoi_grid.h"
 
+#include <mutex>
 #include <utility>
 
 namespace v2::aoi {

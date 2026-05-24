@@ -42,6 +42,11 @@ public:
     LoginResult login(const std::string& user_id, const std::string& token,
                       std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
+    RegisterResult register_account(const std::string& user_id,
+                                    const std::string& credential,
+                                    const std::string& display_name = "",
+                                    std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
     // ── Room ────────────────────────────────────────────────────────
 
     RoomResult create_room(const std::string& room_id,
@@ -64,6 +69,12 @@ public:
     RoomQueryResult room_detail(const std::string& room_id,
                                 std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
+    RoomQueryResult room_kick(const std::string& target_user_id,
+                              std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    RoomQueryResult room_transfer_owner(const std::string& new_owner_id,
+                                        std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
     // ── Battle ──────────────────────────────────────────────────────
 
     BattleStartResult start_battle(const std::string& room_id,
@@ -74,6 +85,9 @@ public:
 
     BattleStateResult battle_state(const std::string& battle_id,
                                    std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    ReplayLoadResult replay_load(const std::string& battle_id,
+                                 std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
     // ── Matchmaking ─────────────────────────────────────────────────
 

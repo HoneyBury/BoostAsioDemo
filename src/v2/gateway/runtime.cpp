@@ -394,6 +394,45 @@ bool Runtime::handle(const GatewayCommand& command) {
             actor_system_.dispatch_all();
             return true;
         }
+        case GatewayCommandType::kRegister: {
+            if (!bridge_) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kLoginBackendUnavailable),
+                     "register_requires_backend_bridge");
+                return true;
+            }
+
+            auto doc = nlohmann::json::parse(command.body, nullptr, false);
+            if (doc.is_discarded() || !doc.is_object()) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                     "invalid_register_payload");
+                return true;
+            }
+
+            auto result = bridge_->route(v2::service::ServiceId::kLogin,
+                                         "register_account",
+                                         doc.dump());
+            if (!result.success) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kLoginBackendUnavailable),
+                     backend_error_reason(result, "register_failed"));
+                return true;
+            }
+
+            emit(net::protocol::kRegisterResponse,
+                 command.session_id,
+                 command.request_id,
+                 static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                 result.response_payload);
+            return true;
+        }
         case GatewayCommandType::kRoomCreate: {
             const auto user_id = session_user_id(command.session_id);
             const auto room_id = parse_room_id_body(command.body);
@@ -830,6 +869,96 @@ bool Runtime::handle(const GatewayCommand& command) {
                 return true;
             }
             emit(net::protocol::kRoomDetailResponse,
+                 command.session_id,
+                 command.request_id,
+                 static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                 result.response_payload);
+            return true;
+        }
+        case GatewayCommandType::kRoomKick: {
+            if (!bridge_) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
+                     "room_kick_requires_backend_bridge");
+                return true;
+            }
+
+            const auto user_id = lookup_.user_id_for(command.session_id);
+            const auto room_id = lookup_.room_id_for(command.session_id);
+            if (user_id.empty() || room_id.empty()) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kNotInRoom),
+                     net::protocol::to_string(net::protocol::ErrorCode::kNotInRoom));
+                return true;
+            }
+
+            nlohmann::json payload{
+                {"user_id", user_id},
+                {"room_id", room_id},
+                {"target_user_id", command.body},
+            };
+            auto result = bridge_->route(v2::service::ServiceId::kRoom,
+                                         "room_kick",
+                                         payload.dump());
+            if (!result.success) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
+                     backend_error_reason(result, "room_kick_failed"));
+                return true;
+            }
+
+            emit(net::protocol::kRoomKickResponse,
+                 command.session_id,
+                 command.request_id,
+                 static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                 result.response_payload);
+            return true;
+        }
+        case GatewayCommandType::kRoomTransferOwner: {
+            if (!bridge_) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
+                     "room_transfer_requires_backend_bridge");
+                return true;
+            }
+
+            const auto user_id = lookup_.user_id_for(command.session_id);
+            const auto room_id = lookup_.room_id_for(command.session_id);
+            if (user_id.empty() || room_id.empty()) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kNotInRoom),
+                     net::protocol::to_string(net::protocol::ErrorCode::kNotInRoom));
+                return true;
+            }
+
+            nlohmann::json payload{
+                {"user_id", user_id},
+                {"room_id", room_id},
+                {"new_owner_id", command.body},
+            };
+            auto result = bridge_->route(v2::service::ServiceId::kRoom,
+                                         "room_transfer_owner",
+                                         payload.dump());
+            if (!result.success) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
+                     backend_error_reason(result, "room_transfer_failed"));
+                return true;
+            }
+
+            emit(net::protocol::kRoomTransferOwnerResponse,
                  command.session_id,
                  command.request_id,
                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
@@ -1325,6 +1454,49 @@ bool Runtime::handle(const GatewayCommand& command) {
                  command.request_id,
                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                  std::move(body));
+            return true;
+        }
+        case GatewayCommandType::kReplayLoad: {
+            if (!bridge_) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleBackendUnavailable),
+                     "replay_load_requires_backend_bridge");
+                return true;
+            }
+
+            const auto user_id = lookup_.user_id_for(command.session_id);
+            if (user_id.empty()) {
+                return false;
+            }
+            if (command.body.empty()) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted),
+                     "empty_battle_id");
+                return true;
+            }
+
+            nlohmann::json payload{{"battle_id", command.body}};
+            auto result = bridge_->route(v2::service::ServiceId::kBattle,
+                                         "replay_load",
+                                         payload.dump());
+            if (!result.success) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleBackendUnavailable),
+                     backend_error_reason(result, "replay_load_failed"));
+                return true;
+            }
+
+            emit(net::protocol::kReplayLoadResponse,
+                 command.session_id,
+                 command.request_id,
+                 static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                 result.response_payload);
             return true;
         }
         case GatewayCommandType::kMatchJoin: {

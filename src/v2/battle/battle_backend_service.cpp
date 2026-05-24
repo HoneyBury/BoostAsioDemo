@@ -95,6 +95,11 @@ struct CachedBattleSnapshot {
     std::string payload;
 };
 
+struct ReplayFrameCacheEntry {
+    std::uint32_t frame_number = 0;
+    nlohmann::json frame;
+};
+
 // ─── Snapshot payload helpers ───────────────────────────────────────────
 
 // Extract participant data from a snapshot payload, handling both
@@ -168,6 +173,7 @@ public:
         handlers["battle_create"] = [this](const auto& req) { return handle_battle_create(req); };
         handlers["battle_input"] = [this](const auto& req) { return handle_battle_input(req); };
         handlers["battle_state"] = [this](const auto& req) { return handle_battle_state(req); };
+        handlers["replay_load"] = [this](const auto& req) { return handle_replay_load(req); };
         handlers["battle_finish"] = [this](const auto& req) { return handle_battle_finish(req); };
 
         server_ = std::make_unique<v2::service::BackendServer>(
@@ -223,6 +229,7 @@ private:
     // requires it to pass the correct next_frame into tick_instance().
     std::unordered_map<std::string, std::uint32_t> instance_frames_;
     std::unordered_map<std::string, CachedBattleSnapshot> latest_snapshots_;
+    std::unordered_map<std::string, std::vector<ReplayFrameCacheEntry>> replay_frames_;
     std::mutex frames_mutex_;
 
     std::uint32_t get_instance_frame(const std::string& battle_id) {
@@ -253,6 +260,33 @@ private:
             return std::nullopt;
         }
         return it->second;
+    }
+
+    void append_replay_frame(const std::string& battle_id,
+                             std::uint32_t frame,
+                             nlohmann::json replay_entry) {
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        replay_frames_[battle_id].push_back(ReplayFrameCacheEntry{
+            .frame_number = frame,
+            .frame = std::move(replay_entry),
+        });
+    }
+
+    std::optional<nlohmann::json> replay_doc(const std::string& battle_id) {
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        auto it = replay_frames_.find(battle_id);
+        if (it == replay_frames_.end()) {
+            return std::nullopt;
+        }
+        nlohmann::json frames = nlohmann::json::array();
+        for (const auto& entry : it->second) {
+            frames.push_back(entry.frame);
+        }
+        return nlohmann::json{
+            {"battle_id", battle_id},
+            {"frame_count", it->second.size()},
+            {"frames", std::move(frames)},
+        };
     }
 
     void erase_instance_frame(const std::string& battle_id) {
@@ -382,6 +416,16 @@ private:
         if (!snapshot.payload.empty()) {
             set_latest_snapshot(battle_id, tick_stats.frame_number, snapshot.payload);
         }
+        nlohmann::json replay_entry = {
+            {"battle_id", battle_id},
+            {"frame_number", tick_stats.frame_number},
+            {"timestamp", now_ms},
+        };
+        auto snapshot_json = nlohmann::json::parse(snapshot.payload, nullptr, false);
+        if (!snapshot_json.is_discarded()) {
+            replay_entry["snapshot"] = snapshot_json;
+        }
+        append_replay_frame(battle_id, tick_stats.frame_number, replay_entry);
 
         // Build push events
         nlohmann::json pushes = nlohmann::json::array();
@@ -449,16 +493,6 @@ private:
             // Store replay frame if replay storage is configured
             if (replay_storage_) {
                 try {
-                    nlohmann::json replay_entry = {
-                        {"battle_id", battle_id},
-                        {"frame_number", tick_stats.frame_number},
-                        {"timestamp", now_ms},
-                    };
-                    auto snapshot_json = nlohmann::json::parse(
-                        snapshot.payload, nullptr, false);
-                    if (!snapshot_json.is_discarded()) {
-                        replay_entry["snapshot"] = std::move(snapshot_json);
-                    }
                     replay_storage_->store_replay(battle_id, replay_entry);
                 } catch (const std::exception& e) {
                     std::cout << "v2_battle_backend: failed to store replay for "
@@ -599,6 +633,40 @@ private:
             {"total_frames", total_frames},
             {"push_to_sessions", nlohmann::json::array({std::move(push)})},
         });
+    }
+
+    // ─── Handler: replay_load ───────────────────────────────────────
+
+    v2::service::BackendEnvelope handle_replay_load(
+        const v2::service::BackendEnvelope& request) {
+        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+        if (doc.is_discarded() || !doc.contains("battle_id")) {
+            return make_error(-1004, "invalid_json");
+        }
+
+        const auto battle_id = doc["battle_id"].get<std::string>();
+        if (battle_id.empty()) {
+            return make_error(-1004, "empty_battle_id");
+        }
+
+        if (replay_storage_) {
+            replay_storage_->flush();
+            if (auto stored = replay_storage_->get_replay(battle_id)) {
+                return make_ok({
+                    {"battle_id", battle_id},
+                    {"replay", std::move(*stored)},
+                });
+            }
+        }
+
+        if (auto cached = replay_doc(battle_id)) {
+            return make_ok({
+                {"battle_id", battle_id},
+                {"replay", std::move(*cached)},
+            });
+        }
+
+        return make_error(-2003, "replay_not_found");
     }
 };
 

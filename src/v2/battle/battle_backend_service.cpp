@@ -105,6 +105,21 @@ struct BattleItemState {
     std::string picked_by;
 };
 
+std::optional<std::string> speed_buff_user_from_snapshot(const nlohmann::json& snapshot) {
+    if (!snapshot.contains("buffs") || !snapshot["buffs"].is_array()) {
+        return std::nullopt;
+    }
+    for (const auto& buff : snapshot["buffs"]) {
+        if (buff.value("type", "") == "speed") {
+            const auto user_id = buff.value("user_id", "");
+            if (!user_id.empty()) {
+                return user_id;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 // ─── Snapshot payload helpers ───────────────────────────────────────────
 
 // Extract participant data from a snapshot payload, handling both
@@ -131,6 +146,8 @@ nlohmann::json extract_participants_from_snapshot(const std::string& payload) {
                 {"pos_y", p.value("y", 0)},
                 {"hp", p.value("hp", 0)},
                 {"max_hp", p.value("max_hp", 0)},
+                {"direction_x", p.value("direction_x", 1)},
+                {"direction_y", p.value("direction_y", 0)},
             });
         }
         return result;
@@ -360,6 +377,19 @@ private:
         };
     }
 
+    void apply_speed_buff_if_present(nlohmann::json& snapshot) {
+        const auto buff_user = speed_buff_user_from_snapshot(snapshot);
+        if (!buff_user.has_value() || !snapshot.contains("participants") ||
+            !snapshot["participants"].is_array()) {
+            return;
+        }
+        for (auto& participant : snapshot["participants"]) {
+            if (participant.value("user_id", "") == *buff_user) {
+                participant["speed_multiplier"] = 2;
+            }
+        }
+    }
+
     void enrich_snapshot_with_items(nlohmann::json& snapshot,
                                     const std::string& battle_id,
                                     std::optional<std::string> pickup_user_id = std::nullopt) {
@@ -502,6 +532,7 @@ private:
                                        pickup_item_id == expected_item_id
                                            ? std::optional<std::string>(user_id)
                                            : std::nullopt);
+            apply_speed_buff_if_present(snapshot_json);
             snapshot.payload = snapshot_json.dump();
             set_latest_snapshot(battle_id, tick_stats.frame_number, snapshot.payload);
         } else if (!snapshot.payload.empty()) {
@@ -542,6 +573,9 @@ private:
             }
             if (snapshot_json.contains("buffs")) {
                 frame_push["buffs"] = snapshot_json["buffs"];
+            }
+            if (snapshot_json.contains("bullets")) {
+                frame_push["bullets"] = snapshot_json["bullets"];
             }
         }
         pushes.push_back(std::move(frame_push));
@@ -648,6 +682,7 @@ private:
             auto payload = nlohmann::json::parse(cached->payload, nullptr, false);
             if (!payload.is_discarded()) {
                 enrich_snapshot_with_items(payload, battle_id);
+                apply_speed_buff_if_present(payload);
                 state["snapshot"] = std::move(payload);
             }
             auto participants = extract_participants_from_snapshot(cached->payload);

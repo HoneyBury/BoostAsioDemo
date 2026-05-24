@@ -189,9 +189,9 @@ Each process independent. Raft for stateful services.
 - **Transport**: TCP (default), gRPC (experimental, behind BOOST_BUILD_GRPC flag)
 
 ## Related Documents
-- [Service Discovery Guide](service-discovery-guide.md)
+- [Current State](current-state.md)
+- [Docs Index](README.md)
 - [Performance Baseline](performance-baseline.md)
-- [Anti-Cheat Baseline](anti-cheat-baseline.md)
-- [K8s Deployment Guide](k8s-deployment-guide.md)
-- [gRPC PoC Summary](grpc-poc-summary.md)
-- [HA Deployment Guide](ha-deployment-guide.md)
+- [Reliability Matrix](reliability-matrix.md)
+- [Production Deployment Runbook](production-deployment-runbook.md)
+- [TLS / mTLS Runbook](tls-mtls-runbook.md)

@@ -141,11 +141,11 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 
 ## 下一阶段优先级
 
-当前“生产数据沉淀与风险燃尽”以 `docs/production-stabilization-roadmap.md` 的 N0-N6 与 R0-R3 为事实源，默认有界收束已经完成；长稳 2h/8h、10K 固定机器容量、TLS 预发多轮性能、真实 gRPC transport profile 等继续作为固定 runner 或后续专项持续沉淀。
+当前“生产数据沉淀与风险燃尽”以本文档和 `docs/reliability-matrix.md` 为事实源，默认有界收束已经完成；长稳 2h/8h、10K 固定机器容量、TLS 预发多轮性能、真实 gRPC transport profile 等继续作为固定 runner 或后续专项持续沉淀。
 
 业务验证型下一阶段以”框架与业务隔离”为前提：`docs/realtime-framework-modernization-plan.md` 的 M0-M5 已全部完成，identity、lobby/room、realtime instance、business plugin SPI、SDK 通用 API 和 demo gate 边界均已固化。
 
-近期服务端实施以 `docs/server-framework-and-tank-demo-development-plan.md` 为执行计划：P0-P7 全部 checkpoint 已完成，包含坦克大战 demo 的运行、结算、断线重连、性能回归门禁。当前阶段不实现正式客户端。
+近期服务端实施已完成既定 P0-P7 checkpoint，包含坦克大战 demo 的运行、结算、断线重连和性能回归门禁。相关阶段计划已归档到 `docs/archive/plans/`，当前阶段不实现正式客户端。
 
 1. N0 固定 Runner 与证据自动化常态化。
 2. N1 长稳压测与容量基线。

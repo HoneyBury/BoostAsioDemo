@@ -19,6 +19,7 @@
 - 当前事实源：`docs/current-state.md`
 - 架构总览：`docs/architecture-overview.md`
 - 可靠性矩阵：`docs/reliability-matrix.md`
+- 脚本入口索引：`docs/script-inventory.json`
 - 性能事实：`docs/performance-baseline.md`
 - 发布/验收门禁：`docs/v3-release-checklist.md`
 
@@ -28,6 +29,9 @@
 python scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke
 python scripts/check_current_docs_install.py
 python scripts/check_mainline_readiness.py
+python scripts/check_script_inventory.py
+python scripts/check_validation_summary_contract.py
+python scripts/check_config_source_layout.py
 python scripts/check_p3_p4_release_readiness.py
 python scripts/verify_sdk_enterprise_delivery.py --build-dir build/Release --skip-build
 python scripts/verify_production_candidate_evidence.py --build-dir build/Release --skip-build

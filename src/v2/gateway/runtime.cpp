@@ -203,10 +203,17 @@ void Runtime::on_session_closed(SessionId session_id) {
         }
     }
 
-    // Notify RoomActor that the player disconnected (leave room)
+    // Notify room service that the player disconnected (leave room).
     if (!user_id.empty() && !room_id.empty()) {
-        auto* room_ref = lookup_.room(room_id);
-        if (room_ref != nullptr) {
+        if (bridge_ != nullptr) {
+            nlohmann::json room_payload{
+                {"user_id", user_id},
+                {"room_id", room_id},
+            };
+            (void)bridge_->route(v2::service::ServiceId::kRoom,
+                                 "room_leave",
+                                 room_payload.dump());
+        } else if (auto* room_ref = lookup_.room(room_id); room_ref != nullptr) {
             v2::actor::Message leave;
             leave.header.kind = v2::actor::MessageKind::kUser;
             leave.payload = v2::room::LeaveRoomMsg{.user_id = user_id};

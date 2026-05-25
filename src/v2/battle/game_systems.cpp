@@ -22,7 +22,7 @@ namespace {
 constexpr std::int32_t kMaxX = 1000;
 constexpr std::int32_t kMaxY = 1000;
 constexpr std::int32_t kMaxMoveDelta = 200;  // max Manhattan distance per frame
-constexpr std::int32_t kProjectileRange = 350;
+constexpr std::int32_t kProjectileRange = 1400;
 constexpr std::int32_t kProjectileDamage = 25;
 constexpr std::int32_t kProjectileSpeed = 100;
 constexpr std::int32_t kMaxDamage = 50;
@@ -272,6 +272,56 @@ void ProjectileSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& c
             auto* projectile_pos = simple_world->get_component<PositionComponent>(handle);
 
             proj.current_frame++;
+
+            if (proj.aoe_radius == 0 && proj.target_user_id.empty() &&
+                projectile_pos != nullptr) {
+                projectile_pos->x += proj.dir_x * proj.speed;
+                projectile_pos->y += proj.dir_y * proj.speed;
+
+                bool hit = false;
+                simple_world->for_each<BattleParticipantComponent>(
+                    [&](v2::ecs::EntityHandle target_handle,
+                        BattleParticipantComponent& participant) {
+                        if (hit || participant.user_id == proj.owner_user_id || !participant.online) {
+                            return;
+                        }
+
+                        auto* target_pos = simple_world->get_component<PositionComponent>(
+                            target_handle);
+                        auto* health = simple_world->get_component<HealthComponent>(
+                            target_handle);
+                        if (target_pos == nullptr || health == nullptr || health->hp <= 0) {
+                            return;
+                        }
+
+                        const auto dx = std::abs(target_pos->x - projectile_pos->x);
+                        const auto dy = std::abs(target_pos->y - projectile_pos->y);
+                        if (dx + dy > 60) {
+                            return;
+                        }
+
+                        const auto before = health->hp;
+                        health->hp = std::max(
+                            static_cast<std::int32_t>(0),
+                            health->hp - proj.damage);
+                        if (before != health->hp) {
+                            hit = true;
+                            simple_world->for_each<BattleParticipantComponent>(
+                                [&](v2::ecs::EntityHandle, BattleParticipantComponent& owner) {
+                                    if (owner.user_id == proj.owner_user_id) {
+                                        owner.score += (health->hp == 0) ? 5 : 1;
+                                    }
+                                });
+                        }
+                    });
+
+                const bool out_of_bounds = projectile_pos->x < 0 || projectile_pos->x > kMaxX ||
+                    projectile_pos->y < 0 || projectile_pos->y > kMaxY;
+                if (hit || out_of_bounds) {
+                    proj.active = false;
+                }
+                return;
+            }
 
             auto total_distance = static_cast<std::int64_t>(
                 std::abs(proj.target_x - proj.start_x) +

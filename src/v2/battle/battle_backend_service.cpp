@@ -259,6 +259,7 @@ private:
     // InstanceContext does not expose the current frame; the handler
     // requires it to pass the correct next_frame into tick_instance().
     std::unordered_map<std::string, std::uint32_t> instance_frames_;
+    std::unordered_map<std::string, std::int64_t> instance_last_tick_ms_;
     std::unordered_map<std::string, CachedBattleSnapshot> latest_snapshots_;
     std::unordered_map<std::string, std::vector<ReplayFrameCacheEntry>> replay_frames_;
     std::unordered_map<std::string, BattleItemState> battle_items_;
@@ -273,6 +274,17 @@ private:
     void set_instance_frame(const std::string& battle_id, std::uint32_t frame) {
         std::lock_guard<std::mutex> lock(frames_mutex_);
         instance_frames_[battle_id] = frame;
+    }
+
+    bool should_tick_instance(const std::string& battle_id, std::int64_t now_ms) {
+        constexpr std::int64_t kQueryDrivenTickIntervalMs = 50;
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        auto& last_tick_ms = instance_last_tick_ms_[battle_id];
+        if (last_tick_ms > 0 && now_ms - last_tick_ms < kQueryDrivenTickIntervalMs) {
+            return false;
+        }
+        last_tick_ms = now_ms;
+        return true;
     }
 
     void set_latest_snapshot(const std::string& battle_id,
@@ -324,6 +336,7 @@ private:
     void erase_instance_frame(const std::string& battle_id) {
         std::lock_guard<std::mutex> lock(frames_mutex_);
         instance_frames_.erase(battle_id);
+        instance_last_tick_ms_.erase(battle_id);
         latest_snapshots_.erase(battle_id);
         battle_items_.erase(battle_id);
     }
@@ -665,8 +678,30 @@ private:
         }
 
         auto* instance_ctx = runtime_.find_instance(battle_id);
-        const auto frame_number = get_instance_frame(battle_id);
-        const auto cached = latest_snapshot(battle_id);
+        auto frame_number = get_instance_frame(battle_id);
+        std::optional<CachedBattleSnapshot> cached;
+        if (instance_ctx != nullptr) {
+            const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            if (should_tick_instance(battle_id, now_ms)) {
+                const auto next_frame = frame_number + 1;
+                const auto tick_stats = runtime_.tick_instance(battle_id, next_frame, now_ms);
+                frame_number = tick_stats.frame_number;
+                set_instance_frame(battle_id, frame_number);
+
+                auto snapshot = sync_capture_.consume_snapshot(battle_id);
+                auto payload = nlohmann::json::parse(snapshot.payload, nullptr, false);
+                if (!payload.is_discarded()) {
+                    enrich_snapshot_with_items(payload, battle_id);
+                    apply_speed_buff_if_present(payload);
+                    snapshot.payload = payload.dump();
+                    set_latest_snapshot(battle_id, frame_number, snapshot.payload);
+                } else if (!snapshot.payload.empty()) {
+                    set_latest_snapshot(battle_id, frame_number, snapshot.payload);
+                }
+            }
+        }
+        cached = latest_snapshot(battle_id);
         if (instance_ctx == nullptr && !cached.has_value()) {
             return make_error(-2003, "battle_not_found");
         }

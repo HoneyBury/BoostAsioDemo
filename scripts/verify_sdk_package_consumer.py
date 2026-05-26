@@ -93,6 +93,7 @@ def main() -> int:
     work_dir = args.work_dir.resolve()
     consumer_src = work_dir / "src"
     consumer_build = work_dir / "build"
+    sdk_install_script = args.build_dir / "sdk" / "cmake_install.cmake"
 
     if prefix.exists():
         shutil.rmtree(prefix)
@@ -117,7 +118,14 @@ def main() -> int:
     if install_ok:
         install_ok = run_step(
             "install-sdk",
-            ["cmake", "--install", str(args.build_dir), "--config", args.configuration, "--prefix", str(prefix)],
+            [
+                "cmake",
+                f"-DCMAKE_INSTALL_PREFIX={prefix}",
+                f"-DCMAKE_INSTALL_CONFIG_NAME={args.configuration}",
+                "-DCMAKE_INSTALL_LOCAL_ONLY=1",
+                "-P",
+                str(sdk_install_script),
+            ],
             REPO_ROOT,
             checks,
         )

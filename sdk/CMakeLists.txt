@@ -68,6 +68,13 @@ add_library(boost_gateway_sdk_dll SHARED
 set_target_properties(boost_gateway_sdk_dll PROPERTIES
     OUTPUT_NAME boost_gateway_sdk
 )
+if(WIN32)
+    # Keep the runtime DLL name stable for Python/C# while avoiding a
+    # boost_gateway_sdk.lib collision with the static library.
+    set_target_properties(boost_gateway_sdk_dll PROPERTIES
+        ARCHIVE_OUTPUT_NAME boost_gateway_sdk_dll
+    )
+endif()
 target_compile_definitions(boost_gateway_sdk_dll PRIVATE BOOST_GATEWAY_SDK_EXPORTS)
 target_link_libraries(boost_gateway_sdk_dll
     PRIVATE

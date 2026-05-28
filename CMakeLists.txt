@@ -110,6 +110,7 @@ endif()
 install(FILES
     docs/README.md
     docs/current-state.md
+    docs/project-blueprint.md
     docs/architecture-overview.md
     docs/reliability-matrix.md
     docs/performance-baseline.md

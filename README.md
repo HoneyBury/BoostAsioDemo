@@ -72,6 +72,7 @@ cmake --build --preset windows-ninja-debug --parallel
 - 默认策略是先禁用公网 `conancenter`，优先本地 cache/内网 remote；只有显式传 `--allow-public` 才会启用公网 remote。
 - 如需完全离线，只走本地 cache，可使用 `python scripts/bootstrap_conan.py --no-remote`。
 - `BOOST_USE_CONAN_DEPS=ON` 时优先使用 Conan 生成的 `CMakeDeps/CMakeToolchain` 结果。
+- CMake 会统一汇总 Conan 探测缺失项；只要关键包不齐，就自动回退到 `FetchContent/third_party`。
 - 如果 Conan 依赖未准备好或未启用，项目仍回退到现有 `FetchContent/third_party` 路径。
 - 当前 Windows 本机已验证 `conan profile detect` 与 `conan install` 能进入依赖图解析阶段；如访问 `conancenter` 被宿主网络策略拦截，需要改用内网镜像、预热缓存或离线包源。
 

@@ -7,10 +7,6 @@ env:
 on:
   workflow_dispatch:
     inputs:
-      runner:
-        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","raft-ha"]'
-        required: true
-        default: '"ubuntu-latest"'
       build_preset:
         description: "CMake configure preset"
         required: true
@@ -54,7 +50,7 @@ permissions:
 
 jobs:
   specialized-e2e:
-    runs-on: ${{ fromJSON(inputs.runner || vars.SPECIALIZED_E2E_RUNNER || '["self-hosted","Windows","X64"]') }}
+    runs-on: ["self-hosted", "Windows", "X64"]
 
     steps:
       - name: Checkout
@@ -164,7 +160,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: specialized-e2e-${{ inputs.runner }}
+          name: specialized-e2e-windows
           path: |
             runtime/validation/fixed-runner-preflight-summary.json
             runtime/validation/specialized-e2e-summary.json

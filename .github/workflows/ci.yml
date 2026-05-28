@@ -32,8 +32,10 @@ jobs:
         id: matrix
         shell: bash
         run: |
-          echo "build_and_test=$(python scripts/tools/read_runner_matrix.py --path matrices.ci.build_and_test)" >> "$GITHUB_OUTPUT"
-          echo "multi_process=$(python scripts/tools/read_runner_matrix.py --path matrices.ci.multi_process)" >> "$GITHUB_OUTPUT"
+          build_and_test_json="$(python scripts/tools/read_runner_matrix.py --path matrices.ci.build_and_test)"
+          multi_process_json="$(python scripts/tools/read_runner_matrix.py --path matrices.ci.multi_process)"
+          printf 'build_and_test={"include":%s}\n' "$build_and_test_json" >> "$GITHUB_OUTPUT"
+          printf 'multi_process={"include":%s}\n' "$multi_process_json" >> "$GITHUB_OUTPUT"
           echo "docker_enabled=$(python scripts/tools/read_runner_matrix.py --path jobs.docker.enabled)" >> "$GITHUB_OUTPUT"
           echo "docker_runs_on=$(python scripts/tools/read_runner_matrix.py --path jobs.docker.runs_on)" >> "$GITHUB_OUTPUT"
           echo "raft_ha_enabled=$(python scripts/tools/read_runner_matrix.py --path jobs.raft_ha_weekly.enabled)" >> "$GITHUB_OUTPUT"
@@ -44,8 +46,7 @@ jobs:
     runs-on: ${{ fromJSON(matrix.runs_on) }}
     strategy:
       fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.runner-matrix.outputs.build_and_test) }}
+      matrix: ${{ fromJSON(needs.runner-matrix.outputs.build_and_test) }}
 
     steps:
       - name: Checkout
@@ -113,8 +114,7 @@ jobs:
     needs: [runner-matrix, build-and-test]
     strategy:
       fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.runner-matrix.outputs.multi_process) }}
+      matrix: ${{ fromJSON(needs.runner-matrix.outputs.multi_process) }}
 
     steps:
       - name: Checkout

@@ -26,7 +26,8 @@ jobs:
         id: matrix
         shell: bash
         run: |
-          echo "release=$(python scripts/tools/read_runner_matrix.py --path matrices.ci.release)" >> "$GITHUB_OUTPUT"
+          release_json="$(python scripts/tools/read_runner_matrix.py --path matrices.ci.release)"
+          printf 'release={"include":%s}\n' "$release_json" >> "$GITHUB_OUTPUT"
           echo "release_publish_runs_on=$(python scripts/tools/read_runner_matrix.py --path jobs.release_publish.runs_on)" >> "$GITHUB_OUTPUT"
 
   package:
@@ -34,8 +35,7 @@ jobs:
     runs-on: ${{ fromJSON(matrix.runs_on) }}
     strategy:
       fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.runner-matrix.outputs.release) }}
+      matrix: ${{ fromJSON(needs.runner-matrix.outputs.release) }}
 
     steps:
       - name: Checkout

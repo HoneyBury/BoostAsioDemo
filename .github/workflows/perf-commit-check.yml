@@ -26,7 +26,8 @@ jobs:
         id: matrix
         shell: bash
         run: |
-          echo "perf_commit=$(python scripts/tools/read_runner_matrix.py --path matrices.ci.perf_commit)" >> "$GITHUB_OUTPUT"
+          perf_commit_json="$(python scripts/tools/read_runner_matrix.py --path matrices.ci.perf_commit)"
+          printf 'perf_commit={"include":%s}\n' "$perf_commit_json" >> "$GITHUB_OUTPUT"
 
   perf-smoke:
     if: contains(github.event.pull_request.labels.*.name, 'perf') || github.event.action == 'labeled' && contains(github.event.pull_request.labels.*.name, 'perf')
@@ -34,8 +35,7 @@ jobs:
     runs-on: ${{ fromJSON(matrix.runs_on) }}
     strategy:
       fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.runner-matrix.outputs.perf_commit) }}
+      matrix: ${{ fromJSON(needs.runner-matrix.outputs.perf_commit) }}
 
     steps:
       - name: Checkout

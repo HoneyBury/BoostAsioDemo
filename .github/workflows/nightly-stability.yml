@@ -34,15 +34,15 @@ jobs:
         id: matrix
         shell: bash
         run: |
-          echo "nightly_stability=$(python scripts/tools/read_runner_matrix.py --path matrices.ci.nightly_stability)" >> "$GITHUB_OUTPUT"
+          nightly_json="$(python scripts/tools/read_runner_matrix.py --path matrices.ci.nightly_stability)"
+          printf 'nightly_stability={"include":%s}\n' "$nightly_json" >> "$GITHUB_OUTPUT"
 
   stability-soak:
     needs: runner-matrix
     runs-on: ${{ fromJSON(matrix.runs_on) }}
     strategy:
       fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.runner-matrix.outputs.nightly_stability) }}
+      matrix: ${{ fromJSON(needs.runner-matrix.outputs.nightly_stability) }}
 
     steps:
       - name: Checkout

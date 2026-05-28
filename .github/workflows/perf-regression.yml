@@ -43,15 +43,15 @@ jobs:
         id: matrix
         shell: bash
         run: |
-          echo "perf_regression=$(python scripts/tools/read_runner_matrix.py --path matrices.ci.perf_regression)" >> "$GITHUB_OUTPUT"
+          perf_regression_json="$(python scripts/tools/read_runner_matrix.py --path matrices.ci.perf_regression)"
+          printf 'perf_regression={"include":%s}\n' "$perf_regression_json" >> "$GITHUB_OUTPUT"
 
   perf-regression:
     needs: runner-matrix
     runs-on: ${{ fromJSON(matrix.runs_on) }}
     strategy:
       fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.runner-matrix.outputs.perf_regression) }}
+      matrix: ${{ fromJSON(needs.runner-matrix.outputs.perf_regression) }}
 
     steps:
       - name: Checkout

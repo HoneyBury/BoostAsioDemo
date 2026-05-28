@@ -5,7 +5,7 @@ env:
 
 on:
   schedule:
-    - cron: "0 6 * * 1"   # Every Monday at 06:00 UTC
+    - cron: "0 6 * * 1"
   workflow_dispatch:
     inputs:
       perf_preset:
@@ -31,27 +31,8 @@ permissions:
   actions: read
 
 jobs:
-  runner-matrix:
-    runs-on: ["self-hosted","Windows","X64"]
-    outputs:
-      perf_regression: ${{ steps.matrix.outputs.perf_regression }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Read runner matrix
-        id: matrix
-        shell: bash
-        run: |
-          perf_regression_json="$(python scripts/tools/read_runner_matrix.py --path matrices.ci.perf_regression)"
-          printf 'perf_regression={"include":%s}\n' "$perf_regression_json" >> "$GITHUB_OUTPUT"
-
   perf-regression:
-    needs: runner-matrix
-    runs-on: ${{ fromJSON(matrix.runs_on) }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.runner-matrix.outputs.perf_regression) }}
+    runs-on: ["self-hosted", "Windows", "X64"]
 
     steps:
       - name: Checkout
@@ -64,14 +45,13 @@ jobs:
         uses: jwlawson/actions-setup-cmake@v2
 
       - name: Setup MSVC environment
-        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure (Release)
-        run: cmake --preset ${{ matrix.configure_preset }} -DCMAKE_BUILD_TYPE=Release
+        run: cmake --preset windows-ninja-release -DCMAKE_BUILD_TYPE=Release
 
       - name: Build (Release)
-        run: cmake --build --preset ${{ matrix.build_preset }} --parallel
+        run: cmake --build --preset windows-ninja-release --parallel
 
       - name: Run performance baseline
         id: perf
@@ -85,7 +65,7 @@ jobs:
         run: |
           OUTPUT_DIR="runtime/perf/ci-regression-$(date +%Y%m%d-%H%M%S)"
           python scripts/collect_v2_perf_baseline.py \
-            --build-dir ${{ matrix.build_dir }} \
+            --build-dir build/windows-ninja-release \
             --run-preset ${{ inputs.perf_preset || 'baseline' }} \
             --repetitions ${{ inputs.perf_repetitions || '1' }} \
             --output-root "$OUTPUT_DIR" \
@@ -99,7 +79,7 @@ jobs:
         run: |
           SUMMARY_PATH="$(find runtime/perf -name 'summary.json' -type f | head -1)"
           if [ -z "$SUMMARY_PATH" ]; then
-            echo "No summary.json found — performance run may have failed."
+            echo "No summary.json found - performance run may have failed."
             exit 1
           fi
 
@@ -149,12 +129,11 @@ for agg in aggregates:
         f'{critical_threshold}us | {verdict} |'
     )
 
-report = '\n'.join(report_lines)
+report = '\\n'.join(report_lines)
 print(report)
 
-# Write report to GITHUB_STEP_SUMMARY
 with open('$GITHUB_STEP_SUMMARY', 'a') as outf:
-    outf.write(report + '\n')
+    outf.write(report + '\\n')
 
 sys.exit(exit_code)
 "
@@ -170,10 +149,10 @@ sys.exit(exit_code)
             echo "## Performance Regression Summary" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Workflow**: ${{ github.workflow }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **OS**: ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **OS**: windows" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Preset**: ${{ inputs.perf_preset || 'baseline' }}" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Repetitions**: ${{ inputs.perf_repetitions || '1' }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Report**: See artifact \`perf-report-${{ matrix.os }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Report**: See artifact \`perf-report-windows\`" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             if [ -f "$REPORT_DIR/report.md" ]; then
               cat "$REPORT_DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
@@ -184,7 +163,7 @@ sys.exit(exit_code)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: perf-report-${{ matrix.os }}
+          name: perf-report-windows
           path: |
             runtime/perf/**
             perf_run.log

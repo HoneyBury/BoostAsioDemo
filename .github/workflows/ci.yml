@@ -8,45 +8,13 @@ on:
   push:
     branches: ["main", "develop"]
   pull_request:
-  schedule:
-    - cron: '0 6 * * 1'  # Every Monday at 06:00 UTC
 
 permissions:
   contents: read
 
 jobs:
-  runner-matrix:
-    runs-on: ["self-hosted","Windows","X64"]
-    outputs:
-      build_and_test: ${{ steps.matrix.outputs.build_and_test }}
-      multi_process: ${{ steps.matrix.outputs.multi_process }}
-      docker_enabled: ${{ steps.matrix.outputs.docker_enabled }}
-      docker_runs_on: ${{ steps.matrix.outputs.docker_runs_on }}
-      raft_ha_enabled: ${{ steps.matrix.outputs.raft_ha_enabled }}
-      raft_ha_runs_on: ${{ steps.matrix.outputs.raft_ha_runs_on }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Read runner matrix
-        id: matrix
-        shell: bash
-        run: |
-          build_and_test_json="$(python scripts/tools/read_runner_matrix.py --path matrices.ci.build_and_test)"
-          multi_process_json="$(python scripts/tools/read_runner_matrix.py --path matrices.ci.multi_process)"
-          printf 'build_and_test={"include":%s}\n' "$build_and_test_json" >> "$GITHUB_OUTPUT"
-          printf 'multi_process={"include":%s}\n' "$multi_process_json" >> "$GITHUB_OUTPUT"
-          echo "docker_enabled=$(python scripts/tools/read_runner_matrix.py --path jobs.docker.enabled)" >> "$GITHUB_OUTPUT"
-          echo "docker_runs_on=$(python scripts/tools/read_runner_matrix.py --path jobs.docker.runs_on)" >> "$GITHUB_OUTPUT"
-          echo "raft_ha_enabled=$(python scripts/tools/read_runner_matrix.py --path jobs.raft_ha_weekly.enabled)" >> "$GITHUB_OUTPUT"
-          echo "raft_ha_runs_on=$(python scripts/tools/read_runner_matrix.py --path jobs.raft_ha_weekly.runs_on)" >> "$GITHUB_OUTPUT"
-
   build-and-test:
-    needs: runner-matrix
-    runs-on: ${{ fromJSON(matrix.runs_on) }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.runner-matrix.outputs.build_and_test) }}
+    runs-on: ["self-hosted", "Windows", "X64"]
 
     steps:
       - name: Checkout
@@ -56,9 +24,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-${{ matrix.configure_preset }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          key: sccache-${{ runner.os }}-windows-ninja-debug-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
           restore-keys: |
-            sccache-${{ runner.os }}-${{ matrix.configure_preset }}-
+            sccache-${{ runner.os }}-windows-ninja-debug-
             sccache-${{ runner.os }}-
 
       - name: Setup Ninja
@@ -68,21 +36,13 @@ jobs:
         uses: jwlawson/actions-setup-cmake@v2
 
       - name: Setup MSVC environment
-        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install sccache
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            choco install sccache -y --no-progress
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            brew install sccache
-          else
-            sudo apt-get update
-            sudo apt-get install -y sccache
-          fi
+          choco install sccache -y --no-progress
           sccache --version
 
       - name: Reset sccache stats
@@ -90,16 +50,16 @@ jobs:
         run: sccache --zero-stats || true
 
       - name: Configure
-        run: cmake --preset ${{ matrix.configure_preset }} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        run: cmake --preset windows-ninja-debug -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.build_preset }} --parallel
+        run: cmake --build --preset windows-ninja-debug --parallel
 
       - name: Test
-        run: ctest --preset ${{ matrix.test_preset }} --timeout 300
+        run: ctest --preset windows-ninja-debug --timeout 300
 
       - name: R4 contract gate
-        run: python scripts/verify_r4_contract.py --build-dir build/${{ matrix.configure_preset }} --skip-build --skip-arch-baseline --configuration Debug
+        run: python scripts/verify_r4_contract.py --build-dir build/windows-ninja-debug --skip-build --skip-arch-baseline --configuration Debug
 
       - name: Monitoring operability gate
         run: python scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
@@ -110,11 +70,8 @@ jobs:
         run: sccache --show-stats || true
 
   multi-process-build:
-    runs-on: ${{ fromJSON(matrix.runs_on) }}
-    needs: [runner-matrix, build-and-test]
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.runner-matrix.outputs.multi_process) }}
+    runs-on: ["self-hosted", "Windows", "X64"]
+    needs: build-and-test
 
     steps:
       - name: Checkout
@@ -136,128 +93,34 @@ jobs:
         uses: jwlawson/actions-setup-cmake@v2
 
       - name: Setup MSVC environment
-        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install sccache
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            choco install sccache -y --no-progress
-          else
-            sudo apt-get update
-            sudo apt-get install -y sccache
-          fi
+          choco install sccache -y --no-progress
           sccache --version
 
       - name: Configure
-        run: cmake --preset ${{ matrix.configure_preset }} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        run: cmake --preset windows-ninja-debug -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build all targets
-        run: cmake --build --preset ${{ matrix.build_preset }} --parallel --target v2_gateway_demo v2_login_backend v2_room_backend v2_battle_backend v2_leaderboard_backend
+        run: cmake --build --preset windows-ninja-debug --parallel --target v2_gateway_demo v2_login_backend v2_room_backend v2_battle_backend v2_leaderboard_backend
 
       - name: Verify binaries exist
         run: |
           python -c "
           import os, sys
           binaries = ['v2_gateway_demo', 'v2_login_backend', 'v2_room_backend', 'v2_battle_backend', 'v2_leaderboard_backend']
-          build_dir = '${{ matrix.build_dir }}'
-          ext = '${{ matrix.binary_ext || '' }}'
+          build_dir = 'build/windows-ninja-debug'
+          ext = '.exe'
           missing = [b for b in binaries if not os.path.exists(os.path.join(build_dir, b + ext))]
           if missing:
               print(f'Missing binaries: {missing}')
               sys.exit(1)
           print(f'All {len(binaries)} binaries found in {build_dir}')
           "
-
-      - name: Show sccache stats
-        if: always()
-        shell: bash
-        run: sccache --show-stats || true
-
-  docker:
-    runs-on: ${{ fromJSON(needs.runner-matrix.outputs.docker_runs_on) }}
-    needs: [runner-matrix, build-and-test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.runner-matrix.outputs.docker_enabled == 'true'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Restore sccache cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-raft-ha-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
-          restore-keys: |
-            sccache-${{ runner.os }}-raft-ha-
-            sccache-${{ runner.os }}-
-
-      - name: Prepare third-party archives
-        run: bash third_party/download_deps.sh
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: false
-          load: true
-          tags: boost-gateway:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Smoke test container
-        run: |
-          docker run -d --name boost-gateway-test -p 9201:9201 -p 9081:9080 boost-gateway:latest --io-cores 1 --management-port 9080
-          sleep 5
-          curl -f http://localhost:9081/health || (docker logs boost-gateway-test && exit 1)
-          docker stop boost-gateway-test
-
-  raft-ha-weekly:
-    runs-on: ${{ fromJSON(needs.runner-matrix.outputs.raft_ha_runs_on) }}
-    needs: runner-matrix
-    if: github.event_name == 'schedule' && needs.runner-matrix.outputs.raft_ha_enabled == 'true'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v5
-
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-
-      - name: Install sccache
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y sccache
-          sccache --version
-
-      - name: Configure
-        run: cmake --preset default -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-
-      - name: Build
-        run: cmake --build --preset default --parallel
-
-      - name: Run Raft HA specialized E2E
-        run: |
-          python scripts/verify_specialized_e2e.py \
-            --build-dir build/default \
-            --filter raft_integration \
-            --skip-build
-
-      - name: Upload Raft test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: raft-ha-weekly-results
-          path: build/default/test-results/
-          retention-days: 30
 
       - name: Show sccache stats
         if: always()

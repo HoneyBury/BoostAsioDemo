@@ -22,27 +22,8 @@ permissions:
   contents: read
 
 jobs:
-  runner-matrix:
-    runs-on: ["self-hosted","Windows","X64"]
-    outputs:
-      nightly_stability: ${{ steps.matrix.outputs.nightly_stability }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Read runner matrix
-        id: matrix
-        shell: bash
-        run: |
-          nightly_json="$(python scripts/tools/read_runner_matrix.py --path matrices.ci.nightly_stability)"
-          printf 'nightly_stability={"include":%s}\n' "$nightly_json" >> "$GITHUB_OUTPUT"
-
   stability-soak:
-    needs: runner-matrix
-    runs-on: ${{ fromJSON(matrix.runs_on) }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.runner-matrix.outputs.nightly_stability) }}
+    runs-on: ["self-hosted", "Windows", "X64"]
 
     steps:
       - name: Checkout
@@ -55,18 +36,17 @@ jobs:
         uses: jwlawson/actions-setup-cmake@v2
 
       - name: Setup MSVC environment
-        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure
-        run: cmake --preset ${{ matrix.configure_preset }}
+        run: cmake --preset windows-ninja-debug
 
-      - name: Stability short soak
+      - name: Stability soak
         run: >
           python scripts/verify_stability_soak.py
-          --build-dir ${{ matrix.build_dir }}
-          --configuration ${{ matrix.configuration }}
-          --baseline-profile ${{ matrix.baseline_profile }}
+          --build-dir build/windows-ninja-debug
+          --configuration Debug
+          --baseline-profile debug
           --soak-profile ${{ inputs.soak_profile || 'short' }}
           --summary-path runtime/validation/nightly-stability-soak-summary.json
 
@@ -82,7 +62,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-stability-${{ matrix.os }}
+          name: nightly-stability-windows
           path: |
             runtime/validation/nightly-stability-soak-summary.json
             runtime/perf/v2-stability-soak/**

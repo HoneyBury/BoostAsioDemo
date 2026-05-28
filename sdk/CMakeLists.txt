@@ -23,6 +23,12 @@ else()
     set(BoostGatewaySdk_VERSION "${BOOST_GATEWAY_SDK_VERSION}")
 endif()
 
+if(PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
+    set(BOOST_GATEWAY_SDK_DEPENDENCY_PROVIDER "conan")
+else()
+    set(BOOST_GATEWAY_SDK_DEPENDENCY_PROVIDER "fetchcontent_fallback")
+endif()
+
 # ── Dependencies ────────────────────────────────────────────────────
 if(NOT TARGET nlohmann_json::nlohmann_json AND NOT BOOST_USE_CONAN_DEPS)
     include(FetchContent)
@@ -31,6 +37,19 @@ if(NOT TARGET nlohmann_json::nlohmann_json AND NOT BOOST_USE_CONAN_DEPS)
         GIT_TAG v3.12.0
     )
     FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
+set(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT "")
+if(DEFINED nlohmann_json_SOURCE_DIR AND EXISTS "${nlohmann_json_SOURCE_DIR}/include/nlohmann/json.hpp")
+    set(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT "${nlohmann_json_SOURCE_DIR}/include")
+elseif(TARGET nlohmann_json::nlohmann_json)
+    get_target_property(_boost_gateway_sdk_json_include_dirs nlohmann_json::nlohmann_json INTERFACE_INCLUDE_DIRECTORIES)
+    foreach(_boost_gateway_sdk_json_dir IN LISTS _boost_gateway_sdk_json_include_dirs)
+        if(EXISTS "${_boost_gateway_sdk_json_dir}/nlohmann/json.hpp")
+            set(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT "${_boost_gateway_sdk_json_dir}")
+            break()
+        endif()
+    endforeach()
 endif()
 
 if(NOT DEFINED boost_SOURCE_DIR AND NOT TARGET boost::headers AND NOT BOOST_USE_CONAN_DEPS)
@@ -127,8 +146,12 @@ include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
 # nlohmann_json — header-only dependency, co-installed so the SDK package is self-contained.
-install(DIRECTORY "${nlohmann_json_SOURCE_DIR}/include/nlohmann"
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann)
+if(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT)
+    install(DIRECTORY "${BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT}/nlohmann"
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann)
+else()
+    message(WARNING "Could not resolve nlohmann_json include root for SDK install packaging")
+endif()
 
 # Library
 install(TARGETS boost_gateway_sdk EXPORT boost_gateway_sdk-targets

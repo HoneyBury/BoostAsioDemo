@@ -30,13 +30,17 @@ target_include_directories(sdk_business_flow_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/..
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
         ${CMAKE_CURRENT_BINARY_DIR}/../include
-        ${boost_SOURCE_DIR}
 )
-target_compile_definitions(sdk_business_flow_tests
-    PRIVATE
-        BOOST_ALL_NO_LIB
-        BOOST_ERROR_CODE_HEADER_ONLY
-)
+if(TARGET boost::headers)
+    target_link_libraries(sdk_business_flow_tests PRIVATE boost::headers)
+else()
+    target_include_directories(sdk_business_flow_tests PRIVATE ${boost_SOURCE_DIR})
+    target_compile_definitions(sdk_business_flow_tests
+        PRIVATE
+            BOOST_ALL_NO_LIB
+            BOOST_ERROR_CODE_HEADER_ONLY
+    )
+endif()
 if(WIN32)
     target_compile_definitions(sdk_business_flow_tests PRIVATE _WIN32_WINNT=0x0A00)
 endif()

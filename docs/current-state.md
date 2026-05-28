@@ -28,6 +28,8 @@ legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy-helper-inventor
 - bootstrap 现已支持 `conan/remotes.local.json` 覆盖、`CONAN_REMOTE_URL` 环境变量注入和 `--no-remote` 离线模式。
 - 仓库已新增独立的 `conan-validate.yml` 手动流水线，用于在不扰动默认 CI 的前提下验证 Conan 依赖链。
 - `conan-validate.yml` 已完成一次真实 GitHub Actions dispatch（run `26579738529`），当前事实是 workflow 已被 GitHub 接受并派发到 Windows runner 队列。
+- Conan/fallback 规则当前已明确分层：`fmt`、`spdlog`、`nlohmann_json`、`hiredis`、`boost::headers` 为 Conan-first；`OpenSSL` 保持双轨保守；`protobuf/grpc/sqlite3` 仍属实验或可选层。
+- SDK 构建与安装当前已同时兼容 Conan 和 fallback 两套头文件来源；`sdk_tests` 与 SDK 打包不再硬编码依赖 `boost_SOURCE_DIR` 或 `nlohmann_json_SOURCE_DIR`。
 - P1 性能事实：macOS Release baseline 三轮已刷新，`runtime/perf/release-baseline/summary.json` 中 `release_gates.overall_pass=true`；capacity 单轮已暴露当前退化点，5K/10K echo 存在连接建立失败，battle-500 存在 rejected 与 P99 500ms，详见 `docs/archive/releases/v3.3.2-p1-performance-stabilization.md`。
 - 专项 E2E：`scripts/verify_specialized_e2e.py` 聚合 Raft 集群/恢复、Redis 降级与可选 Redis live / Operator kind smoke，作为 Redis/Raft/Operator 独立验收入口；`.github/workflows/specialized-e2e.yml` 提供手动触发入口，固定 runner 接入见 `docs/fixed-runner-playbook.md`。
 - P3 数据恢复：`scripts/verify_data_recovery_gate.py` 聚合 replay/result/snapshot、WriteBehind flush/drain、Redis degraded、Raft committed restart replay 和持久化 round trip；Redis live 与 settlement replay 通过显式参数接入固定环境。

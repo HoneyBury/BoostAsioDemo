@@ -221,6 +221,7 @@
 
 - 在 vcpkg 与 Conan 中二选一，建立 lockfile/profile。
 - 当前已先落 `conanfile.py` + `BOOST_USE_CONAN_DEPS=ON` 的最小 PoC，保留 FetchContent/third_party 作为 fallback。
+- 当前已完成第一轮规则收敛：`fmt/spdlog/nlohmann_json/hiredis/boost::headers` 按 Conan-first 治理，`OpenSSL` 暂时保持双轨保守，`protobuf/grpc/sqlite3` 继续停留在实验或可选层。
 - 迁移 CMake 依赖发现逻辑，减少 `third_party/` 和临时系统探测路径。
 - CI 使用 dependency cache，cache key 包含 lockfile hash。
 - 保留离线/内网构建说明，避免完全依赖公网下载。

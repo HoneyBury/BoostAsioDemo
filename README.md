@@ -16,6 +16,7 @@
 ## 快速入口
 
 - 主文档入口：`docs/README.md`
+- 项目蓝图规划：`docs/project-blueprint.md`
 - 服务端部署快速说明：`docs/deployment-quickstart.md`
 - 当前事实源：`docs/current-state.md`
 - 架构总览：`docs/architecture-overview.md`

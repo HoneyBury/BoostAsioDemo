@@ -5,16 +5,20 @@
 ## 优先阅读
 
 1. `current-state.md`
-2. `deployment-quickstart.md`
-3. `architecture-overview.md`
-4. `reliability-matrix.md`
-5. `performance-baseline.md`
-6. `v3-release-checklist.md`
+2. `project-blueprint.md`
+3. `deployment-quickstart.md`
+4. `architecture-overview.md`
+5. `reliability-matrix.md`
+6. `performance-baseline.md`
+7. `v3-release-checklist.md`
 
 ## 当前主文档
 
 - `current-state.md`
   当前项目事实源。先看这个。
+
+- `project-blueprint.md`
+  当前事实基线之上的长期项目蓝图、差距清单和阶段规划。
 
 - `architecture-overview.md`
   当前架构分层、服务边界和主链实现概览。

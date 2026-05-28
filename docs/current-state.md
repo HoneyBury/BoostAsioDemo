@@ -142,23 +142,12 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 
 ## 下一阶段优先级
 
-当前“生产数据沉淀与风险燃尽”以本文档、`docs/fixed-runner-playbook.md`、`docs/production-evidence-runner.md` 和 `docs/reliability-matrix.md` 为事实源，默认有界收束已经完成；长稳 2h/8h、10K 固定机器容量、TLS 预发多轮性能、真实 gRPC transport profile 等继续作为固定 runner 或后续专项持续沉淀。
+后续长期开发以 `docs/project-blueprint.md` 为规划依据。本文档继续作为“已经实现/当前默认链路”的事实源；`docs/fixed-runner-playbook.md`、`docs/production-evidence-runner.md`、`docs/reliability-matrix.md` 和各 runtime summary 继续作为生产候选证据事实源。
 
-业务验证型下一阶段以”框架与业务隔离”为前提：`docs/realtime-framework-modernization-plan.md` 的 M0-M5 已全部完成，identity、lobby/room、realtime instance、business plugin SPI、SDK 通用 API 和 demo gate 边界均已固化。
+当前默认有界收束已经完成；长稳 2h/8h、10K 固定机器容量、TLS 预发多轮性能、真实 gRPC transport profile 等继续作为固定 runner 或后续专项持续沉淀。业务验证型后续工作必须继续遵守“框架与业务隔离”：demo 只放在 `demo/games/` 或后续 demo 目录，不能把坦克大战等具体业务规则写入公共框架主链。
 
-近期服务端实施已完成既定 P0-P7 checkpoint，包含坦克大战 demo 的运行、结算、断线重连和性能回归门禁。相关阶段计划已归档到 `docs/archive/plans/`，当前阶段不实现正式客户端。
+下一阶段执行优先级概括为：
 
-1. N0 固定 Runner 与证据自动化常态化。
-2. N1 长稳压测与容量基线。
-3. N2 生产监控 SLO 与告警闭环。
-4. N3 部署恢复、回滚与灾备演练。
-5. N4 传输安全与配置治理升级。
-6. N5 SDK 企业交付与客户端兼容矩阵。
-7. N6 gRPC / 协议演进 PoC 与生产取舍。
-8. R0 生产候选证据聚合。
-9. R1 TLS 上线前置证据。
-10. R2 生产候选证据 Manifest 与预发准入。
-11. R3 生产 Readiness Report。
-12. R4 固定 Runner Release / Capacity 证据。
-13. R5 预发恢复 / 回滚演练证据。
-14. R6 TLS 预发多轮证据。
+1. 短期：命名与描述收敛、legacy/helper 债务清单、sccache 构建加速、性能测试分层进入标准流水线。
+2. 中期：Ubuntu 固定 runner 容量事实沉淀、vcpkg/Conan 依赖治理、generated proto/gRPC full-flow 与真实性能对照、helper 兼容层退场。
+3. 长期：Developer Guide 与贡献路径、通用实时服务 plugin 生态、macOS ARM64 等更多平台、固定/高性能 runner 趋势化容量报告。

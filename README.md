@@ -83,6 +83,7 @@ cmake --build --preset windows-ninja-debug --parallel
 - 支持 `--allow-public`
 - 支持 `--no-remote`
 - 可选打开 `ENABLE_TESTING`
+- 当前已在 Windows self-hosted runner 上完成一次真实 dispatch，run: `26579738529`
 
 ## 运行入口
 

@@ -3,6 +3,7 @@ name: Release Baseline
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   SCCACHE_DIR: ${{ github.workspace }}/.sccache
+  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
   schedule:
@@ -46,6 +47,11 @@ on:
         description: "Timeout for performance collection"
         required: true
         default: "1800"
+      enable_conan_validation:
+        description: "Run an opt-in Conan dependency validation before the main baseline flow"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -81,6 +87,12 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Setup Python
+        if: inputs.enable_conan_validation
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Install sccache
         shell: bash
         run: |
@@ -94,6 +106,29 @@ jobs:
             sudo apt-get install -y sccache
           fi
           sccache --version
+
+      - name: Install Conan
+        if: inputs.enable_conan_validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install conan
+          conan --version
+
+      - name: Conan validation preflight
+        if: inputs.enable_conan_validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/bootstrap_conan.py
+          conan install . --output-folder=build/conan-release-baseline --build=missing -s build_type=${{ inputs.configuration || 'Release' }}
+          cmake -S . -B build/windows-ninja-release-conan -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DENABLE_TESTING=OFF \
+            -DCMAKE_BUILD_TYPE=${{ inputs.configuration || 'Release' }} \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-release-baseline/build/${{ inputs.configuration || 'Release' }}/generators/conan_toolchain.cmake
+          cmake --build build/windows-ninja-release-conan --parallel --target project_v2
 
       - name: Fixed runner preflight
         shell: bash

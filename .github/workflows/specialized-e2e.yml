@@ -2,6 +2,7 @@ name: Specialized E2E
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
   workflow_dispatch:
@@ -42,6 +43,11 @@ on:
         required: true
         default: false
         type: boolean
+      enable_conan_validation:
+        description: "Run an opt-in Conan dependency validation before specialized E2E"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -68,6 +74,35 @@ jobs:
       - name: Setup MSVC environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup Python
+        if: inputs.enable_conan_validation
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        if: inputs.enable_conan_validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install conan
+          conan --version
+
+      - name: Conan validation preflight
+        if: inputs.enable_conan_validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/bootstrap_conan.py
+          conan install . --output-folder=build/conan-specialized --build=missing -s build_type=${{ inputs.configuration }}
+          cmake -S . -B build/windows-ninja-specialized-conan -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DENABLE_TESTING=OFF \
+            -DCMAKE_BUILD_TYPE=${{ inputs.configuration }} \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-specialized/build/${{ inputs.configuration }}/generators/conan_toolchain.cmake
+          cmake --build build/windows-ninja-specialized-conan --parallel --target project_v2
 
       - name: Fixed runner preflight
         shell: bash

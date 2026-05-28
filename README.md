@@ -83,6 +83,7 @@ cmake --build --preset windows-ninja-debug --parallel
 - 支持 `Debug/Release`
 - 支持 `--allow-public`
 - 支持 `--no-remote`
+- 默认 `use_existing_workspace=true`，优先复用 Windows self-hosted runner 上的本地仓库工作区，绕过不稳定的远端 checkout
 - 可选打开 `ENABLE_TESTING`
 - 当前已在 Windows self-hosted runner 上完成一次真实 dispatch，run: `26579738529`
 

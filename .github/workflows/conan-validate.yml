@@ -25,6 +25,11 @@ on:
         required: true
         default: false
         type: boolean
+      use_existing_workspace:
+        description: "Skip actions/checkout and reuse the self-hosted runner workspace clone"
+        required: true
+        default: true
+        type: boolean
       enable_testing:
         description: "Configure with ENABLE_TESTING=ON"
         required: true
@@ -40,10 +45,21 @@ jobs:
 
     steps:
       - name: Checkout
+        if: inputs.use_existing_workspace != true
         uses: actions/checkout@v4
         with:
           clean: false
           fetch-depth: 0
+
+      - name: Verify existing workspace
+        if: inputs.use_existing_workspace
+        shell: pwsh
+        run: |
+          if (-not (Test-Path ".git")) {
+            throw "use_existing_workspace=true but no .git directory exists in GITHUB_WORKSPACE"
+          }
+          git rev-parse --short HEAD
+          git status --short --branch
 
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5

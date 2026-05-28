@@ -67,7 +67,10 @@ cmake --build --preset windows-ninja-debug --parallel
 - 当前仓库提供 `conanfile.py` 形式的 Conan 2 PoC。
 - 推荐把 `CONAN_HOME` 指到仓库内目录（例如 `.conan2-local`），避免受用户主目录权限影响。
 - `python scripts/bootstrap_conan.py` 会优先准备仓库内 Conan home，并按 `conan/remotes.example.json` 配置 remote。
+- 如果存在 `conan/remotes.local.json`，它会覆盖示例 remote 配置，适合内网落地。
+- 也可以通过环境变量注入内网 remote，例如 `CONAN_REMOTE_URL`、`CONAN_REMOTE_NAME`。
 - 默认策略是先禁用公网 `conancenter`，优先本地 cache/内网 remote；只有显式传 `--allow-public` 才会启用公网 remote。
+- 如需完全离线，只走本地 cache，可使用 `python scripts/bootstrap_conan.py --no-remote`。
 - `BOOST_USE_CONAN_DEPS=ON` 时优先使用 Conan 生成的 `CMakeDeps/CMakeToolchain` 结果。
 - 如果 Conan 依赖未准备好或未启用，项目仍回退到现有 `FetchContent/third_party` 路径。
 - 当前 Windows 本机已验证 `conan profile detect` 与 `conan install` 能进入依赖图解析阶段；如访问 `conancenter` 被宿主网络策略拦截，需要改用内网镜像、预热缓存或离线包源。

@@ -23,6 +23,7 @@ def main() -> int:
         ("vendored-source", "third_party/openssl"),
         ("dependency-manifest", "conanfile.py"),
         ("dependency-manifest", "conan/remotes.example.json"),
+        ("dependency-manifest", "conan/remotes.local.json"),
         ("cached-archive", "third_party/fmt-11.2.0.tar.gz"),
         ("cached-archive", "third_party/googletest-1.17.0.tar.gz"),
         ("cached-archive", "third_party/spdlog-1.15.3.tar.gz"),
@@ -39,6 +40,7 @@ def main() -> int:
     print("\nSuggested restore commands")
     print("  python scripts/bootstrap_conan.py")
     print("  python scripts/bootstrap_conan.py --allow-public")
+    print("  python scripts/bootstrap_conan.py --no-remote")
     print("  conan install . --output-folder=build/conan-debug --build=missing -s build_type=Debug")
     print("  bash third_party/download_deps.sh")
     print("  bash third_party/bootstrap_from_build_cache.sh")

@@ -9,6 +9,7 @@
 | 门禁 | 命令 | 通过标准 |
 | --- | --- | --- |
 | P0 文档/安装清单收口 | `python scripts/check_current_docs_install.py` | 顶层当前文档、归档目录和 CMake install 清单全部指向存在路径 |
+| S2 legacy/helper 清单治理 | `python scripts/check_legacy_helper_inventory.py` | legacy raw JSON、typed helper、generated proto 和 v1 legacy surface 已登记且与代码/构建边界一致 |
 | P1/P2 主链与证据准入 | `python scripts/check_mainline_readiness.py` | 业务 ingress 收敛到 `SessionAdapter/GatewayActor/Runtime`，gRPC/Tank demo 不进入默认主链，R4/R5/R6 固定 runner 证据入口存在 |
 | P3/P4 发布主链收口 | `python scripts/check_p3_p4_release_readiness.py` | P3 data recovery 和 P4 observability 已接入 RC 总门禁，summary 契约版本化，固定环境扩展项保持显式启用 |
 | R4 快速契约 | `python scripts/verify_r4_contract.py --build-dir build/windows-msvc-debug --configuration Debug` | proto contract、聚焦单测、聚合集成测试、短性能基线全部通过，并写出 `runtime/validation/r4-contract-summary.json` |
@@ -174,18 +175,13 @@ R4 gate：
 | `sdk_echo_client` | SDK 示例 | `bin/sdk_echo_client` | SDK Echo 客户端 |
 | `sdk_full_flow_client` | SDK 示例 | `bin/sdk_full_flow_client` | SDK 全流程客户端 |
 | `example_hello_world` | 示例 | `bin/example_hello_world` | Hello World 演示 |
-| `echo_server` | v1 入口 | `bin/echo_server` | 完整 v1 网关装配 |
+| `echo_server` | legacy bridge | `bin/echo_server` | v1/v2 过渡桥接入口，当前仍被旧 integration fixture 使用 |
 | `echo_client` | 工具 | `bin/echo_client` | 基础 Echo 客户端 |
-| `gateway_pressure` | v1 压测 | `bin/gateway_pressure` | v1 压测工具（9 种场景） |
-| `login_server` | v1 入口 | `bin/login_server` | 实验性独立登录服务 |
-| `room_server` | v1 入口 | `bin/room_server` | 实验性独立房间服务 |
-| `battle_server` | v1 入口 | `bin/battle_server` | 实验性独立战斗服务 |
-| `login_demo` | showcase | `bin/login_demo` | 登录流程演示 |
-| `room_demo` | showcase | `bin/room_demo` | 房间系统演示 |
-| `battle_demo` | showcase | `bin/battle_demo` | 战斗系统演示 |
-| `admin_demo` | showcase | `bin/admin_demo` | 管理工具演示（无权限校验，仅 demo） |
 
-> 条件编译产物（需对应 CMake 选项开启）：`tank_battle_demo`（`BOOST_BUILD_TANK_DEMO=ON`）、`realtime_echo_plugin`（`BOOST_BUILD_ECHO_PLUGIN_DEMO=ON`）。
+> 条件编译产物（需对应 CMake 选项开启）：
+> `tank_battle_demo`（`BOOST_BUILD_TANK_DEMO=ON`）、
+> `realtime_echo_plugin`（`BOOST_BUILD_ECHO_PLUGIN_DEMO=ON`）、
+> legacy v1 examples/showcase（`BOOST_BUILD_V1_LEGACY_EXAMPLES=ON`，包括 `gateway_pressure`、`login_server`、`room_server`、`battle_server`、`login_demo`、`room_demo`、`battle_demo`、`admin_demo`）。
 
 ### 7.2 配置文件
 

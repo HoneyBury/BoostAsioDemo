@@ -21,6 +21,7 @@ Use these stable public entrypoints first:
 
 - `verify_release_candidate.py` for local/PR bounded release checks.
 - `check_mainline_readiness.py` for docs, script, config, and evidence governance checks.
+- `check_legacy_helper_inventory.py` for legacy/helper compatibility-surface governance.
 - `verify_production_candidate_evidence.py` for R0 production-candidate aggregation.
 - `check_production_evidence_manifest.py` and `render_production_readiness_report.py` for R2/R3 production readiness.
 - `run_long_soak_capacity.py` for fixed-runner N1 long-soak/capacity evidence.

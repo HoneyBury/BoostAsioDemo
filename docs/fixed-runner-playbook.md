@@ -1,10 +1,12 @@
 # 固定 Runner 执行手册
 
-更新时间：2026-05-24（N0-N3）
+更新时间：2026-05-28（N0-N3）
 
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
 P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs/production-evidence-runner.md`。
+
+容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。Windows/macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
 
 ## N0 统一约定
 
@@ -40,6 +42,7 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs
 
 | 用途 | 建议 label | Workflow | 必需能力 |
 | --- | --- | --- | --- |
+| Ubuntu release/capacity baseline | `self-hosted,linux,x64,release-baseline` | `release-baseline.yml` | Ubuntu LTS、稳定 CPU、固定 OS、CMake、Ninja、Python、可绑定本地端口 |
 | Release baseline | `self-hosted,release-baseline` | `release-baseline.yml` | 稳定 CPU、固定 OS、CMake、Ninja、Python、可绑定本地端口 |
 | Redis live | `self-hosted,redis-live` | `specialized-e2e.yml` | Redis `127.0.0.1:6379` 可达，CMake、Ninja、Python；`specialized_profile=redis-live` |
 | Raft HA | `self-hosted,raft-ha` | `specialized-e2e.yml` | CMake、Ninja、Python；`specialized_profile=raft-ha` |
@@ -59,7 +62,7 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ev
 
 | 输入 | baseline 建议值 | capacity 建议值 |
 | --- | --- | --- |
-| `runner` | `["self-hosted","release-baseline"]` | `["self-hosted","release-baseline"]` |
+| `runner` | `["self-hosted","linux","x64","release-baseline"]` | `["self-hosted","linux","x64","release-baseline"]` |
 | `configure_preset` | `release` 或 `windows-ninja-release` | 同 baseline |
 | `build_dir` | `build/release` 或 `build/windows-ninja-release` | 同 baseline |
 | `configuration` | `Release` | `Release` |

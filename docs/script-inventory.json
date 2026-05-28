@@ -30,6 +30,7 @@
     "scripts/check_current_docs_install.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_current_docs_install.py"},
     "scripts/check_deploy_operability.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/check_deploy_operability.py"},
     "scripts/check_fixed_runner_environment.py": {"category": "aggregate_gate"},
+    "scripts/check_legacy_helper_inventory.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_legacy_helper_inventory.py"},
     "scripts/check_mainline_readiness.py": {"category": "public_entrypoint"},
     "scripts/check_monitoring_operability.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/check_monitoring_operability.py"},
     "scripts/check_operator_manifests.py": {"category": "aggregate_gate"},

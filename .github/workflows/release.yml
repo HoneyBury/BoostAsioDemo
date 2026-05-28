@@ -2,6 +2,7 @@ name: Release
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  SCCACHE_DIR: ${{ github.workspace }}/.sccache
 
 on:
   push:
@@ -50,6 +51,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Restore sccache cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-${{ runner.os }}-release-${{ matrix.configure_preset }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          restore-keys: |
+            sccache-${{ runner.os }}-release-${{ matrix.configure_preset }}-
+            sccache-${{ runner.os }}-
+
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
@@ -65,8 +75,22 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Install sccache
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            choco install sccache -y --no-progress
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install sccache
+          else
+            sudo apt-get update
+            sudo apt-get install -y sccache
+          fi
+          sccache --version
+
       - name: Configure
-        run: cmake --preset ${{ matrix.configure_preset }}
+        run: cmake --preset ${{ matrix.configure_preset }} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build
         run: cmake --build --preset ${{ matrix.build_preset }} --parallel
@@ -117,6 +141,11 @@ jobs:
         with:
           name: boost-gateway-${{ matrix.artifact_suffix }}
           path: boost-gateway-${{ github.ref_name }}-${{ matrix.artifact_suffix }}.${{ matrix.archive_ext }}
+
+      - name: Show sccache stats
+        if: always()
+        shell: bash
+        run: sccache --show-stats || true
 
   publish:
     runs-on: ubuntu-latest

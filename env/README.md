@@ -1,7 +1,7 @@
 # Boost Gateway v3.3.2 — Environment Configuration
 
 This directory contains the production-ready environment infrastructure for the
-Boost Gateway game server framework. It covers Docker Compose orchestration,
+BoostGateway realtime service framework. It covers Docker Compose orchestration,
 Kubernetes deployment manifests, Prometheus/Grafana monitoring, Redis caching,
 and CI/CD pipelines.
 

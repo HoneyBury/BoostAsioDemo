@@ -6,11 +6,12 @@
 
 1. `current-state.md`
 2. `project-blueprint.md`
-3. `deployment-quickstart.md`
-4. `architecture-overview.md`
-5. `reliability-matrix.md`
-6. `performance-baseline.md`
-7. `v3-release-checklist.md`
+3. `legacy-helper-inventory.md`
+4. `deployment-quickstart.md`
+5. `architecture-overview.md`
+6. `reliability-matrix.md`
+7. `performance-baseline.md`
+8. `v3-release-checklist.md`
 
 ## 当前主文档
 
@@ -19,6 +20,12 @@
 
 - `project-blueprint.md`
   当前事实基线之上的长期项目蓝图、差距清单和阶段规划。
+
+- `legacy-helper-inventory.md`
+  当前 legacy 构建面、typed helper、legacy raw JSON 和 generated proto 迁移边界清单。
+
+- 命名兼容说明
+  当前对外名称按 `BoostGateway` 收敛；仓库历史名 `BoostAsioDemo` 仅作为路径与历史引用兼容保留。
 
 - `architecture-overview.md`
   当前架构分层、服务边界和主链实现概览。

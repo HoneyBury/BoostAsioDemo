@@ -26,11 +26,16 @@ def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> N
 
 
 def validate_p0_docs(checks: list[dict[str, Any]]) -> None:
+    readme = read("README.md")
     docs = read("docs/README.md")
     current = read("docs/current-state.md")
+    root_cmake = read("CMakeLists.txt")
     add(checks, "p0:docs-index-current-state", "current-state.md" in docs, "docs index points to current-state")
     add(checks, "p0:docs-index-archive-policy", "docs/archive/" in docs and "current-state.md" in docs, "docs index documents archive policy")
     add(checks, "p0:current-state-default-chain", "默认生产主链仍是 SDK + TCP gateway" in current, "current-state states the default production chain")
+    add(checks, "p0:readme-boostgateway-title", "# BoostGateway" in readme, "README uses BoostGateway title")
+    add(checks, "p0:cmake-framework-description", 'DESCRIPTION "Enterprise-grade C++20 realtime service framework"' in root_cmake, "CMake description matches framework positioning")
+    add(checks, "p0:legacy-helper-doc-listed", "legacy-helper-inventory.md" in docs, "docs index lists legacy/helper inventory")
 
 
 def validate_p1_mainline(checks: list[dict[str, Any]]) -> None:
@@ -136,6 +141,12 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     env_readme = read("env/README.md")
     add(checks, "p3:env-source-of-truth", "`env/` is the maintained production configuration source of truth" in env_readme, "env README declares config source of truth")
     add(checks, "p3:legacy-config-boundary", "legacy/reference surfaces" in env_readme, "env README documents legacy config boundary")
+    add(checks, "p3:legacy-helper-gate-exists", exists("scripts/check_legacy_helper_inventory.py"), "legacy/helper governance gate exists")
+
+    examples_cmake = read("examples/CMakeLists.txt")
+    root_cmake = read("CMakeLists.txt")
+    add(checks, "p3:legacy-examples-option", "BOOST_BUILD_V1_LEGACY_EXAMPLES" in root_cmake, "root CMake declares the legacy examples option")
+    add(checks, "p3:legacy-examples-default-off", "if(BOOST_BUILD_V1_LEGACY_EXAMPLES)" in examples_cmake, "legacy examples are gated in examples/CMakeLists.txt")
 
 
 def main() -> int:

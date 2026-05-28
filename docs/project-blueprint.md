@@ -14,7 +14,7 @@
 - CMake project：`boost_gateway`
 - 描述：`Enterprise-grade C++20 realtime service framework`
 
-`BoostAsioDemo` 可以作为历史仓库名保留一段兼容期，但 README、安装包、文档标题、release artifact 和二进制命名应逐步切到企业级框架定位。
+`BoostAsioDemo` 可以作为历史仓库名保留一段兼容期，但 README、安装包、文档标题、release artifact 和默认二进制命名应逐步切到企业级框架定位。
 
 ## 当前事实基线
 

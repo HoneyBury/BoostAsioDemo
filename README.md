@@ -1,4 +1,6 @@
-# BoostAsioDemo
+# BoostGateway
+
+> Historical repository name: `BoostAsioDemo`. The repository path and some compatibility surfaces still keep that name during the transition period.
 
 高性能 C++20 实时服务框架，当前主线版本基线为 `v3.4.0`。项目主链已经收束到 `gateway + login + room + battle + matchmaking + leaderboard` 六服务闭环，并具备 SDK、Redis/Raft、TLS profile、生产候选证据门禁等能力。
 
@@ -6,6 +8,7 @@
 
 - 当前事实源：`docs/current-state.md`
 - 当前主线定位：企业级实时服务框架，而不是继续扩张功能面的 demo 集合
+- 当前对外名称：`BoostGateway`
 - 当前完成状态：
   - 明文 SDK full-flow 通过
   - backend TLS SDK full-flow 通过
@@ -17,6 +20,7 @@
 
 - 主文档入口：`docs/README.md`
 - 项目蓝图规划：`docs/project-blueprint.md`
+- legacy/helper 清单：`docs/legacy-helper-inventory.md`
 - 服务端部署快速说明：`docs/deployment-quickstart.md`
 - 当前事实源：`docs/current-state.md`
 - 架构总览：`docs/architecture-overview.md`
@@ -32,6 +36,7 @@ python scripts/verify_release_candidate.py --skip-release-baseline --soak-profil
 python scripts/check_current_docs_install.py
 python scripts/check_mainline_readiness.py
 python scripts/check_script_inventory.py
+python scripts/check_legacy_helper_inventory.py
 python scripts/check_validation_summary_contract.py
 python scripts/check_config_source_layout.py
 python scripts/check_p3_p4_release_readiness.py
@@ -74,6 +79,12 @@ build/Release/examples/v2_match_backend/Release/v2_match_backend.exe
 # leaderboard backend
 build/Release/examples/v2_leaderboard_backend/Release/v2_leaderboard_backend.exe
 ```
+
+Legacy 兼容入口说明：
+
+- `echo_server` 与旧 integration fixture 仍保留为过渡桥接入口，不属于默认发布主线。
+- v1 `login_server` / `room_server` / `battle_server` / `gateway_pressure` 和 `*_demo` showcase 已降级为 legacy，仅在 `-DBOOST_BUILD_V1_LEGACY_EXAMPLES=ON` 时显式构建。
+- `tank_battle_demo` 与 `realtime_echo_plugin` 继续保持默认关闭，仅作为 demo/plugin 样例。
 
 ## 文档策略
 

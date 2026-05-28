@@ -2,7 +2,9 @@
 
 更新时间：2026-05-24
 
-本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `BoostAsioDemo VERSION 3.4.0` 为准；提交状态以 `git HEAD` 为准。
+本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.4.0` 为准；提交状态以 `git HEAD` 为准。
+
+legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy-helper-inventory.md`。
 
 ## 稳定能力
 
@@ -151,3 +153,9 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 1. 短期：命名与描述收敛、legacy/helper 债务清单、sccache 构建加速、性能测试分层进入标准流水线。
 2. 中期：Ubuntu 固定 runner 容量事实沉淀、vcpkg/Conan 依赖治理、generated proto/gRPC full-flow 与真实性能对照、helper 兼容层退场。
 3. 长期：Developer Guide 与贡献路径、通用实时服务 plugin 生态、macOS ARM64 等更多平台、固定/高性能 runner 趋势化容量报告。
+
+当前命名与默认维护面状态：
+
+- 对外产品/框架名称按 `BoostGateway` 收敛。
+- 仓库历史名 `BoostAsioDemo` 暂时保留，用于兼容历史引用与路径。
+- v1 `login_server` / `room_server` / `battle_server` / `gateway_pressure` 与 `*_demo` showcase 已定位为 legacy 兼容入口，不再属于默认构建/安装面。

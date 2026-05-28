@@ -17,6 +17,7 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/README.md",
     "docs/current-state.md",
     "docs/project-blueprint.md",
+    "docs/legacy-helper-inventory.md",
     "docs/architecture-overview.md",
     "docs/reliability-matrix.md",
     "docs/performance-baseline.md",
@@ -96,4 +97,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -1,6 +1,6 @@
 # 生产证据固定 Runner 配置说明
 
-日期：2026-05-20
+日期：2026-05-28
 
 本文档用于收束 P2：把 P6 生产证据从本地手动命令推进到可归档的固定 runner 流水线。默认 PR/Release 仍保持有界 smoke，真实依赖、长项和容量数据必须在固定 runner 上显式开启。
 
@@ -26,6 +26,7 @@ GitHub Actions 的 `production-evidence.yml` 使用 JSON 输入解析 runner：
 | Redis live | `["self-hosted","production-evidence","redis-live"]` | Redis `127.0.0.1:6379` 可达 |
 | Operator kind | `["self-hosted","production-evidence","operator-kind"]` | Docker daemon、kind、kubectl、make 可用 |
 | Release baseline | `["self-hosted","production-evidence","release-baseline"]` | 固定 CPU/OS、低后台噪声、Release 构建目录 |
+| Ubuntu capacity source of truth | `["self-hosted","linux","x64","production-evidence","release-baseline"]` | Ubuntu LTS、固定 CPU/OS、低后台噪声、Release 构建目录 |
 | Full evidence | `["self-hosted","production-evidence","redis-live","operator-kind","release-baseline","observability"]` | 上述全部能力，且允许测试进程绑定 loopback 端口 |
 
 `runner` 输入必须是合法 JSON。单个 label 用带引号的字符串，例如 `"ubuntu-latest"`；多个 label 用数组，例如 `["self-hosted","production-evidence"]`。
@@ -40,7 +41,7 @@ GitHub Actions 的 `production-evidence.yml` 使用 JSON 输入解析 runner：
 | Release baseline | `configuration=Release`、`include_release_baseline=true`、`perf_repetitions=3` | `p6-release-baseline-summary.json`、`runtime/perf/release-baseline/**` |
 | Capacity baseline | `include_capacity_baseline=true`、`perf_repetitions=3`、`step_timeout_seconds=1800` | capacity profile perf summary |
 
-生产候选推荐先跑 Redis + kind + observability runtime，再在 release-baseline 固定机器上独立跑 Release baseline 和 capacity baseline。Full evidence 可以作为手动最终归档，但不建议频繁触发。
+生产候选推荐先跑 Redis + kind + observability runtime，再在 Ubuntu release-baseline 固定机器上独立跑 Release baseline 和 capacity baseline。Full evidence 可以作为手动最终归档，但不建议频繁触发。
 
 ## 预检与失败归因
 
@@ -175,7 +176,7 @@ python3 scripts/render_production_readiness_report.py
 
 N1/N2/N3 的 fixed-runner 建议补充如下：
 
-- N1 长稳/容量：运行 `python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-2h-soak --run-capacity --run-business-capacity --perf-repetitions 3`，归档 `long-soak-capacity-summary.json`、`long-soak-2h-summary.json`、`capacity-baseline-summary.json`、`business-capacity-baseline-summary.json` 和对应 `runtime/perf/fixed-runner-*` 目录。
+- N1 长稳/容量：优先在 Ubuntu fixed runner 上运行 `python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-2h-soak --run-capacity --run-business-capacity --perf-repetitions 3`，归档 `long-soak-capacity-summary.json`、`long-soak-2h-summary.json`、`capacity-baseline-summary.json`、`business-capacity-baseline-summary.json` 和对应 `runtime/perf/fixed-runner-*` 目录。
 - N2 监控 SLO/告警：运行 `python3 scripts/check_monitoring_operability.py --summary-path runtime/validation/n2-monitoring-operability-summary.json`，确认 Prometheus、Grafana、Alert rules 与 gateway-only metrics surface 一致。
 - N3 部署恢复：运行 `python3 scripts/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence`，归档 cloud preflight、deploy operability、docker snapshot、kind gate 和 production evidence aggregate summary。
 

@@ -38,6 +38,7 @@ REQUIRED_SCENARIOS = {
     "production_candidate_evidence_manifest",
     "production_readiness_report",
     "script_inventory_governance",
+    "legacy_helper_inventory_governance",
     "validation_summary_contract",
     "config_source_layout",
     "fixed_runner_release_capacity_gate",
@@ -85,4 +86,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

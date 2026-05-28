@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(boost_gateway
     VERSION 3.4.0
-    DESCRIPTION "A high-performance C++ game server framework"
+    DESCRIPTION "Enterprise-grade C++20 realtime service framework"
     LANGUAGES CXX
 )
 
@@ -13,6 +13,7 @@ option(ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(ENABLE_TESTING "Build tests" ON)
 option(BOOST_BUILD_GRPC "Build gRPC support (requires protoc and grpc_cpp_plugin)" OFF)
 option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" ON)
+option(BOOST_BUILD_V1_LEGACY_EXAMPLES "Build legacy v1 example and showcase binaries" OFF)
 
 # Batch B: Auto-detect gRPC if available (does NOT enable the gRPC listener at runtime)
 find_package(gRPC QUIET)
@@ -65,17 +66,6 @@ install(DIRECTORY include/
 )
 
 install(TARGETS
-    example_hello_world
-    echo_server
-    echo_client
-    gateway_pressure
-    login_server
-    room_server
-    battle_server
-    login_demo
-    room_demo
-    battle_demo
-    admin_demo
     v2_gateway_demo
     v2_battle_backend
     v2_room_backend
@@ -86,8 +76,25 @@ install(TARGETS
     v2_arch_benchmark
     sdk_echo_client
     sdk_full_flow_client
+    example_hello_world
+    echo_server
+    echo_client
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
+
+if(BOOST_BUILD_V1_LEGACY_EXAMPLES)
+    install(TARGETS
+        gateway_pressure
+        login_server
+        room_server
+        battle_server
+        login_demo
+        room_demo
+        battle_demo
+        admin_demo
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    )
+endif()
 
 install(DIRECTORY config/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/config"
@@ -111,6 +118,7 @@ install(FILES
     docs/README.md
     docs/current-state.md
     docs/project-blueprint.md
+    docs/legacy-helper-inventory.md
     docs/architecture-overview.md
     docs/reliability-matrix.md
     docs/performance-baseline.md

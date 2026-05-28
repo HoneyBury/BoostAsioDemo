@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""Validate the maintained legacy/helper inventory and deprecation boundaries."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[3]
+INVENTORY = ROOT / "docs/legacy-helper-inventory.md"
+
+REQUIRED_DOC_TOKENS = (
+    "legacy raw JSON",
+    "compatibility-only",
+    "BOOST_BUILD_V1_LEGACY_EXAMPLES",
+    "echo_server",
+    "generated proto",
+    "generated protobuf / gRPC stub",
+    "project_game",
+    "login/room/battle/match/leaderboard",
+)
+
+REQUIRED_REFERENCES = (
+    "include/v2/service/envelope_adapter.h",
+    "tests/v2/unit/service_boundary_test.cpp",
+    "proto/README.md",
+    "src/v2/login/login_backend_service.cpp",
+    "src/v2/room/room_backend_service.cpp",
+    "src/v2/leaderboard/leaderboard_service.cpp",
+)
+
+
+def read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:
+    checks.append({"name": name, "passed": passed, "detail": detail})
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--summary-path",
+        type=Path,
+        default=ROOT / "runtime/validation/legacy-helper-inventory-summary.json",
+    )
+    args = parser.parse_args()
+    summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
+
+    checks: list[dict[str, Any]] = []
+    add(checks, "inventory:exists", INVENTORY.exists(), "legacy/helper inventory doc exists")
+    content = read(INVENTORY) if INVENTORY.exists() else ""
+
+    for token in REQUIRED_DOC_TOKENS:
+        add(checks, f"inventory:token:{token}", token in content, f"inventory mentions {token}")
+
+    for relative in REQUIRED_REFERENCES:
+        add(checks, f"inventory:reference:{relative}", relative in content and (ROOT / relative).exists(), f"{relative} is documented and exists")
+
+    proto_readme = read(ROOT / "proto/README.md")
+    add(
+        checks,
+        "proto:legacy-helper-boundary",
+        "legacy raw JSON" in proto_readme and "generated protobuf / gRPC" in proto_readme,
+        "proto README keeps helper and legacy boundary explicit",
+    )
+
+    envelope_adapter = read(ROOT / "include/v2/service/envelope_adapter.h")
+    add(
+        checks,
+        "code:deprecation-notice",
+        "legacy raw JSON backend payload is deprecated; use typed envelope" in envelope_adapter,
+        "envelope adapter exports the legacy raw JSON deprecation notice",
+    )
+
+    examples_cmake = read(ROOT / "examples/CMakeLists.txt")
+    root_cmake = read(ROOT / "CMakeLists.txt")
+    add(
+        checks,
+        "build:legacy-examples-option",
+        "BOOST_BUILD_V1_LEGACY_EXAMPLES" in root_cmake and "if(BOOST_BUILD_V1_LEGACY_EXAMPLES)" in examples_cmake,
+        "legacy example build surface is behind BOOST_BUILD_V1_LEGACY_EXAMPLES",
+    )
+
+    failed = [check for check in checks if not check["passed"]]
+    summary = {
+        "summary_version": 2,
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "overall_pass": not failed,
+        "passed": not failed,
+        "failed_category": "legacy_helper_inventory" if failed else "",
+        "failed_step": failed[0]["name"] if failed else "",
+        "total_checks": len(checks),
+        "failed_checks": len(failed),
+        "checks": checks,
+        "artifacts": {
+            "summary_path": str(summary_path),
+            "inventory_path": str(INVENTORY),
+        },
+    }
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+
+    print(
+        f"legacy/helper inventory gate: {'PASS' if summary['passed'] else 'FAIL'} "
+        f"({len(checks) - len(failed)}/{len(checks)} checks)"
+    )
+    print(f"summary: {summary_path}")
+    return 0 if summary["passed"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

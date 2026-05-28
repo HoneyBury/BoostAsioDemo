@@ -1,6 +1,13 @@
 # v2.0.2 性能基线报告 — Windows Release P0 实测版
 
-更新时间：2026-05-23
+更新时间：2026-05-28
+
+## 工程效率与固定 Runner 口径
+
+- PR/CI 默认仍以 bounded smoke 和多平台快速反馈为主。
+- `ci.yml`、`perf-commit-check.yml`、`release.yml`、`release-baseline.yml` 已接入 `sccache` 与 `actions/cache`，用于降低 configure/build/test 等待时间。
+- 本机 Windows/macOS baseline 继续作为开发回归参考。
+- 最终容量、2h/8h soak、business-capacity 和 release/capacity 投产口径应优先以 Ubuntu fixed-runner summary 为准，而不是本机短样本。
 
 > **基线版本**: `8387a13dcb` (P0 优化收束)
 > **测量日期**: 2026-05-23
@@ -351,9 +358,9 @@ CI 工作流 `perf-regression.yml` 使用 `verify_r4_contract.py` 自动判定 g
 | 2026-05-23 | Windows 11 (本机) | P0 capacity | **PASS** | `runtime/perf/p0-capacity-local/` |
 | 2026-05-23 | GitHub Actions ubuntu-latest | smoke | PASS | CI artifact |
 | 2026-05-23 | GitHub Actions windows-2022 | smoke | PASS | CI artifact |
-| TBD | Fixed runner | capacity (3 reps) | **待测定** | - |
-| TBD | Fixed runner | long soak (2h) | **待测定** | - |
-| TBD | Fixed runner | overnight soak (8h) | **待测定** | - |
+| TBD | Ubuntu fixed runner | capacity (3 reps) | **待测定，优先事实源** | `runtime/perf/fixed-runner-capacity/` |
+| TBD | Ubuntu fixed runner | long soak (2h) | **待测定，优先事实源** | `runtime/validation/long-soak-2h-summary.json` |
+| TBD | Ubuntu fixed runner | overnight soak (8h) | **待测定，优先事实源** | `runtime/validation/long-soak-8h-summary.json` |
 | TBD | Fixed runner | 1/2 core linearity | **待测定** | - |
 | TBD | Fixed runner | TLS overhead | **待测定** | - |
 | TBD | Fixed runner | OTel overhead | **待测定** | - |

@@ -38,19 +38,21 @@
 #include <thread>
 #include <vector>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#else
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <signal.h>
-#include <unistd.h>
-#include <spawn.h>
+#ifdef PROJECT_ECHO_SERVER_PATH
+#  ifdef _WIN32
+#    ifndef WIN32_LEAN_AND_MEAN
+#      define WIN32_LEAN_AND_MEAN
+#    endif
+#    include <windows.h>
+#  else
+#    include <sys/types.h>
+#    include <sys/wait.h>
+#    include <signal.h>
+#    include <unistd.h>
+#    include <spawn.h>
 
 extern "C" char **environ;
+#  endif
 #endif
 
 #include <gtest/gtest.h>
@@ -423,6 +425,9 @@ http::response<http::string_body> http_get(std::uint16_t port, std::string_view 
 
 // Minimal cross-platform child-process wrapper — avoids boost::process (and its
 // boost::filesystem dependency) so the test links without compiled Boost libraries.
+// Legacy external echo_server process helper.
+// These tests stay opt-in because they validate the old v1/v2 shadow bridge.
+#ifdef PROJECT_ECHO_SERVER_PATH
 class NativeChildProcess {
 public:
     NativeChildProcess() = default;
@@ -577,6 +582,7 @@ private:
     NativeChildProcess child_;
     std::string startup_error_;
 };
+#endif
 
 }  // namespace
 
@@ -1042,6 +1048,7 @@ TEST(GatewayIntegrationTest, GatewayServerAcceptsConnectionsAcrossMultipleIoList
     runtime.stop();
 }
 
+#ifdef PROJECT_ECHO_SERVER_PATH
 TEST(GatewayIntegrationTest, EchoServerConfigEnablesEchoShadowBridgeResponses) {
     app::logging::init("project_tests");
 
@@ -2167,3 +2174,4 @@ TEST(GatewayIntegrationTest, EchoServerConfigV2BattleWithoutRoomIsGraceful) {
     server.stop();
     std::filesystem::remove(path);
 }
+#endif

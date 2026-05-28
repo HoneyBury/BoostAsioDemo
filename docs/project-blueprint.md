@@ -71,7 +71,7 @@
 | `env/`, `deploy/`, `operator/` | 生产配置、Docker/K8s/monitoring/operator 事实源 | 保留并继续治理漂移 | `check_config_source_layout.py`、生产证据 gate 和 operator gate 持续通过 |
 | `include/game/`, `src/game/`, `project_game` | v1 风格单进程/旧 gateway 业务层；仍被老 examples、unit/integration/chaos 测试依赖 | 冻结为 `legacy-v1`，不再新增能力；先移出默认安装面，再移出默认构建面 | v2 等价测试覆盖 gateway/session/login/room/battle/admin/metrics 后，旧测试迁移或归档 |
 | 老示例：`examples/login`, `room`, `battle`, `login_demo`, `room_demo`, `battle_demo`, `admin_demo`, `pressure` | 默认构建且部分被安装；主要服务 v1 历史验证和 showcase | 标注 legacy；新增 `BOOST_BUILD_V1_LEGACY_EXAMPLES` 后改为默认 OFF；release 安装包不再包含 | 文档和测试不再引用旧二进制；`v2_*` 后端和 SDK full-flow 覆盖对应路径 |
-| `examples/echo` | 同时依赖 `project_game` 和 `project_v2`；当前 integration test 仍依赖 `echo_server` | 过渡保留，作为最后一个 v1/v2 桥接验证入口 | 用 `v2_gateway_demo` + 后端进程替代 integration fixture 后移入 legacy optional |
+| `examples/echo` | 同时依赖 `project_game` 和 `project_v2`；外部 `echo_server` shadow-bridge 测试仍作为 legacy optional 保留 | 过渡保留，作为最后一个 v1/v2 桥接验证入口 | 用 `v2_gateway_demo` + 后端进程完全替代 legacy shadow-bridge fixture 后再考虑删除 |
 | `include/net/`, `src/net/`, `project_net` | 底层 packet/session/http 管理能力，仍被 v1、v2、安全/模糊测试和 SDK 周边使用 | 拆分低层稳定能力与 v1 路由草案；保留 packet/session，冻结 `InternalBus`/`ServiceRouter` 等非主线能力 | v2 主链不再引用的草案类进入 legacy 清单，删除前保留编译期检查 |
 | `src/v2/service/envelope_adapter.*` | typed envelope 与 legacy raw JSON 兼容层 | 短期保留但冻结 raw JSON；新增服务不得扩展 raw payload | 每个服务完成 generated/typed contract 后，legacy raw JSON 默认禁用并最终删除 |
 | `src/v2/grpc/`, `tests/v2/unit/gateway_grpc_test.cpp`, `tests/perf/grpc_vs_tcp_perf_test.cpp` | gRPC PoC，默认 `BOOST_BUILD_GRPC=OFF`；性能测试仍有 placeholder 性质 | 保留为实验区，不进入默认主线；要么补齐 full-flow，要么归档 | gRPC 覆盖 Room/Battle/Match/Leaderboard/streaming/SDK/观测/限流/RBAC/TLS 后再升级 |

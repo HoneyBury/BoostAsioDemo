@@ -77,13 +77,13 @@ install(TARGETS
     sdk_echo_client
     sdk_full_flow_client
     example_hello_world
-    echo_server
     echo_client
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
 if(BOOST_BUILD_V1_LEGACY_EXAMPLES)
     install(TARGETS
+        echo_server
         gateway_pressure
         login_server
         room_server

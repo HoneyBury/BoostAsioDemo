@@ -43,7 +43,7 @@
 | 入口/模块 | 当前状态 | 默认状态 | 备注 |
 | --- | --- | --- | --- |
 | `project_game` / `include/game` / `src/game` | v1 风格单进程旧主链 | 仍被部分 legacy 与 integration 依赖 | 冻结，不新增能力 |
-| `examples/echo` / `echo_server` | v1/v2 桥接入口 | 默认保留 | 当前 integration fixture 仍依赖 |
+| `examples/echo` / `echo_server` | v1/v2 桥接入口 | `BOOST_BUILD_V1_LEGACY_EXAMPLES=OFF` | 仅 legacy external shadow-bridge 测试仍依赖 |
 | `examples/login` / `room` / `battle` | v1 独立入口 | `BOOST_BUILD_V1_LEGACY_EXAMPLES=OFF` | legacy-v1 |
 | `examples/pressure` / `gateway_pressure` | v1 压测入口 | `BOOST_BUILD_V1_LEGACY_EXAMPLES=OFF` | legacy-v1 |
 | `examples/login_demo` / `room_demo` / `battle_demo` / `admin_demo` | showcase 入口 | `BOOST_BUILD_V1_LEGACY_EXAMPLES=OFF` | legacy showcase |
@@ -60,7 +60,7 @@
 
 - helper 或 proto 迁移必须有对应的 schema、typed contract 测试和 full-flow 证据。
 - legacy raw JSON 真正退场前，五个服务域都必须完成 generated/typed contract 覆盖。
-- `echo_server` 退场前，旧 integration fixture 必须迁移到 `v2_gateway_demo` + v2 backend 组合。
+- `echo_server` 彻底退场前，剩余 legacy external shadow-bridge 测试必须迁移到 `v2_gateway_demo` + v2 backend 组合。
 
 ## 治理入口
 

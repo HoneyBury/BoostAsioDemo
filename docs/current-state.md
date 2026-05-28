@@ -158,4 +158,4 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 
 - 对外产品/框架名称按 `BoostGateway` 收敛。
 - 仓库历史名 `BoostAsioDemo` 暂时保留，用于兼容历史引用与路径。
-- v1 `login_server` / `room_server` / `battle_server` / `gateway_pressure` 与 `*_demo` showcase 已定位为 legacy 兼容入口，不再属于默认构建/安装面。
+- v1 `echo_server` / `login_server` / `room_server` / `battle_server` / `gateway_pressure` 与 `*_demo` showcase 已定位为 legacy 兼容入口，不再属于默认构建/安装面。

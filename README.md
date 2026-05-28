@@ -82,8 +82,8 @@ build/Release/examples/v2_leaderboard_backend/Release/v2_leaderboard_backend.exe
 
 Legacy 兼容入口说明：
 
-- `echo_server` 与旧 integration fixture 仍保留为过渡桥接入口，不属于默认发布主线。
-- v1 `login_server` / `room_server` / `battle_server` / `gateway_pressure` 和 `*_demo` showcase 已降级为 legacy，仅在 `-DBOOST_BUILD_V1_LEGACY_EXAMPLES=ON` 时显式构建。
+- `echo_server` 已降级为 legacy bridge，仅在 `-DBOOST_BUILD_V1_LEGACY_EXAMPLES=ON` 时显式构建。
+- v1 `login_server` / `room_server` / `battle_server` / `gateway_pressure` 和 `*_demo` showcase 也已降级为 legacy，仅在 `-DBOOST_BUILD_V1_LEGACY_EXAMPLES=ON` 时显式构建。
 - `tank_battle_demo` 与 `realtime_echo_plugin` 继续保持默认关闭，仅作为 demo/plugin 样例。
 
 ## 文档策略

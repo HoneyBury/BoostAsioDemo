@@ -175,7 +175,7 @@ R4 gate：
 | `sdk_echo_client` | SDK 示例 | `bin/sdk_echo_client` | SDK Echo 客户端 |
 | `sdk_full_flow_client` | SDK 示例 | `bin/sdk_full_flow_client` | SDK 全流程客户端 |
 | `example_hello_world` | 示例 | `bin/example_hello_world` | Hello World 演示 |
-| `echo_server` | legacy bridge | `bin/echo_server` | v1/v2 过渡桥接入口，当前仍被旧 integration fixture 使用 |
+| `echo_server` | legacy bridge | `bin/echo_server` | v1/v2 过渡桥接入口，仅在 `BOOST_BUILD_V1_LEGACY_EXAMPLES=ON` 时构建 |
 | `echo_client` | 工具 | `bin/echo_client` | 基础 Echo 客户端 |
 
 > 条件编译产物（需对应 CMake 选项开启）：

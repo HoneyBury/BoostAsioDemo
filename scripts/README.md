@@ -2,6 +2,21 @@
 
 The maintained script index is `docs/script-inventory.json`.
 
+Canonical implementation paths may live under role-oriented subdirectories such
+as `scripts/gates/` and `scripts/lib/`. Root-level script names remain stable
+compatibility shims unless explicitly retired.
+
+Canonical groups migrated so far:
+
+- SDK gates: `scripts/gates/sdk/`
+- Production/recovery/evidence gates: `scripts/gates/production/`
+- Transport/TLS gates: `scripts/gates/transport/`
+- Governance/docs/config gates: `scripts/gates/governance/`
+- Release/RC/perf gates: `scripts/gates/release/`
+- Tools: `scripts/tools/`
+- Producers: `scripts/producers/`
+- Wrappers: `scripts/wrappers/ps1/` and `scripts/wrappers/sh/`
+
 Use these stable public entrypoints first:
 
 - `verify_release_candidate.py` for local/PR bounded release checks.

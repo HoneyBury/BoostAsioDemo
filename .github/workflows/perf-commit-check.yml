@@ -84,62 +84,63 @@ jobs:
           echo "$SUMMARY_PATH" >> "$GITHUB_OUTPUT"
           echo 'EOF' >> "$GITHUB_OUTPUT"
 
-          python3 -c "
-import json, sys
+          SUMMARY_PATH="$SUMMARY_PATH" GATES_FILE="$GATES_FILE" python - <<'PY' > comparison_result.json
+          import json
+          import os
 
-with open('$SUMMARY_PATH') as f:
-    summary = json.load(f)
-with open('$GATES_FILE') as f:
-    gates_config = json.load(f)
+          with open(os.environ["SUMMARY_PATH"], encoding="utf-8") as f:
+              summary = json.load(f)
+          with open(os.environ["GATES_FILE"], encoding="utf-8") as f:
+              gates_config = json.load(f)
 
-scenario_gates = gates_config.get('scenario_gates', {})
-aggregates = summary.get('case_aggregates', [])
-comparison_table = []
+          scenario_gates = gates_config.get("scenario_gates", {})
+          aggregates = summary.get("case_aggregates", [])
+          comparison_table = []
 
-for agg in aggregates:
-    case_name = agg.get('case_name', '')
-    p99_ms = agg.get('latency_p99_ms', {}).get('median', 0)
-    throughput = agg.get('throughput_msg_per_sec', {}).get('median', 0)
-    p99_us = p99_ms * 1000
+          for agg in aggregates:
+              case_name = agg.get("case_name", "")
+              p99_ms = agg.get("latency_p99_ms", {}).get("median", 0)
+              throughput = agg.get("throughput_msg_per_sec", {}).get("median", 0)
+              p99_us = p99_ms * 1000
 
-    if 'echo' in case_name:
-        gate = scenario_gates.get('echo_p99_us', {})
-    elif 'login' in case_name:
-        gate = scenario_gates.get('login_p99_us', {})
-    elif 'battle' in case_name:
-        gate = scenario_gates.get('battle_broadcast_p99_us', {})
-    else:
-        comparison_table.append({
-            'case': case_name,
-            'p99_us': p99_us,
-            'throughput': throughput,
-            'warning': 'N/A',
-            'critical': 'N/A',
-            'status': 'info'
-        })
-        continue
+              if "echo" in case_name:
+                  gate = scenario_gates.get("echo_p99_us", {})
+              elif "login" in case_name:
+                  gate = scenario_gates.get("login_p99_us", {})
+              elif "battle" in case_name:
+                  gate = scenario_gates.get("battle_broadcast_p99_us", {})
+              else:
+                  comparison_table.append({
+                      "case": case_name,
+                      "p99_us": p99_us,
+                      "throughput": throughput,
+                      "warning": "N/A",
+                      "critical": "N/A",
+                      "status": "info",
+                  })
+                  continue
 
-    warning_threshold = gate.get('warning', float('inf'))
-    critical_threshold = gate.get('critical', float('inf'))
+              warning_threshold = gate.get("warning", float("inf"))
+              critical_threshold = gate.get("critical", float("inf"))
 
-    if p99_us >= critical_threshold:
-        status = 'FAIL'
-    elif p99_us >= warning_threshold:
-        status = 'WARN'
-    else:
-        status = 'PASS'
+              if p99_us >= critical_threshold:
+                  status = "FAIL"
+              elif p99_us >= warning_threshold:
+                  status = "WARN"
+              else:
+                  status = "PASS"
 
-    comparison_table.append({
-        'case': case_name,
-        'p99_us': p99_us,
-        'throughput': throughput,
-        'warning': warning_threshold,
-        'critical': critical_threshold,
-        'status': status
-    })
+              comparison_table.append({
+                  "case": case_name,
+                  "p99_us": p99_us,
+                  "throughput": throughput,
+                  "warning": warning_threshold,
+                  "critical": critical_threshold,
+                  "status": status,
+              })
 
-print(json.dumps(comparison_table))
-" > comparison_result.json
+          print(json.dumps(comparison_table))
+          PY
 
       - name: Post PR comment
         uses: actions/github-script@v7

@@ -17,6 +17,7 @@ Canonical groups migrated so far:
 - Producers: `scripts/producers/`
 - Wrappers: `scripts/wrappers/ps1/` and `scripts/wrappers/sh/`
 - CI/CD runner matrix helper: `scripts/tools/read_runner_matrix.py`
+- Conan bootstrap helper: `scripts/tools/bootstrap_conan.py`
 
 Use these stable public entrypoints first:
 

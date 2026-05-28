@@ -24,7 +24,7 @@ else()
 endif()
 
 # ── Dependencies ────────────────────────────────────────────────────
-if(NOT TARGET nlohmann_json::nlohmann_json)
+if(NOT TARGET nlohmann_json::nlohmann_json AND NOT BOOST_USE_CONAN_DEPS)
     include(FetchContent)
     FetchContent_Declare(nlohmann_json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
@@ -33,7 +33,7 @@ if(NOT TARGET nlohmann_json::nlohmann_json)
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
-if(NOT DEFINED boost_SOURCE_DIR)
+if(NOT DEFINED boost_SOURCE_DIR AND NOT TARGET boost::headers AND NOT BOOST_USE_CONAN_DEPS)
     include(FetchContent)
     FetchContent_Declare(Boost
         URL https://archives.boost.io/release/1.90.0/source/boost_1_90_0.zip
@@ -84,8 +84,12 @@ target_include_directories(boost_gateway_sdk_dll
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
-        ${boost_SOURCE_DIR}
 )
+if(TARGET boost::headers)
+    target_link_libraries(boost_gateway_sdk_dll PRIVATE boost::headers)
+else()
+    target_include_directories(boost_gateway_sdk_dll PRIVATE ${boost_SOURCE_DIR})
+endif()
 target_compile_definitions(boost_gateway_sdk_dll
     PRIVATE
         BOOST_ALL_NO_LIB
@@ -103,11 +107,15 @@ target_include_directories(boost_gateway_sdk
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/boost_gateway>
 )
 
-target_include_directories(boost_gateway_sdk PUBLIC
-    $<BUILD_INTERFACE:${boost_SOURCE_DIR}>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-target_compile_definitions(boost_gateway_sdk PUBLIC
-    BOOST_ALL_NO_LIB BOOST_ERROR_CODE_HEADER_ONLY)
+if(TARGET boost::headers)
+    target_link_libraries(boost_gateway_sdk PUBLIC boost::headers)
+else()
+    target_include_directories(boost_gateway_sdk PUBLIC
+        $<BUILD_INTERFACE:${boost_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    target_compile_definitions(boost_gateway_sdk PUBLIC
+        BOOST_ALL_NO_LIB BOOST_ERROR_CODE_HEADER_ONLY)
+endif()
 if(WIN32)
     target_compile_definitions(boost_gateway_sdk PUBLIC _WIN32_WINNT=0x0A00)
 endif()

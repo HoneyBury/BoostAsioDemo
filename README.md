@@ -52,6 +52,24 @@ python scripts/check_production_evidence_manifest.py
 python scripts/render_production_readiness_report.py
 ```
 
+Conan PoC 入口：
+
+```bash
+set CONAN_HOME=%CD%\\.conan2-local
+conan profile detect --force
+conan install . --output-folder=build/conan-debug --build=missing -s build_type=Debug
+cmake -S . -B build/windows-ninja-debug-conan -G Ninja -DBOOST_USE_CONAN_DEPS=ON -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
+cmake --build --preset windows-ninja-debug --parallel
+```
+
+说明：
+
+- 当前仓库提供 `conanfile.py` 形式的 Conan 2 PoC。
+- 推荐把 `CONAN_HOME` 指到仓库内目录（例如 `.conan2-local`），避免受用户主目录权限影响。
+- `BOOST_USE_CONAN_DEPS=ON` 时优先使用 Conan 生成的 `CMakeDeps/CMakeToolchain` 结果。
+- 如果 Conan 依赖未准备好或未启用，项目仍回退到现有 `FetchContent/third_party` 路径。
+- 当前 Windows 本机已验证 `conan profile detect` 与 `conan install` 能进入依赖图解析阶段；如访问 `conancenter` 被宿主网络策略拦截，需要改用内网镜像、预热缓存或离线包源。
+
 ## 运行入口
 
 推荐优先阅读 `docs/deployment-quickstart.md`。本机 Docker/OrbStack 联调：

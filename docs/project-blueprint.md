@@ -42,7 +42,7 @@
 | G1 | 项目命名仍带 demo 色彩 | 根 README 标题仍是 `BoostAsioDemo`，CMake 描述仍偏 game server | 短期完成命名和描述收敛，明确企业级框架定位 |
 | G2 | gRPC/proto 尚未成为默认主链 | `BOOST_BUILD_GRPC=OFF`，gRPC Gateway 只覆盖 Login/Logout/Health，缺 Room/Battle/Match/Leaderboard 等完整能力 | 中期完成 generated proto/gRPC full-flow 和性能对照，再决定是否进入默认链路 |
 | G3 | helper/legacy 兼容层仍在主链 | `BackendEnvelope` 与 typed helper 是当前实际运行路径，legacy raw JSON 仍被测试覆盖 | 先建立弃用窗口和覆盖矩阵，再逐步移除 legacy raw payload |
-| G4 | 依赖治理未标准化 | `third_party/`、FetchContent、系统包探测并存 | 中期迁移到 vcpkg 或 Conan，并建立 cache/lockfile/reproducible build |
+| G4 | 依赖治理未标准化 | `third_party/`、FetchContent、系统包探测并存；当前仅有 Conan PoC，尚未成为默认依赖入口 | 中期迁移到 vcpkg 或 Conan，并建立 cache/lockfile/reproducible build |
 | G5 | 编译加速尚未系统化 | CI 使用 Ninja，但未使用 sccache | 短期启用 sccache 并量化构建耗时 |
 | G6 | 平台结论仍需固定 runner 沉淀 | CI 有 Ubuntu/macOS/Windows，但生产容量、long soak、TLS overhead 仍依赖固定 runner 后续刷新 | 中长期将固定 runner 结果纳入 release 准入和 readiness report |
 | G6.5 | 自动 CI 平台矩阵需要和当前在线 runner 一致 | 开发者可能只开启 1-2 台 runner，如果 workflow 固定全平台会导致无意义排队 | 短期引入仓库内版本化 runner matrix，按当前活跃机器提交配置 |
@@ -220,6 +220,7 @@
 任务：
 
 - 在 vcpkg 与 Conan 中二选一，建立 lockfile/profile。
+- 当前已先落 `conanfile.py` + `BOOST_USE_CONAN_DEPS=ON` 的最小 PoC，保留 FetchContent/third_party 作为 fallback。
 - 迁移 CMake 依赖发现逻辑，减少 `third_party/` 和临时系统探测路径。
 - CI 使用 dependency cache，cache key 包含 lockfile hash。
 - 保留离线/内网构建说明，避免完全依赖公网下载。

@@ -14,6 +14,7 @@ option(ENABLE_TESTING "Build tests" ON)
 option(BOOST_BUILD_GRPC "Build gRPC support (requires protoc and grpc_cpp_plugin)" OFF)
 option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" ON)
 option(BOOST_BUILD_V1_LEGACY_EXAMPLES "Build legacy v1 example and showcase binaries" OFF)
+option(BOOST_USE_CONAN_DEPS "Prefer Conan-provided dependencies before falling back to FetchContent/third_party" OFF)
 
 # Batch B: Auto-detect gRPC if available (does NOT enable the gRPC listener at runtime)
 find_package(gRPC QUIET)

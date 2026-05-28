@@ -21,18 +21,23 @@ def main() -> int:
     for category, rel_path in [
         ("vendored-source", "third_party/hiredis-src"),
         ("vendored-source", "third_party/openssl"),
+        ("dependency-manifest", "conanfile.py"),
         ("cached-archive", "third_party/fmt-11.2.0.tar.gz"),
         ("cached-archive", "third_party/googletest-1.17.0.tar.gz"),
         ("cached-archive", "third_party/spdlog-1.15.3.tar.gz"),
         ("cached-archive", "third_party/nlohmann_json-3.12.0.tar.gz"),
         ("cached-archive", "third_party/boost_1_90_0.zip"),
         ("toolchain-cache", "build/go-modcache"),
+        ("toolchain-cache", ".conan2-local"),
+        ("toolchain-cache", "build/conan-debug"),
         ("toolchain-cache", "build/_deps"),
         ("toolchain-cache", "build/windows-msvc-debug/_deps"),
     ]:
         print_status(category, root / rel_path)
 
     print("\nSuggested restore commands")
+    print("  conan profile detect --force")
+    print("  conan install . --output-folder=build/conan-debug --build=missing -s build_type=Debug")
     print("  bash third_party/download_deps.sh")
     print("  bash third_party/bootstrap_from_build_cache.sh")
     print("  cmake --preset windows-msvc-debug")
@@ -41,4 +46,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

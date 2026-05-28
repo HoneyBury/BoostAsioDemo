@@ -1,0 +1,50 @@
+from conan import ConanFile
+from conan.tools.cmake import CMakeDeps, CMakeToolchain, cmake_layout
+
+
+class BoostGatewayConan(ConanFile):
+    name = "boost_gateway_workspace"
+    version = "0.1"
+    package_type = "application"
+
+    settings = "os", "arch", "compiler", "build_type"
+    options = {
+        "with_grpc": [True, False],
+        "with_sqlite": [True, False],
+        "shared": [True, False],
+    }
+    default_options = {
+        "with_grpc": False,
+        "with_sqlite": True,
+        "shared": False,
+        "fmt/*:header_only": False,
+        "spdlog/*:header_only": False,
+        "openssl/*:shared": False,
+    }
+
+    def requirements(self):
+        self.requires("boost/1.86.0")
+        self.requires("fmt/11.2.0")
+        self.requires("spdlog/1.15.3")
+        self.requires("nlohmann_json/3.12.0")
+        self.requires("openssl/3.3.2")
+        self.requires("hiredis/1.2.0")
+        if self.options.with_sqlite:
+            self.requires("sqlite3/3.46.1")
+        self.requires("gtest/1.15.0")
+        if self.options.with_grpc:
+            self.requires("protobuf/5.27.0")
+            self.requires("grpc/1.65.0")
+
+    def layout(self):
+        cmake_layout(self)
+
+    def generate(self):
+        deps = CMakeDeps(self)
+        deps.generate()
+
+        tc = CMakeToolchain(self)
+        tc.variables["BOOST_USE_CONAN_DEPS"] = True
+        tc.variables["BOOST_BUILD_GRPC"] = bool(self.options.with_grpc)
+        tc.variables["BOOST_BUILD_SQLITE"] = bool(self.options.with_sqlite)
+        tc.generate()

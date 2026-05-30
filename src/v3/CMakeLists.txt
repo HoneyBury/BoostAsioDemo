@@ -9,7 +9,7 @@ target_link_libraries(project_v3
     PUBLIC
         project_app
     PRIVATE
-        hiredis
+        $<IF:$<TARGET_EXISTS:hiredis::hiredis>,hiredis::hiredis,hiredis>
 )
 apply_project_warnings(project_v3)
 

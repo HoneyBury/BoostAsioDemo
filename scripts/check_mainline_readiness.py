@@ -164,6 +164,11 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     add(checks, "p3:openssl-central-resolver", "function(project_ensure_openssl)" in deps_cmake, "OpenSSL resolution is centralized")
     add(checks, "p3:openssl-conan-system-local", "find_package(OpenSSL CONFIG QUIET)" in deps_cmake and "find_package(OpenSSL QUIET)" in deps_cmake and '"${THIRD_PARTY_DIR}/openssl"' in deps_cmake, "OpenSSL supports Conan, system and local install fallback")
     add(checks, "p3:openssl-third-party-doc", "OpenSSL 是例外" in third_party_readme and "Conan config package" in third_party_readme, "third_party docs explain OpenSSL fallback policy")
+    add(checks, "p3:conan-boost-target-compatible", "PROJECT_CONAN_BOOST_TARGET" in deps_cmake and "boost::boost" in deps_cmake and "boost::headers" in deps_cmake, "Conan Boost target accepts both boost::boost and boost::headers")
+    v3_cmake = read("src/v3/CMakeLists.txt")
+    redis_client = read("src/v3/persistence/redis_client.cpp")
+    add(checks, "p3:conan-hiredis-target-compatible", "hiredis::hiredis" in v3_cmake and "TARGET_EXISTS:hiredis::hiredis" in v3_cmake, "project_v3 links Conan hiredis target when available")
+    add(checks, "p3:conan-hiredis-include-compatible", "__has_include(<hiredis/hiredis.h>)" in redis_client and "#include <hiredis.h>" in redis_client, "Redis client accepts both Conan and legacy hiredis include layouts")
 
     src_cmake = read("src/CMakeLists.txt")
     tests_cmake = read("tests/CMakeLists.txt")

@@ -13,6 +13,9 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 LOCKFILE = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
 PROFILE = "conan/profiles/linux-gcc-x64"
+CACHE_INPUTS = ("conanfile.py", "conan/profiles/**", "conan/remotes*.json", "conan/locks/*.lock")
+
+
 WORKFLOWS = {
     "conan_validate": ".github/workflows/conan-validate.yml",
     "release_baseline": ".github/workflows/release-baseline.yml",
@@ -48,6 +51,19 @@ def workflow_checks(checks: list[dict[str, Any]], name: str, path: str, content:
     )
     add(checks, f"workflow:{name}:sqlite-disabled", sqlite_disabled, f"{path} keeps sqlite disabled by default for nosqlite mainline")
     add(checks, f"workflow:{name}:lockfile-consumed", "--lockfile" in content and "conan install" in content, f"{path} consumes lockfile during conan install")
+    add(
+        checks,
+        f"workflow:{name}:artifact-upload",
+        "actions/upload-artifact@v4" in content,
+        f"{path} uploads Conan/fixed-runner validation artifacts",
+    )
+    if "actions/cache@v4" in content:
+        add(
+            checks,
+            f"workflow:{name}:cache-key-includes-conan-inputs",
+            all(token in content for token in CACHE_INPUTS),
+            f"{path} cache key is bound to Conan graph inputs",
+        )
 
 
 def main() -> int:
@@ -76,7 +92,7 @@ def main() -> int:
     add(
         checks,
         "workflow:release-baseline:cache-key-includes-conan-inputs",
-        "conanfile.py" in release and "conan/profiles/**" in release and "conan/remotes*.json" in release and "conan/locks/*.lock" in release,
+        all(token in release for token in CACHE_INPUTS),
         "release-baseline cache key is bound to Conan graph inputs",
     )
     add(

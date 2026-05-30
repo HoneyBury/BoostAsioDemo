@@ -182,7 +182,7 @@
 
 仍不能在本地伪造的退出条件：Ubuntu fixed-runner 上真实执行 lockfile-based `conan install`、release baseline、long-soak/capacity 和 production evidence，并归档对应 summary。
 
-本地治理允许用 `python3 scripts/check_validation_summary_contract.py --allow-missing` 验证 summary 契约形态；fixed-runner / 投产准入必须运行不带 `--allow-missing` 的严格检查，并要求真实 summary 存在。
+本地治理允许用 `python3 scripts/check_validation_summary_contract.py --allow-missing` 验证 summary 契约形态；fixed-runner / 投产准入必须运行不带 `--allow-missing` 的严格检查，并要求真实 summary 存在。workflow 与 summary 归档计划由 `python3 scripts/check_fixed_runner_evidence_plan.py` 阻断漂移，它只验证仓库内 wiring，不替代 Ubuntu fixed-runner 真实执行。
 
 ## 当前明确不做
 

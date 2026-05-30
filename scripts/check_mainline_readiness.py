@@ -96,6 +96,7 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
         "scripts/check_script_inventory.py",
         "scripts/check_validation_summary_contract.py",
         "scripts/check_config_source_layout.py",
+        "scripts/check_fixed_runner_evidence_plan.py",
         "scripts/verify_fixed_runner_release_capacity.py",
         "scripts/verify_preprod_recovery_drill.py",
         "scripts/verify_tls_preprod_multi_run.py",
@@ -142,6 +143,7 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     add(checks, "p3:env-source-of-truth", "`env/` is the maintained production configuration source of truth" in env_readme, "env README declares config source of truth")
     add(checks, "p3:legacy-config-boundary", "legacy/reference surfaces" in env_readme, "env README documents legacy config boundary")
     add(checks, "p3:legacy-helper-gate-exists", exists("scripts/check_legacy_helper_inventory.py"), "legacy/helper governance gate exists")
+    add(checks, "p4:legacy-helper-gate-guards-raw-json", "no-new-raw-json-marker" in read("scripts/gates/governance/check_legacy_helper_inventory.py"), "legacy/helper gate guards against new raw JSON-only business markers")
     add(checks, "p3:conan-governance-readme", exists("conan/README.md"), "repository documents Conan governance entrypoints")
     add(checks, "p3:conan-managed-profile", exists("conan/profiles/windows-msvc-x64"), "repository ships a managed Conan profile")
     add(checks, "p3:conan-linux-profile", exists("conan/profiles/linux-gcc-x64"), "repository ships a Linux fixed-runner Conan profile")
@@ -155,8 +157,18 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     linux_lockfile = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
     add(checks, "p3:conan-linux-lockfile-default", linux_lockfile in release_baseline_workflow and linux_lockfile in conan_validate_workflow and linux_lockfile in long_soak_workflow and linux_lockfile in production_evidence_workflow, "fixed-runner workflows default to the Linux nosqlite lockfile path")
     add(checks, "p3:conan-lockfile-workflow-gate", exists("scripts/check_conan_lockfile_workflows.py"), "Conan lockfile workflow governance gate exists")
+    add(checks, "p3:fixed-runner-evidence-plan-gate", exists("scripts/check_fixed_runner_evidence_plan.py"), "fixed-runner evidence plan governance gate exists")
     add(checks, "p3:long-soak-consumes-conan-lockfile", "build/conan-long-soak-capacity-cmake" in long_soak_workflow and "--lockfile" in long_soak_workflow, "long-soak-capacity workflow performs lockfile-based Conan configure/build preflight")
     add(checks, "p3:production-evidence-consumes-conan-lockfile", "build/conan-production-evidence-cmake" in production_evidence_workflow and "--lockfile" in production_evidence_workflow, "production-evidence workflow performs lockfile-based Conan configure/build preflight")
+    add(
+        checks,
+        "p3:fixed-runner-summaries-uploaded",
+        "runtime/validation/release-baseline-summary.json" in release_baseline_workflow
+        and "runtime/validation/long-soak-capacity-summary.json" in long_soak_workflow
+        and "runtime/validation/fixed-runner-release-capacity-summary.json" in long_soak_workflow
+        and "runtime/validation/production-evidence-summary.json" in production_evidence_workflow,
+        "fixed-runner workflows upload the required release/long-soak/capacity/production evidence summaries",
+    )
 
     examples_cmake = read("examples/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
@@ -198,6 +210,57 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     )
 
 
+
+def validate_p4_integration_stability(checks: list[dict[str, Any]]) -> None:
+    supervisor = read("src/app/process_supervisor.cpp")
+    demo_server = read("src/v2/gateway/demo_server.cpp")
+    backend_routing_test = read("tests/v2/integration/backend_routing_test.cpp")
+    demo_smoke_test = read("tests/v2/integration/demo_server_smoke_test.cpp")
+    matchmaking_test = read("tests/v2/integration/matchmaking_e2e_test.cpp")
+    reliability = read("docs/reliability-matrix.md")
+
+    add(
+        checks,
+        "p4:process-supervisor-kills-process-group",
+        "const pid_t process_group = -state.pid" in supervisor
+        and "::kill(process_group, SIGTERM)" in supervisor
+        and "::kill(process_group, SIGKILL)" in supervisor,
+        "POSIX ProcessSupervisor terminates child process groups, not only the direct child PID",
+    )
+    add(
+        checks,
+        "p4:demo-server-destructor-stops-runtime",
+        "DemoServer::~DemoServer()" in demo_server and "stop();" in demo_server,
+        "DemoServer destructor calls stop() so smoke fixtures cannot leak background threads",
+    )
+    add(
+        checks,
+        "p4:fake-otlp-collector-wakes-acceptor",
+        "wake_socket.connect" in backend_routing_test and "thread.join()" in backend_routing_test,
+        "Fake OTLP collector wakes its blocking accept loop before joining",
+    )
+    add(
+        checks,
+        "p4:demo-smoke-read-timeout-diagnostics",
+        "SO_RCVTIMEO" in demo_smoke_test
+        and "timed out waiting for message id" in demo_smoke_test
+        and "observed=" in demo_smoke_test,
+        "demo server smoke client has bounded reads with observed-message diagnostics",
+    )
+    add(
+        checks,
+        "p4:matchmaking-leave-order-regression",
+        "Bob leaves before another compatible player joins" in matchmaking_test
+        and "Bob must not be matched retroactively" in matchmaking_test,
+        "matchmaking E2E covers leave-before-compatible-join ordering",
+    )
+    add(
+        checks,
+        "p4:reliability-docs-integration-teardown",
+        "integration_teardown_no_hang" in reliability,
+        "reliability matrix documents integration teardown no-hang evidence",
+    )
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -213,6 +276,7 @@ def main() -> int:
     validate_p1_mainline(checks)
     validate_p2_evidence(checks)
     validate_p3_governance(checks)
+    validate_p4_integration_stability(checks)
 
     failed = [check for check in checks if not check["passed"]]
     summary = {

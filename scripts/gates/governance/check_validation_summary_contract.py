@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Validate summary_version=2 contracts for maintained validation summaries."""
 
 from __future__ import annotations
@@ -12,7 +12,11 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SUMMARIES = [
+    "runtime/validation/release-baseline-summary.json",
+    "runtime/validation/long-soak-capacity-summary.json",
+    "runtime/validation/production-evidence-summary.json",
     "runtime/validation/r2-production-evidence-manifest-summary.json",
+    "runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json",
     "runtime/validation/r3-production-readiness-report-summary.json",
     "runtime/validation/fixed-runner-release-capacity-summary.json",
     "runtime/validation/n5-sdk-enterprise-delivery-summary.json",

@@ -31,6 +31,15 @@ REQUIRED_DOC_TOKENS = (
     "不得新增新的 raw JSON-only 业务消息类型",
 )
 
+BUSINESS_SERVICE_SOURCES = (
+    "src/v2/login/login_backend_service.cpp",
+    "src/v2/room/room_backend_service.cpp",
+    "src/v2/battle/battle_backend_service.cpp",
+    "src/v2/match/matchmaking_service.cpp",
+    "src/v2/leaderboard/leaderboard_service.cpp",
+)
+
+
 REQUIRED_REFERENCES = (
     "include/v2/service/envelope_adapter.h",
     "tests/v2/unit/service_boundary_test.cpp",
@@ -136,6 +145,30 @@ def main() -> int:
             f"service:{name}:typed-response-path",
             "wrap_typed_response_if_needed(" in source,
             f"{name} service has at least one typed response wrap path",
+        )
+
+    for relative in BUSINESS_SERVICE_SOURCES:
+        source = read(ROOT / relative)
+        service_name = Path(relative).stem
+        add(
+            checks,
+            f"service:{service_name}:raw-json-policy-marker",
+            "decode_handler_payload(" in source and "wrap_typed_response_if_needed(" in source,
+            f"{relative} must keep typed decode and response wrap markers before accepting new business handlers",
+        )
+
+    forbidden_new_raw_markers = (
+        "new raw JSON-only",
+        "raw_json_only_new_handler",
+        "legacy_json_new_business",
+    )
+    for relative in BUSINESS_SERVICE_SOURCES:
+        source = read(ROOT / relative)
+        add(
+            checks,
+            f"service:{Path(relative).stem}:no-new-raw-json-marker",
+            not any(marker in source for marker in forbidden_new_raw_markers),
+            f"{relative} must not contain markers for new raw JSON-only business handlers",
         )
 
     failed = [check for check in checks if not check["passed"]]

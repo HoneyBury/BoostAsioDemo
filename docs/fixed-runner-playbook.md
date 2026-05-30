@@ -8,7 +8,7 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs
 
 容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。Windows/macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
 
-Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 都必须在正式门禁前执行 lockfile-based `conan install` + `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`。
+Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 都必须在正式门禁前执行 lockfile-based `conan install` + `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
 
 手动命令：
 
@@ -35,6 +35,7 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 - `release-baseline-summary.json`、`long-soak-capacity-summary.json`、`fixed-runner-release-capacity-summary.json`、`production-evidence-summary.json` 均为 `overall_pass=true`。
 - 投产准入检查必须运行不带 `--allow-missing` 的 `python scripts/check_validation_summary_contract.py`，并运行 `python scripts/check_production_evidence_manifest.py --require-fixed-runner`。
 - 如 fixed runner 缺 Redis、kind 或外部网络，summary 必须明确失败在 `preflight` 或 Conan remote/cache 阶段，不得把缺失环境解释为业务通过。
+- 仓库内 wiring 变更必须先通过 `python scripts/check_fixed_runner_evidence_plan.py`；该脚本只校验 workflow/summary 归档计划，不能替代 fixed-runner 真实执行。
 
 ## N0 统一约定
 

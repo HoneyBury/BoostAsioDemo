@@ -18,6 +18,7 @@ Canonical groups migrated so far:
 - Wrappers: `scripts/wrappers/ps1/` and `scripts/wrappers/sh/`
 - CI/CD runner matrix helper: `scripts/tools/read_runner_matrix.py`
 - Conan bootstrap helper: `scripts/tools/bootstrap_conan.py`
+- Conan lockfile helper: `scripts/tools/generate_conan_lock.py`
 
 Use these stable public entrypoints first:
 

@@ -10,6 +10,10 @@ on:
     - cron: "10 18 * * 5"
   workflow_dispatch:
     inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","linux","x64","release-baseline"]'
+        required: true
+        default: '["self-hosted","linux","x64","release-baseline"]'
       configure_preset:
         description: "CMake configure preset"
         required: true
@@ -48,6 +52,19 @@ on:
         required: true
         default: false
         type: boolean
+      conan_profile:
+        description: "Repository Conan profile path used when Conan validation is enabled"
+        required: true
+        default: "conan/profiles/linux-gcc-x64"
+      conan_lockfile:
+        description: "Optional Conan lockfile path relative to repo root"
+        required: true
+        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
+      conan_with_sqlite:
+        description: "Enable sqlite optional dependency during Conan validation"
+        required: true
+        default: false
+        type: boolean
       use_existing_workspace:
         description: "Skip actions/checkout and reuse the self-hosted runner workspace clone"
         required: true
@@ -59,10 +76,10 @@ permissions:
 
 jobs:
   release-baseline:
-    runs-on: ["self-hosted", "Windows", "X64"]
+    runs-on: ${{ fromJSON(inputs.runner || vars.RELEASE_BASELINE_RUNNER || '["self-hosted","linux","x64","release-baseline"]') }}
     timeout-minutes: 720
     concurrency:
-      group: release-baseline-self-hosted-windows-x64
+      group: release-baseline-${{ inputs.runner || vars.RELEASE_BASELINE_RUNNER || 'self-hosted-linux-x64-release-baseline' }}
       cancel-in-progress: false
 
     steps:
@@ -75,11 +92,10 @@ jobs:
 
       - name: Verify existing workspace
         if: inputs.use_existing_workspace
-        shell: pwsh
+        shell: bash
         run: |
-          if (-not (Test-Path ".git")) {
-            throw "use_existing_workspace=true but no .git directory exists in GITHUB_WORKSPACE"
-          }
+          set -euo pipefail
+          test -d .git
           git rev-parse --short HEAD
           git status --short --branch
 
@@ -87,7 +103,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-release-baseline-${{ inputs.configure_preset || 'release' }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          key: sccache-${{ runner.os }}-release-baseline-${{ inputs.configure_preset || 'release' }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}
           restore-keys: |
             sccache-${{ runner.os }}-release-baseline-${{ inputs.configure_preset || 'release' }}-
             sccache-${{ runner.os }}-
@@ -97,6 +113,7 @@ jobs:
 
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
 
       - name: Show CMake version
         run: cmake --version
@@ -109,34 +126,54 @@ jobs:
 
       - name: Install sccache
         shell: pwsh
+        if: runner.os == 'Windows'
         run: |
           choco install sccache -y --no-progress
           sccache --version
 
+      - name: Install sccache (Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v sccache >/dev/null 2>&1; then
+            sccache --version
+            exit 0
+          fi
+          cargo install sccache
+          sccache --version
+
       - name: Install Conan
         if: inputs.enable_conan_validation
-        shell: pwsh
+        shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           pip install conan
           conan --version
 
       - name: Conan validation preflight
         if: inputs.enable_conan_validation
-        shell: pwsh
+        shell: bash
         run: |
+          set -euo pipefail
           python scripts/bootstrap_conan.py
-          conan install . --output-folder=build/conan-release-baseline --build=missing -s build_type=${{ inputs.configuration || 'Release' }}
-          cmake -S . -B build/windows-ninja-release-conan -G Ninja \
+          args=(conan install . --output-folder=build/conan-release-baseline --build=missing -s build_type=${{ inputs.configuration || 'Release' }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=${{ inputs.conan_with_sqlite && 'True' || 'False' }}")
+          if [ -n "${{ inputs.conan_lockfile }}" ]; then
+            args+=(--lockfile "${{ inputs.conan_lockfile }}")
+          fi
+          "${args[@]}"
+          cmake -S . -B build/conan-release-baseline-cmake -G Ninja \
             -DBOOST_USE_CONAN_DEPS=ON \
             -DENABLE_TESTING=OFF \
             -DCMAKE_BUILD_TYPE=${{ inputs.configuration || 'Release' }} \
             -DCMAKE_TOOLCHAIN_FILE=build/conan-release-baseline/build/${{ inputs.configuration || 'Release' }}/generators/conan_toolchain.cmake
-          cmake --build build/windows-ninja-release-conan --parallel --target project_v2
+          cmake --build build/conan-release-baseline-cmake --parallel --target project_v2
 
       - name: Fixed runner preflight
-        shell: pwsh
+        shell: bash
         run: |
+          set -euo pipefail
           python scripts/check_fixed_runner_environment.py \
             --profile release-baseline \
             --build-dir "${{ inputs.build_dir || 'build/release' }}" \
@@ -146,8 +183,9 @@ jobs:
         run: cmake --preset ${{ inputs.configure_preset || 'release' }} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Release baseline gate
-        shell: pwsh
+        shell: bash
         run: |
+          set -euo pipefail
           python scripts/collect_release_baseline.py \
             --build-dir "${{ inputs.build_dir || 'build/release' }}" \
             --configuration "${{ inputs.configuration || 'Release' }}" \
@@ -159,8 +197,9 @@ jobs:
 
       - name: R4 fixed-runner release/capacity gate
         if: inputs.perf_preset == 'capacity'
-        shell: pwsh
+        shell: bash
         run: |
+          set -euo pipefail
           python scripts/verify_fixed_runner_release_capacity.py \
             --build-dir "${{ inputs.build_dir || 'build/release' }}" \
             --configuration "${{ inputs.configuration || 'Release' }}" \
@@ -171,17 +210,22 @@ jobs:
 
       - name: Render release baseline summary
         if: always()
-        shell: pwsh
+        shell: bash
         run: |
-          $summaries = @(
-            'runtime/validation/fixed-runner-preflight-summary.json',
-            'runtime/validation/release-baseline-summary.json',
-            'runtime/validation/release-r4-contract-summary.json',
-            'runtime/validation/fixed-runner-release-capacity-summary.json',
-            'runtime/perf/release-baseline/summary.json'
-          ) | Where-Object { Test-Path $_ }
-          if ($summaries.Count -gt 0) {
-            python scripts/render_validation_summary.py $summaries | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          set -euo pipefail
+          summaries=()
+          for path in \
+            runtime/validation/fixed-runner-preflight-summary.json \
+            runtime/validation/release-baseline-summary.json \
+            runtime/validation/release-r4-contract-summary.json \
+            runtime/validation/fixed-runner-release-capacity-summary.json \
+            runtime/perf/release-baseline/summary.json; do
+            if [ -f "$path" ]; then
+              summaries+=("$path")
+            fi
+          done
+          if [ "${#summaries[@]}" -gt 0 ]; then
+            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload release baseline artifact
@@ -200,5 +244,5 @@ jobs:
 
       - name: Show sccache stats
         if: always()
-        shell: pwsh
+        shell: bash
         run: sccache --show-stats || true

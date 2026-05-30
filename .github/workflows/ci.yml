@@ -68,7 +68,7 @@ jobs:
         run: |
           python scripts/bootstrap_conan.py
           # This stays opt-in because some runners may block direct conancenter access.
-          conan install . --output-folder=build/conan-debug --build=missing -s build_type=Debug
+          conan install . --profile:host conan/profiles/windows-msvc-x64 --profile:build conan/profiles/windows-msvc-x64 --lockfile conan/locks/windows-msvc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
           cmake -S . -B build/windows-ninja-debug-conan -G Ninja -DBOOST_USE_CONAN_DEPS=ON -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
           cmake --build build/windows-ninja-debug-conan --parallel --target project_v2
 

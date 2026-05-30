@@ -21,6 +21,7 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/architecture-overview.md",
     "docs/reliability-matrix.md",
     "docs/performance-baseline.md",
+    "docs/v2-control-plane-preplan.md",
     "docs/production-deployment-runbook.md",
     "docs/production-operations-runbook.md",
     "docs/production-configuration-runbook.md",

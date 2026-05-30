@@ -11,7 +11,7 @@ on:
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","production-evidence"]'
         required: true
-        default: '"ubuntu-latest"'
+        default: '["self-hosted","linux","x64","production-evidence"]'
       configure_preset:
         description: "CMake configure preset"
         required: true
@@ -87,10 +87,10 @@ permissions:
 
 jobs:
   production-evidence:
-    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || '["self-hosted","Windows","X64"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || '["self-hosted","Linux","X64","production-evidence"]') }}
     timeout-minutes: 720
     concurrency:
-      group: production-evidence-${{ inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || 'self-hosted-windows-x64' }}
+      group: production-evidence-${{ inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || 'self-hosted-linux-x64-production-evidence' }}
       cancel-in-progress: false
 
     steps:

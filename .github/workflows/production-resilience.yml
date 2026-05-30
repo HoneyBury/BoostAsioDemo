@@ -11,7 +11,7 @@ on:
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","production-resilience"]'
         required: true
-        default: '"ubuntu-latest"'
+        default: '["self-hosted","linux","x64","production-resilience"]'
       configure_preset:
         description: "CMake configure preset"
         required: true
@@ -86,10 +86,10 @@ permissions:
 
 jobs:
   production-resilience:
-    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || '["self-hosted","Windows","X64"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || '["self-hosted","Linux","X64","production-resilience"]') }}
     timeout-minutes: 720
     concurrency:
-      group: production-resilience-${{ inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || 'self-hosted-windows-x64' }}
+      group: production-resilience-${{ inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || 'self-hosted-linux-x64-production-resilience' }}
       cancel-in-progress: false
 
     steps:

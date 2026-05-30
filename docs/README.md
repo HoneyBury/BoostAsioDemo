@@ -12,6 +12,8 @@
 6. `reliability-matrix.md`
 7. `performance-baseline.md`
 8. `v3-release-checklist.md`
+9. `v2-control-plane-preplan.md`
+10. `mainline-execution-plan.md`
 
 ## 当前主文档
 
@@ -23,6 +25,7 @@
 
 - `legacy-helper-inventory.md`
   当前 legacy 构建面、typed helper、legacy raw JSON 和 generated proto 迁移边界清单。
+  同时记录 `BOOST_BUILD_V1_LEGACY_CORE`、`BOOST_BUILD_V1_LEGACY_EXAMPLES` 和 `BOOST_BUILD_V1_LEGACY_TESTS` 的默认关闭边界。
 
 - 命名兼容说明
   当前对外名称按 `BoostGateway` 收敛；仓库历史名 `BoostAsioDemo` 仅作为路径与历史引用兼容保留。
@@ -66,13 +69,20 @@
 - `v3-release-checklist.md`
   当前 release gate 与最终发布检查口径。
 
+- `v2-control-plane-preplan.md`
+  仅用于记录“如果后续需要，再如何做”的 v2 控制面预开发规划；不是当前主线承诺。
+  当前如果只想看已落地能力，不要把这份文档当作事实源。
+
+- `mainline-execution-plan.md`
+  当前主线的实际执行计划，聚焦 fixed-runner、Conan `nosqlite` 主线路径、helper 退场准备和 gRPC 证据边界。
+
 ## P0/P1/P2 收口门禁
 
 - `scripts/check_current_docs_install.py`
   校验顶层主文档、归档目录和 CMake install 清单是否一致。
 
 - `scripts/check_mainline_readiness.py`
-  校验默认生产主链边界、gRPC/Tank demo 边界和固定 runner 证据入口。
+  校验默认生产主链边界、legacy 默认关闭边界、gRPC/Tank demo 边界和固定 runner / Conan 治理入口。
 
 - `scripts/check_p3_p4_release_readiness.py`
   校验 P3 data recovery 与 P4 observability 已接入 RC 总门禁，并使用统一 summary 契约。

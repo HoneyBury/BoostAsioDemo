@@ -14,14 +14,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
-ROOT_PERSISTENCE_FILTER = (
-    "PersistenceReplayAuditTest.JsonFilePlayerStoreRoundTrip:"
-    "PersistenceReplayAuditTest.SqlitePlayerStoreRoundTrip:"
-    "PersistenceReplayAuditTest.JsonFileBattleReplayStoreRoundTrip:"
-    "PersistenceReplayAuditTest.ReplayPlayerLoadsFramesAndPlaysToCompletion"
+V2_ARCHIVE_FILTER = (
+    "V2BattleArchiveTest.RuntimeBuildsResultSummaryAndReplayPayloadOnBattleSettlement:"
+    "V2BattleArchiveTest.ArchiveSinkPersistsReportAndReplayArtifacts"
 )
 
-ROOT_REDIS_DEGRADED_FILTER = (
+V2_REDIS_DEGRADED_FILTER = (
     "RedisClientTest.ConnectFailsGracefully:"
     "RedisClientTest.DisconnectedOperationsReturnEmpty:"
     "RedisEventStoreTest.NoRedisAppendReturnsFalse:"
@@ -29,14 +27,16 @@ ROOT_REDIS_DEGRADED_FILTER = (
     "RedisConnectionPoolTest.AcquireWhenRedisDownReturnsEmpty"
 )
 
-ROOT_REDIS_LIVE_FILTER = (
-    "RedisClientTest.SetGetDel:"
-    "RedisClientTest.Exists:"
-    "RedisClientTest.Incr:"
-    "RedisClientTest.ListOperations:"
-    "RedisClientTest.SortedSetOperations:"
-    "RedisClientTest.HashSetGet:"
-    "RedisClientTest.HashGetNonexistent:"
+V2_REDIS_LIVE_FILTER = (
+    "RedisClientTest.SetAndGet:"
+    "RedisClientTest.ExistsReturnsTrue:"
+    "RedisClientTest.ExistsReturnsFalse:"
+    "RedisClientTest.IncrIncrements:"
+    "RedisClientTest.IncrNewKeyStartsAtOne:"
+    "RedisClientTest.LPushAndLRange:"
+    "RedisClientTest.ZAddAndZRangeWithScores:"
+    "RedisClientTest.HSetAndHGet:"
+    "RedisClientTest.HGetNonExistentField:"
     "RedisClientTest.ZRevRangeWithScores:"
     "RedisClientTest.ZRevRank:"
     "RedisClientTest.ZScore:"
@@ -226,7 +226,7 @@ def main() -> int:
 
     try:
         if not args.skip_build:
-            targets = ["project_unit_tests", "project_v2_unit_tests", "project_v2_integration_tests"]
+            targets = ["project_v2_unit_tests", "project_v2_integration_tests"]
             if args.include_settlement_replay:
                 targets.append("project_v2_multi_process_tests")
             step = run_step(
@@ -240,22 +240,21 @@ def main() -> int:
             if step["status"] != "passed":
                 raise RuntimeError(step["name"])
 
-        root_unit_tests = find_executable(build_dir, "project_unit_tests")
         v2_unit_tests = find_executable(build_dir, "project_v2_unit_tests")
         v2_integration_tests = find_executable(build_dir, "project_v2_integration_tests")
 
         summary["steps"].append(run_step(
-            "persistent replay/audit storage round trips",
+            "persistent replay/archive storage round trips",
             "persistence",
-            [str(root_unit_tests), f"--gtest_filter={ROOT_PERSISTENCE_FILTER}"],
-            root_unit_tests.parent,
+            [str(v2_unit_tests), f"--gtest_filter={V2_ARCHIVE_FILTER}"],
+            v2_unit_tests.parent,
             args.test_timeout_seconds,
         ))
         summary["steps"].append(run_step(
             "Redis degraded persistence behavior",
             "redis",
-            [str(root_unit_tests), f"--gtest_filter={ROOT_REDIS_DEGRADED_FILTER}"],
-            root_unit_tests.parent,
+            [str(v2_unit_tests), f"--gtest_filter={V2_REDIS_DEGRADED_FILTER}"],
+            v2_unit_tests.parent,
             args.test_timeout_seconds,
         ))
         summary["steps"].append(run_step(
@@ -291,8 +290,8 @@ def main() -> int:
             summary["steps"].append(run_step(
                 "Redis live persistence/event-store behavior",
                 "redis",
-                [str(root_unit_tests), f"--gtest_filter={ROOT_REDIS_LIVE_FILTER}"],
-                root_unit_tests.parent,
+                [str(v2_unit_tests), f"--gtest_filter={V2_REDIS_LIVE_FILTER}"],
+                v2_unit_tests.parent,
                 args.test_timeout_seconds,
             ))
         if args.include_settlement_replay:

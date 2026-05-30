@@ -2,7 +2,7 @@
 
 更新时间：2026-05-28
 
-本文档用于指导 BoostAsioDemo 后续 6 个月以上的开发、维护和取舍。当前实现事实仍以 `docs/current-state.md` 为准；本文档在该事实基线上定义未来规划、差距和验收门禁。若本文档与 `current-state.md` 对“已经实现”的判断冲突，以 `current-state.md` 和可执行验证脚本结果为准；若涉及未来方向，以本文档为优先规划依据。
+本文档用于指导 BoostAsioDemo 后续 6 个月以上的开发、维护和取舍。当前实现事实仍以 `docs/current-state.md` 为准；本文档在该事实基线上定义未来规划、差距和验收门禁。若本文档与 `current-state.md` 对“已经实现”的判断冲突，以 `current-state.md` 和可执行验证脚本结果为准；若涉及未来方向，以本文档为优先规划依据。当前 1-3 个月的主线执行顺序与收口动作，已单独整理到 `docs/mainline-execution-plan.md`。
 
 ## 一句话定位
 
@@ -25,12 +25,12 @@
 | 项目定位 | README 已明确主线是企业级实时服务框架，不再扩张 demo 集合 | `README.md`, `docs/current-state.md` |
 | 默认生产链路 | 默认仍是 SDK + TCP gateway + `BackendEnvelope` + 五后端 + Redis，可选 TLS profile | `docs/current-state.md`, `docs/reliability-matrix.md` |
 | 服务闭环 | `gateway + login + room + battle + matchmaking + leaderboard` 已作为主线闭环 | `src/v2/`, `examples/v2_*`, `README.md` |
-| 协议演进 | v3 proto schema、CMake target、schema check 和 gRPC PoC gate 已存在；generated gRPC 仍是实验能力，不进入默认生产链路 | `proto/README.md`, `proto/CMakeLists.txt`, `src/v2/CMakeLists.txt`, `scripts/check_v3_grpc_poc_decision.py` |
-| helper/legacy 状态 | typed envelope helper 已接入主线，legacy raw JSON 仍存在显式兼容窗口 | `include/v2/service/envelope_adapter.h`, `tests/v2/unit/service_boundary_test.cpp`, `proto/README.md` |
+| 协议演进 | v3 proto schema、CMake target、schema check 和 gRPC PoC gate 已存在；gRPC gateway 当前已覆盖 login/logout/health 以及 room/match/leaderboard/battle 的基础 RPC，并开始通过 `GrpcGatewayAdapter` 落到真实 `GatewayServiceBridge` 路由，但 generated gRPC 仍是实验能力，不进入默认生产链路 | `proto/README.md`, `proto/CMakeLists.txt`, `src/v2/CMakeLists.txt`, `src/v2/grpc/`, `scripts/check_v3_grpc_poc_decision.py` |
+| helper/legacy 状态 | typed envelope helper 已接入主线，且 login/room/battle 第二批主业务消息已进入 typed request/response；legacy raw JSON 仍存在显式兼容窗口，但已主要收缩到 room governance / control-plane 风格消息与内部 Raft RPC | `include/v2/service/envelope_adapter.h`, `tests/v2/unit/service_boundary_test.cpp`, `docs/legacy-helper-inventory.md`, `proto/README.md` |
 | CI 平台 | 主 CI 已包含 Ubuntu、macOS、Windows matrix，并使用 Ninja/CMake preset | `.github/workflows/ci.yml`, `CMakePresets.json` |
 | 性能门禁 | perf label 触发 per-commit smoke；release baseline、capacity、long soak 已有 workflow 或固定 runner 入口 | `.github/workflows/perf-commit-check.yml`, `.github/workflows/release-baseline.yml`, `.github/workflows/long-soak-capacity.yml` |
 | 依赖管理 | 仍以 CMake FetchContent/third_party 混合方式为主，尚未迁移到 vcpkg/Conan lockfile 模式 | `cmake/Dependencies.cmake`, `third_party/` |
-| 编译缓存 | workflow 尚未启用 sccache 或等价编译缓存 | `.github/workflows/*.yml` |
+| 编译缓存 | Windows 主流程已接入 `sccache` + `actions/cache`，但收益基线和多平台推广仍需继续治理 | `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/release-baseline.yml`, `.github/workflows/perf-commit-check.yml` |
 | 近期代码趋势 | 最近提交集中在 battle tick/projectile、room lifecycle、SDK API、部署文档和 Docker 构建修复 | `git log --oneline -n 8` |
 
 ## 已知冲突与未实现项
@@ -40,10 +40,10 @@
 | 编号 | 问题 | 当前事实 | 规划要求 |
 | --- | --- | --- | --- |
 | G1 | 项目命名仍带 demo 色彩 | 根 README 标题仍是 `BoostAsioDemo`，CMake 描述仍偏 game server | 短期完成命名和描述收敛，明确企业级框架定位 |
-| G2 | gRPC/proto 尚未成为默认主链 | `BOOST_BUILD_GRPC=OFF`，gRPC Gateway 只覆盖 Login/Logout/Health，缺 Room/Battle/Match/Leaderboard 等完整能力 | 中期完成 generated proto/gRPC full-flow 和性能对照，再决定是否进入默认链路 |
-| G3 | helper/legacy 兼容层仍在主链 | `BackendEnvelope` 与 typed helper 是当前实际运行路径，legacy raw JSON 仍被测试覆盖 | 先建立弃用窗口和覆盖矩阵，再逐步移除 legacy raw payload |
-| G4 | 依赖治理未标准化 | `third_party/`、FetchContent、系统包探测并存；当前仅有 Conan PoC，尚未成为默认依赖入口 | 中期迁移到 vcpkg 或 Conan，并建立 cache/lockfile/reproducible build |
-| G5 | 编译加速尚未系统化 | CI 使用 Ninja，但未使用 sccache | 短期启用 sccache 并量化构建耗时 |
+| G2 | gRPC/proto 尚未成为默认主链 | `BOOST_BUILD_GRPC=OFF`，gRPC Gateway 虽已覆盖 Room/Battle/Match/Leaderboard 的基础 RPC，但仍缺 streaming/push、SDK-integrated full-flow、TLS、RBAC 和 observability 证据 | 中期完成 generated proto/gRPC full-flow 和性能对照，再决定是否进入默认链路 |
+| G3 | helper/legacy 兼容层仍在主链 | `BackendEnvelope` 与 typed helper 是当前实际运行路径；主业务 typed 覆盖已扩到 login/room/battle 第二批消息，但 room governance / control-plane 风格消息与内部 Raft RPC 仍保留 raw JSON 路径 | 先完成剩余 control-plane / governance 面与内部 RPC 的边界收束，再逐步移除 legacy raw payload |
+| G4 | 依赖治理未标准化 | `third_party/`、FetchContent、系统包探测并存；当前已补 Conan profile/lock 入口，并打通 `nosqlite` 主线路径，但尚未成为默认依赖入口 | 中期迁移到 vcpkg 或 Conan，并建立 cache/lockfile/reproducible build |
+| G5 | 编译加速尚未系统化收口 | Windows 主流程已启用 sccache，但收益基线、命中率跟踪和非 Windows 路径仍未统一 | 短期补齐 build-time 基线和可观测收益，继续保持 Ninja/sccache/cache key 纪律 |
 | G6 | 平台结论仍需固定 runner 沉淀 | CI 有 Ubuntu/macOS/Windows，但生产容量、long soak、TLS overhead 仍依赖固定 runner 后续刷新 | 中长期将固定 runner 结果纳入 release 准入和 readiness report |
 | G6.5 | 自动 CI 平台矩阵需要和当前在线 runner 一致 | 开发者可能只开启 1-2 台 runner，如果 workflow 固定全平台会导致无意义排队 | 短期引入仓库内版本化 runner matrix，按当前活跃机器提交配置 |
 | G7 | 测试分层命名和执行策略仍偏脚本聚合 | 已有大量 gate，但 unit/integration/e2e/perf/nightly/capacity 的开发者入口仍需要更清晰 | 长期形成开发者指南和贡献者验证矩阵 |
@@ -70,12 +70,12 @@
 | `src/v3/`, `include/v3/`, `proto/v3/` | v3 schema、Redis/Raft/OTel/proto helper 与生成入口 | 保留为协议/集群/持久化演进层；gRPC 继续实验化 | generated proto/gRPC full-flow、性能对照和 readiness gate 通过后再提升默认级别 |
 | `sdk/` | SDK 企业交付主线，覆盖 C++/C ABI/Python/C# 轻封装 | 固化 ABI/API 边界、兼容矩阵和 full-flow gate | SDK 新 API 必须绑定协议 schema、测试和兼容说明 |
 | `env/`, `deploy/`, `operator/` | 生产配置、Docker/K8s/monitoring/operator 事实源 | 保留并继续治理漂移 | `check_config_source_layout.py`、生产证据 gate 和 operator gate 持续通过 |
-| `include/game/`, `src/game/`, `project_game` | v1 风格单进程/旧 gateway 业务层；仍被老 examples、unit/integration/chaos 测试依赖 | 冻结为 `legacy-v1`，不再新增能力；先移出默认安装面，再移出默认构建面 | v2 等价测试覆盖 gateway/session/login/room/battle/admin/metrics 后，旧测试迁移或归档 |
+| `include/game/`, `src/game/`, `project_game` | v1 风格单进程/旧 gateway 业务层；现已通过 `BOOST_BUILD_V1_LEGACY_CORE` 默认关闭 | 冻结为 `legacy-v1`，不再新增能力；默认仅显式 legacy 构建时启用 | 已完成 session/login/room/battle/持久化桥接测试与 runtime metrics exporter 的主线替代；`admin_service` 明确保留为 legacy-v1/demo-only 面，不进入当前主线；如后续确有需要，单独评估 `docs/v2-control-plane-preplan.md` 中的 v2 控制面方案 |
 | 老示例：`examples/login`, `room`, `battle`, `login_demo`, `room_demo`, `battle_demo`, `admin_demo`, `pressure` | 默认构建且部分被安装；主要服务 v1 历史验证和 showcase | 标注 legacy；新增 `BOOST_BUILD_V1_LEGACY_EXAMPLES` 后改为默认 OFF；release 安装包不再包含 | 文档和测试不再引用旧二进制；`v2_*` 后端和 SDK full-flow 覆盖对应路径 |
 | `examples/echo` | 同时依赖 `project_game` 和 `project_v2`；外部 `echo_server` shadow-bridge 测试仍作为 legacy optional 保留 | 过渡保留，作为最后一个 v1/v2 桥接验证入口 | 用 `v2_gateway_demo` + 后端进程完全替代 legacy shadow-bridge fixture 后再考虑删除 |
 | `include/net/`, `src/net/`, `project_net` | 底层 packet/session/http 管理能力，仍被 v1、v2、安全/模糊测试和 SDK 周边使用 | 拆分低层稳定能力与 v1 路由草案；保留 packet/session，冻结 `InternalBus`/`ServiceRouter` 等非主线能力 | v2 主链不再引用的草案类进入 legacy 清单，删除前保留编译期检查 |
-| `src/v2/service/envelope_adapter.*` | typed envelope 与 legacy raw JSON 兼容层 | 短期保留但冻结 raw JSON；新增服务不得扩展 raw payload | 每个服务完成 generated/typed contract 后，legacy raw JSON 默认禁用并最终删除 |
-| `src/v2/grpc/`, `tests/v2/unit/gateway_grpc_test.cpp`, `tests/perf/grpc_vs_tcp_perf_test.cpp` | gRPC PoC，默认 `BOOST_BUILD_GRPC=OFF`；性能测试仍有 placeholder 性质 | 保留为实验区，不进入默认主线；要么补齐 full-flow，要么归档 | gRPC 覆盖 Room/Battle/Match/Leaderboard/streaming/SDK/观测/限流/RBAC/TLS 后再升级 |
+| `src/v2/service/envelope_adapter.*` | typed envelope 与 legacy raw JSON 兼容层 | 短期保留但冻结 raw JSON；新增服务不得扩展 raw payload | 主业务 typed contract 覆盖已扩到 login/room/battle 第二批消息；剩余 raw JSON 面收敛到 room governance / control-plane 风格消息与内部 RPC 后，再推进默认禁用与最终删除 |
+| `src/v2/grpc/`, `tests/v2/unit/gateway_grpc_test.cpp`, `tests/perf/grpc_vs_tcp_perf_test.cpp` | gRPC PoC，默认 `BOOST_BUILD_GRPC=OFF`；benchmark 已改为真实 TCP login backend vs gRPC `RequestLogin` I/O，但 full-flow 仍远未完成 | 保留为实验区，不进入默认主线；下一步应补 full-flow 而不是扩大宣传面 | gRPC 覆盖 Room/Battle/Match/Leaderboard/streaming/SDK/观测/限流/RBAC/TLS 后再升级 |
 | `demo/games/tank_battle/`, `examples/realtime_echo_plugin` | 业务/demo/plugin 验证，不属于默认生产主链 | 保留为可选 demo，默认 OFF；禁止反向污染框架层 | demo gate 只验证 SPI 和业务样例，不作为生产能力宣传依据 |
 | `scripts/p4_validate.py` 和 legacy wrapper | script inventory 已标注 legacy | 不新增引用；能被新 gate 覆盖后删除或移入 archive | `check_script_inventory.py` 确认无 public/workflow 引用 |
 | `third_party/` 与 FetchContent 混合依赖 | 依赖来源不统一，影响可复现和 CI cache | 中期迁移到 vcpkg/Conan；保留离线镜像策略 | lockfile/profile 和 dependency cache 稳定后，清理冗余 third_party 源 |
@@ -136,6 +136,7 @@
 - 为 legacy raw payload 定义弃用窗口：新增功能不得再扩展 raw JSON 入口，现有 raw 只允许为兼容测试保留。
 - 将 `legacy_raw_json_deprecation_notice()` 的测试从提示升级为迁移准入依据。
 - 对每个服务列出 typed envelope 到 generated proto 的迁移状态。
+- 第一批与第二批主业务 typed contract 迁移完成后，把剩余 raw JSON 面明确收敛到 room governance / control-plane 风格消息与内部 Raft RPC。
 
 验收：
 
@@ -168,6 +169,7 @@
 
 - 保持 Ninja 作为默认 generator；当前 `CMakePresets.json` 已满足，后续新增 preset 必须默认 Ninja，除非明确需要 Visual Studio generator。
 - 在 `ci.yml`、`perf-commit-check.yml`、`release.yml` 和 `release-baseline.yml` 引入 sccache 或等价 compiler launcher。
+- 当前 Windows 主流程已完成这一步，后续重点转向收益量化、cache 命中率跟踪和 Conan cache/lockfile 纳入 key。
 - 使用 `actions/cache@v4` 缓存 sccache 目录，并按 OS、compiler、CMake preset、依赖 lock hash 分 key。
 - 记录启用前后的 configure/build/test 耗时，避免只做配置不量化收益。
 
@@ -221,7 +223,8 @@
 
 - 在 vcpkg 与 Conan 中二选一，建立 lockfile/profile。
 - 当前已先落 `conanfile.py` + `BOOST_USE_CONAN_DEPS=ON` 的最小 PoC，保留 FetchContent/third_party 作为 fallback。
-- 当前已完成第一轮规则收敛：`fmt/spdlog/nlohmann_json/hiredis/boost::headers` 按 Conan-first 治理，`OpenSSL` 暂时保持双轨保守，`protobuf/grpc/sqlite3` 继续停留在实验或可选层。
+- 当前已补仓库内 `conan/profiles/`、`scripts/generate_conan_lock.py`、`conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` 与 fixed-runner 文档入口；Windows 与 Linux `nosqlite` lockfile 路径均已落仓，下一步重点转为在 Ubuntu fixed-runner 上持续刷新 lockfile-based install / release baseline / long-soak 真实 summary。
+- 当前已完成第一轮规则收敛：`fmt/spdlog/nlohmann_json/hiredis/boost::headers` 按 Conan-first 治理，`OpenSSL` 暂时保持双轨保守；当前默认 Conan 主线路径使用 `with_sqlite=False`，`protobuf/grpc/sqlite3` 继续停留在实验或可选层。
 - 迁移 CMake 依赖发现逻辑，减少 `third_party/` 和临时系统探测路径。
 - CI 使用 dependency cache，cache key 包含 lockfile hash。
 - 保留离线/内网构建说明，避免完全依赖公网下载。
@@ -240,7 +243,7 @@
 
 - 补齐 gRPC Gateway 能力：Room Create/Join/Leave/Ready/StartBattle，Battle Input/Finish/FramePush(streaming)，Match Join/Leave/Status，Leaderboard Submit/Top/Rank，Session Kick/Resume。
 - 为每个服务建立 proto contract test、generated stub compile test、TCP 对照测试和 full-flow 测试。
-- 建立 gRPC vs TCP 性能基准，当前 `tests/perf/grpc_vs_tcp_perf_test.cpp` 仍是占位性质，必须替换为真实 client/server 测量。
+- 建立 gRPC vs TCP 性能基准；当前 `tests/perf/grpc_vs_tcp_perf_test.cpp` 已升级为真实 TCP login backend 与 gRPC `RequestLogin` 的 I/O benchmark，下一步需要把 benchmark 从 login-only 扩展到更多非登录路径。
 - 明确迁移策略：先 generated proto 作为 payload schema，再评估 gRPC 作为外部或内部 transport。
 - 在完成 full-flow、性能、观测、限流、RBAC、TLS 证据前，gRPC 不进入默认生产链路。
 
@@ -362,10 +365,8 @@
 ## 下一步执行顺序
 
 1. 完成项目命名和描述收敛，保留兼容说明。
-2. 启用 sccache，并记录 CI 构建耗时基线。
-3. 建立 legacy/helper 清单和弃用窗口。
-4. 冻结 `project_game` 和 v1 legacy examples，移出默认安装面，并建立替代测试清单。
-5. 选择 vcpkg 或 Conan，并完成最小依赖 lockfile PoC。
-6. 将真实 gRPC full-flow 和 gRPC vs TCP benchmark 从 PoC 推进到可验收 gate。
-7. 在 Ubuntu fixed runner 上刷新 release/capacity/long-soak 证据。
-8. 编写 Developer Guide 和贡献规则，把测试分层策略固化为 PR checklist。
+2. 固化 helper/raw JSON 当前事实：保持主业务 typed contract 覆盖，继续收缩 room governance / control-plane 风格剩余 raw JSON 面。
+3. 将 gRPC 从 login-only benchmark 推进到更多非登录路径的 full-flow contract/test 覆盖，但继续保持 `defer_default_transport`。
+4. 在条件允许时于 Ubuntu fixed runner 上刷新 Conan install、release/capacity/long-soak 真实证据。
+5. 继续做 CI/build cache 量化与开发者入口治理。
+6. 编写 Developer Guide 和贡献规则，把测试分层策略固化为 PR checklist。

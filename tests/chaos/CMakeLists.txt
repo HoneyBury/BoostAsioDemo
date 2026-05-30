@@ -9,8 +9,6 @@
 #   - 需要网络栈支持（127.0.0.1 回环）
 #   - 稳定性测试运行时约 60 秒
 
-option(BOOST_BUILD_CHAOS "Build chaos tests" OFF)
-
 if(BOOST_BUILD_CHAOS)
     # ── Gateway 混沌测试 ────────────────────────────────────────────
     add_executable(chaos_gateway_tests

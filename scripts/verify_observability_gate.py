@@ -15,12 +15,12 @@ from pathlib import Path
 
 
 ROOT_AUDIT_METRICS_FILTER = (
-    "GatewayMetricsExporterTest.RendersPrometheusAndJsonOutputs:"
-    "GatewayMetricsExporterTest.WritesMetricsFilesToDisk:"
-    "AdminServiceTest.WritesAdminInvokeAuditWithRequiredKeysAndSanitizedExcerpt:"
-    "AdminServiceTest.DefaultAclDeniesAdminCallbacksAndAuditsDenial:"
-    "AdminServiceTest.SharedSecretAclStripsTokenBeforeCallbackAndAudit:"
-    "PersistenceReplayAuditTest.AuditLogAppendsApproxJsonLine"
+    "DiagnosticsManagerTest.ToJsonIsValidJson:"
+    "DiagnosticsManagerTest.WireFromShadowBridge:"
+    "DiagnosticsManagerTest.ToJsonNoBackendsIsValid:"
+    "V2DemoServerSmokeTest.DiagnosticsHttpEndpointReturnsStructuredSnapshot:"
+    "V2DemoServerSmokeTest.MetricsExposeBackendRouteLatencyHistogram:"
+    "IdentityRegisterTest.RegisterNewAccount"
 )
 
 RATE_LIMIT_FILTER = (
@@ -208,7 +208,7 @@ def main() -> int:
             step = run_step(
                 "build P4 observability targets",
                 "build",
-                cmake_build_args(args, ["project_unit_tests", "project_v2_unit_tests", "project_v2_integration_tests"]),
+                cmake_build_args(args, ["project_v2_unit_tests", "project_v2_integration_tests"]),
                 root,
                 args.build_timeout_seconds,
             )
@@ -216,7 +216,6 @@ def main() -> int:
             if step["status"] != "passed":
                 raise RuntimeError(step["name"])
 
-        root_unit_tests = find_executable(build_dir, "project_unit_tests")
         v2_unit_tests = find_executable(build_dir, "project_v2_unit_tests")
         v2_integration_tests = find_executable(build_dir, "project_v2_integration_tests")
 
@@ -237,8 +236,8 @@ def main() -> int:
         summary["steps"].append(run_step(
             "metrics and audit coverage",
             "audit_metrics",
-            [str(root_unit_tests), f"--gtest_filter={ROOT_AUDIT_METRICS_FILTER}"],
-            root_unit_tests.parent,
+            [str(v2_unit_tests), f"--gtest_filter={ROOT_AUDIT_METRICS_FILTER}"],
+            v2_unit_tests.parent,
             args.test_timeout_seconds,
         ))
         summary["steps"].append(run_step(

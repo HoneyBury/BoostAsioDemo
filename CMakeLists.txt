@@ -12,8 +12,10 @@ include(GNUInstallDirs)
 option(ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(ENABLE_TESTING "Build tests" ON)
 option(BOOST_BUILD_GRPC "Build gRPC support (requires protoc and grpc_cpp_plugin)" OFF)
-option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" ON)
+option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" OFF)
 option(BOOST_BUILD_V1_LEGACY_EXAMPLES "Build legacy v1 example and showcase binaries" OFF)
+option(BOOST_BUILD_V1_LEGACY_CORE "Build legacy v1 core libraries under src/game" OFF)
+option(BOOST_BUILD_V1_LEGACY_TESTS "Build legacy v1-root unit/integration tests" OFF)
 option(BOOST_USE_CONAN_DEPS "Prefer Conan-provided dependencies before falling back to FetchContent/third_party" OFF)
 
 # Batch B: Auto-detect gRPC if available (does NOT enable the gRPC listener at runtime)
@@ -120,6 +122,8 @@ install(FILES
     docs/current-state.md
     docs/project-blueprint.md
     docs/legacy-helper-inventory.md
+    docs/mainline-execution-plan.md
+    docs/v2-control-plane-preplan.md
     docs/architecture-overview.md
     docs/reliability-matrix.md
     docs/performance-baseline.md

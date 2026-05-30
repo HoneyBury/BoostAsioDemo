@@ -17,17 +17,23 @@ REQUIRED_DOC_TOKENS = (
     "legacy raw JSON",
     "compatibility-only",
     "BOOST_BUILD_V1_LEGACY_EXAMPLES",
+    "BOOST_BUILD_V1_LEGACY_CORE",
+    "BOOST_BUILD_V1_LEGACY_TESTS",
     "echo_server",
     "generated proto",
     "generated protobuf / gRPC stub",
     "project_game",
     "login/room/battle/match/leaderboard",
+    "服务级 handler coverage matrix",
+    "typed response wrap",
 )
 
 REQUIRED_REFERENCES = (
     "include/v2/service/envelope_adapter.h",
     "tests/v2/unit/service_boundary_test.cpp",
     "proto/README.md",
+    "conan/README.md",
+    "conan/profiles/linux-gcc-x64",
     "src/v2/login/login_backend_service.cpp",
     "src/v2/room/room_backend_service.cpp",
     "src/v2/leaderboard/leaderboard_service.cpp",
@@ -77,6 +83,12 @@ def main() -> int:
         "legacy raw JSON backend payload is deprecated; use typed envelope" in envelope_adapter,
         "envelope adapter exports the legacy raw JSON deprecation notice",
     )
+    add(
+        checks,
+        "code:policy-notice",
+        "legacy raw JSON is compatibility-only and must not be used for new handlers" in envelope_adapter,
+        "envelope adapter exports the legacy raw JSON compatibility-only policy notice",
+    )
 
     examples_cmake = read(ROOT / "examples/CMakeLists.txt")
     root_cmake = read(ROOT / "CMakeLists.txt")
@@ -86,6 +98,42 @@ def main() -> int:
         "BOOST_BUILD_V1_LEGACY_EXAMPLES" in root_cmake and "if(BOOST_BUILD_V1_LEGACY_EXAMPLES)" in examples_cmake,
         "legacy example build surface is behind BOOST_BUILD_V1_LEGACY_EXAMPLES",
     )
+    add(
+        checks,
+        "build:legacy-core-option",
+        "BOOST_BUILD_V1_LEGACY_CORE" in root_cmake,
+        "legacy v1 core build surface is behind BOOST_BUILD_V1_LEGACY_CORE",
+    )
+    add(
+        checks,
+        "build:legacy-tests-option",
+        "BOOST_BUILD_V1_LEGACY_TESTS" in root_cmake,
+        "legacy v1-root tests are behind BOOST_BUILD_V1_LEGACY_TESTS",
+    )
+
+    service_sources = {
+        "login": ROOT / "src/v2/login/login_backend_service.cpp",
+        "room": ROOT / "src/v2/room/room_backend_service.cpp",
+        "battle": ROOT / "src/v2/battle/battle_backend_service.cpp",
+        "matchmaking": ROOT / "src/v2/match/matchmaking_service.cpp",
+        "leaderboard": ROOT / "src/v2/leaderboard/leaderboard_service.cpp",
+    }
+    for name, path in service_sources.items():
+        source = read(path)
+        add(
+            checks,
+            f"service:{name}:typed-request-path",
+            "decode_handler_payload(" in source,
+            f"{name} service has at least one typed request decode path",
+        )
+    for name in ("login", "room", "battle", "matchmaking", "leaderboard"):
+        source = read(service_sources[name])
+        add(
+            checks,
+            f"service:{name}:typed-response-path",
+            "wrap_typed_response_if_needed(" in source,
+            f"{name} service has at least one typed response wrap path",
+        )
 
     failed = [check for check in checks if not check["passed"]]
     summary = {

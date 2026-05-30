@@ -202,7 +202,7 @@ def main() -> int:
             build_cmd = ["cmake", "--build", str(args.build_dir)]
             if args.configuration:
                 build_cmd.extend(["--config", args.configuration])
-            build_cmd.extend(["--target", "project_v2_unit_tests", "project_v2_integration_tests", "project_unit_tests"])
+            build_cmd.extend(["--target", "project_v2_unit_tests", "project_v2_integration_tests"])
             step = run_step(
                 "build specialized E2E targets",
                 "build",
@@ -216,7 +216,6 @@ def main() -> int:
 
         unit_tests = find_executable(build_dir, "project_v2_unit_tests")
         integration_tests = find_executable(build_dir, "project_v2_integration_tests")
-        root_unit_tests = find_executable(build_dir, "project_unit_tests")
         run_redis_degraded = args.profile in {"default", "redis-live", "all"}
         run_raft = args.profile in {"default", "raft-ha", "all"}
         if run_raft:
@@ -246,14 +245,14 @@ def main() -> int:
                 "Redis event-store degraded-mode gates",
                 "redis",
                 [
-                    str(root_unit_tests),
+                    str(unit_tests),
                     "--gtest_filter=RedisClientTest.ConnectFailsGracefully:"
                     "RedisClientTest.DisconnectedOperationsReturnEmpty:"
                     "RedisEventStoreTest.NoRedisAppendReturnsFalse:"
                     "RedisEventStoreTest.NoRedisReadReturnsEmpty:"
                     "RedisConnectionPoolTest.AcquireWhenRedisDownReturnsEmpty",
                 ],
-                root_unit_tests.parent,
+                unit_tests.parent,
                 args.test_timeout_seconds,
             ))
         if args.include_redis_live:
@@ -268,7 +267,7 @@ def main() -> int:
                 "Redis event-store live gates",
                 "redis",
                 [
-                    str(root_unit_tests),
+                    str(unit_tests),
                     "--gtest_filter=RedisClientTest.SetGetDel:"
                     "RedisClientTest.Exists:"
                     "RedisClientTest.Incr:"
@@ -293,7 +292,7 @@ def main() -> int:
                     "RedisConnectionPoolTest.MoveSemantics:"
                     "RedisConnectionPoolTest.DeadConnectionRevivedOnAcquire",
                 ],
-                root_unit_tests.parent,
+                unit_tests.parent,
                 args.test_timeout_seconds,
             ))
         if args.include_operator_kind:

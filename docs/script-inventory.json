@@ -61,6 +61,7 @@
     "scripts/deploy_k8s.sh": {"category": "platform_wrapper", "wraps": "scripts/deploy_k8s.py", "canonical": "scripts/wrappers/sh/deploy_k8s.sh"},
     "scripts/gen_certs.py": {"category": "tool", "canonical": "scripts/tools/gen_certs.py"},
     "scripts/gen_certs.sh": {"category": "platform_wrapper", "wraps": "scripts/gen_certs.py", "canonical": "scripts/wrappers/sh/gen_certs.sh"},
+    "scripts/generate_conan_lock.py": {"category": "tool", "canonical": "scripts/tools/generate_conan_lock.py"},
     "scripts/generate_proto_cpp.py": {"category": "tool", "canonical": "scripts/tools/generate_proto_cpp.py"},
     "scripts/generate_proto_cpp.ps1": {"category": "platform_wrapper", "wraps": "scripts/generate_proto_cpp.py", "canonical": "scripts/wrappers/ps1/generate_proto_cpp.ps1"},
     "scripts/inspect_dependency_layout.py": {"category": "tool", "canonical": "scripts/tools/inspect_dependency_layout.py"},

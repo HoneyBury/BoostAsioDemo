@@ -11,7 +11,7 @@ on:
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","capacity"]'
         required: true
-        default: '["self-hosted","capacity"]'
+        default: '["self-hosted","linux","x64","capacity"]'
       configure_preset:
         description: "CMake configure preset"
         required: true
@@ -56,16 +56,24 @@ on:
         description: "Minimum repetitions required by R4 fixed-runner capacity gate"
         required: true
         default: "3"
+      conan_profile:
+        description: "Repository Conan profile path for fixed-runner reproducibility notes"
+        required: true
+        default: "conan/profiles/linux-gcc-x64"
+      conan_lockfile:
+        description: "Optional Conan lockfile path relative to repo root for reproducible fixed-runner builds"
+        required: true
+        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
 
 permissions:
   contents: read
 
 jobs:
   long-soak-capacity:
-    runs-on: ${{ fromJSON(inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || '["self-hosted","capacity"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || '["self-hosted","linux","x64","capacity"]') }}
     timeout-minutes: 720
     concurrency:
-      group: long-soak-capacity-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'self-hosted-capacity' }}
+      group: long-soak-capacity-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'self-hosted-linux-x64-capacity' }}
       cancel-in-progress: false
 
     steps:
@@ -93,6 +101,14 @@ jobs:
 
       - name: Configure
         run: cmake --preset ${{ inputs.configure_preset || 'release' }}
+
+      - name: Conan lockfile hint
+        if: inputs.conan_lockfile != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "${{ inputs.conan_lockfile }}"
+          echo "Using fixed-runner Conan lockfile: ${{ inputs.conan_lockfile }}"
 
       - name: Build validation targets
         run: cmake --build ${{ inputs.build_dir || 'build/release' }} --config ${{ inputs.configuration || 'Release' }}

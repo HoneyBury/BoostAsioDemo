@@ -33,6 +33,7 @@
 
 - 自动触发的 workflow 平台矩阵由仓库内的 `.github/runner-matrix.json` 决定。
 - 当前提交配置为 Windows-only，因此推送后默认只会触发 Windows 自托管 runner。
+- 固定 runner / production evidence / release-capacity 的默认事实源已切到 Linux/Ubuntu labels，见 `.github/runner-matrix.json` 的 `defaults` 与 `docs/fixed-runner-playbook.md`。
 - 当你切换到 macOS、Linux 或多平台联调时，只需要提交更新 `.github/runner-matrix.json`。
 
 ## 常用验证入口
@@ -56,8 +57,8 @@ Conan PoC 入口：
 
 ```bash
 set CONAN_HOME=%CD%\\.conan2-local
-python scripts/bootstrap_conan.py
-conan install . --output-folder=build/conan-debug --build=missing -s build_type=Debug
+python scripts/generate_conan_lock.py --profile conan/profiles/windows-msvc-x64 --build-type Debug --without-sqlite --allow-public
+conan install . --profile:host conan/profiles/windows-msvc-x64 --profile:build conan/profiles/windows-msvc-x64 --lockfile conan/locks/windows-msvc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
 cmake -S . -B build/windows-ninja-debug-conan -G Ninja -DBOOST_USE_CONAN_DEPS=ON -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
 cmake --build --preset windows-ninja-debug --parallel
 ```
@@ -76,11 +77,16 @@ cmake --build --preset windows-ninja-debug --parallel
   - Conan-first：`fmt`、`spdlog`、`nlohmann_json`、`hiredis`、`boost::headers`
   - 双轨保守：`OpenSSL`
   - 实验保留：`protobuf`、`grpc`、`sqlite3`
+- 当前已打通的 Conan 主线路径以 `with_grpc=False`、`with_sqlite=False` 为默认 lockfile 口径；`sqlite3` 保留为可选/实验层，不阻塞主线 Conan install。
+- 仓库当前已同时落仓 Windows 与 Linux 的 `nosqlite` lockfile：
+  - `conan/locks/windows-msvc-x64-debug-nogrpc-nosqlite.lock`
+  - `conan/locks/windows-msvc-x64-release-nogrpc-nosqlite.lock`
+  - `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`
 - CMake 会统一汇总 Conan 探测缺失项；只要关键包不齐，就自动回退到 `FetchContent/third_party`。
 - 如果 Conan 依赖未准备好或未启用，项目仍回退到现有 `FetchContent/third_party` 路径。
 - SDK 安装打包现在会同时兼容 Conan 和 fallback 两种 `nlohmann_json` 头文件来源，不再假定只能来自 `nlohmann_json_SOURCE_DIR`。
 - `project_v3` 也不再显式依赖 `hiredis_SOURCE_DIR`；Conan 与 fallback 都统一走 `hiredis` target 暴露的头文件路径。
-- 当前 Windows 本机已验证 `conan profile detect` 与 `conan install` 能进入依赖图解析阶段；如访问 `conancenter` 被宿主网络策略拦截，需要改用内网镜像、预热缓存或离线包源。
+- 当前 Windows 本机已验证 Linux `nosqlite` lockfile 可真实生成，且 lockfile-based `conan install` 能进入解图、取包与缺失包构建阶段；真正的 Linux `conan install` 通过结论仍应以 Ubuntu fixed-runner 实跑为准。
 
 独立 Conan 流水线：
 
@@ -89,7 +95,8 @@ cmake --build --preset windows-ninja-debug --parallel
 - 支持 `Debug/Release`
 - 支持 `--allow-public`
 - 支持 `--no-remote`
-- 默认 `use_existing_workspace=true`，优先复用 Windows self-hosted runner 上的本地仓库工作区，绕过不稳定的远端 checkout
+- 支持显式传入 `runner`、`conan_profile` 与 `conan_lockfile`
+- 默认 `use_existing_workspace=true`；在 Windows 或 Linux self-hosted runner 上都可复用本地仓库工作区，绕过不稳定的远端 checkout
 - 可选打开 `ENABLE_TESTING`
 - 当前已在 Windows self-hosted runner 上完成一次真实 dispatch，run: `26579738529`
 
@@ -131,6 +138,7 @@ Legacy 兼容入口说明：
 
 - `echo_server` 已降级为 legacy bridge，仅在 `-DBOOST_BUILD_V1_LEGACY_EXAMPLES=ON` 时显式构建。
 - v1 `login_server` / `room_server` / `battle_server` / `gateway_pressure` 和 `*_demo` showcase 也已降级为 legacy，仅在 `-DBOOST_BUILD_V1_LEGACY_EXAMPLES=ON` 时显式构建。
+- `src/game` / `project_game` 与根级 `tests/unit` / `tests/integration` 也已视为 legacy-v1 surface；如需兼容排查，分别显式打开 `-DBOOST_BUILD_V1_LEGACY_CORE=ON` 与 `-DBOOST_BUILD_V1_LEGACY_TESTS=ON`。
 - `tank_battle_demo` 与 `realtime_echo_plugin` 继续保持默认关闭，仅作为 demo/plugin 样例。
 
 ## 文档策略

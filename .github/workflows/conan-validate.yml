@@ -7,10 +7,18 @@ env:
 on:
   workflow_dispatch:
     inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","linux","x64","release-baseline"]'
+        required: true
+        default: '["self-hosted","linux","x64","release-baseline"]'
+      conan_profile:
+        description: "Repository Conan profile path relative to repo root"
+        required: true
+        default: "conan/profiles/linux-gcc-x64"
       build_type:
         description: "CMake/Conan build type"
         required: true
-        default: "Debug"
+        default: "Release"
         type: choice
         options:
           - Debug
@@ -35,13 +43,22 @@ on:
         required: true
         default: false
         type: boolean
+      with_sqlite:
+        description: "Enable sqlite optional dependency in Conan graph"
+        required: true
+        default: false
+        type: boolean
+      conan_lockfile:
+        description: "Optional Conan lockfile path relative to repo root"
+        required: true
+        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
 
 permissions:
   contents: read
 
 jobs:
   conan-validate:
-    runs-on: ["self-hosted", "Windows", "X64"]
+    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","linux","x64","release-baseline"]') }}
 
     steps:
       - name: Checkout
@@ -53,11 +70,10 @@ jobs:
 
       - name: Verify existing workspace
         if: inputs.use_existing_workspace
-        shell: pwsh
+        shell: bash
         run: |
-          if (-not (Test-Path ".git")) {
-            throw "use_existing_workspace=true but no .git directory exists in GITHUB_WORKSPACE"
-          }
+          set -euo pipefail
+          test -d .git
           git rev-parse --short HEAD
           git status --short --branch
 
@@ -68,6 +84,7 @@ jobs:
         uses: jwlawson/actions-setup-cmake@v2
 
       - name: Setup MSVC environment
+        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Setup Python
@@ -100,13 +117,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          conan install . --output-folder=build/conan-${{ inputs.build_type }} --build=missing -s build_type=${{ inputs.build_type }}
+          args=(conan install . --output-folder=build/conan-${{ inputs.build_type }} --build=missing -s build_type=${{ inputs.build_type }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=${{ inputs.with_sqlite && 'True' || 'False' }}")
+          if [ -n "${{ inputs.conan_lockfile }}" ]; then
+            args+=(--lockfile "${{ inputs.conan_lockfile }}")
+          fi
+          "${args[@]}"
 
       - name: Configure Conan build
         shell: bash
         run: |
           set -euo pipefail
-          cmake -S . -B build/windows-ninja-${{ inputs.build_type }}-conan -G Ninja \
+          cmake -S . -B build/conan-validate-${{ inputs.build_type }} -G Ninja \
             -DBOOST_USE_CONAN_DEPS=ON \
             -DENABLE_TESTING=${{ inputs.enable_testing && 'ON' || 'OFF' }} \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
@@ -118,9 +139,9 @@ jobs:
           set -euo pipefail
           target=project_v2
           if [ "${{ inputs.enable_testing }}" = "true" ]; then
-            target=project_unit_tests
+            target=project_v2_unit_tests
           fi
-          cmake --build build/windows-ninja-${{ inputs.build_type }}-conan --parallel --target "$target"
+          cmake --build build/conan-validate-${{ inputs.build_type }} --parallel --target "$target"
 
       - name: Upload Conan validation artifacts
         if: always()
@@ -129,5 +150,5 @@ jobs:
           name: conan-validate-${{ github.run_id }}
           path: |
             build/conan-${{ inputs.build_type }}/**
-            build/windows-ninja-${{ inputs.build_type }}-conan/**
+            build/conan-validate-${{ inputs.build_type }}/**
           if-no-files-found: warn

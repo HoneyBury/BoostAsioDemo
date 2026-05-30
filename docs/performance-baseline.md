@@ -7,6 +7,7 @@
 - PR/CI 默认仍以 bounded smoke 和多平台快速反馈为主。
 - `ci.yml`、`perf-commit-check.yml`、`release.yml`、`release-baseline.yml` 已接入 `sccache` 与 `actions/cache`，用于降低 configure/build/test 等待时间。
 - Conan 2 依赖治理当前仍处于 PoC 阶段，尚未作为默认 CI 依赖来源；性能基线结论仍以现有 fallback 构建链为准。
+- Conan 收口入口现已统一到 `conan/README.md`、仓库内 profile 和 `scripts/bootstrap_conan.py`；后续 fixed-runner / CI 需继续补 lockfile 与 cache key 量化。
 - 本机 Windows/macOS baseline 继续作为开发回归参考。
 - 最终容量、2h/8h soak、business-capacity 和 release/capacity 投产口径应优先以 Ubuntu fixed-runner summary 为准，而不是本机短样本。
 

@@ -142,11 +142,38 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     add(checks, "p3:env-source-of-truth", "`env/` is the maintained production configuration source of truth" in env_readme, "env README declares config source of truth")
     add(checks, "p3:legacy-config-boundary", "legacy/reference surfaces" in env_readme, "env README documents legacy config boundary")
     add(checks, "p3:legacy-helper-gate-exists", exists("scripts/check_legacy_helper_inventory.py"), "legacy/helper governance gate exists")
+    add(checks, "p3:conan-governance-readme", exists("conan/README.md"), "repository documents Conan governance entrypoints")
+    add(checks, "p3:conan-managed-profile", exists("conan/profiles/windows-msvc-x64"), "repository ships a managed Conan profile")
+    add(checks, "p3:conan-linux-profile", exists("conan/profiles/linux-gcc-x64"), "repository ships a Linux fixed-runner Conan profile")
+    add(checks, "p3:conan-lock-generator", exists("scripts/tools/generate_conan_lock.py"), "repository ships a Conan lockfile generator")
+    linux_profile = read("conan/profiles/linux-gcc-x64")
+    add(checks, "p3:conan-linux-profile-pins-compiler-version", "compiler.version=" in linux_profile, "Linux fixed-runner Conan profile pins compiler.version")
+    release_baseline_workflow = read(".github/workflows/release-baseline.yml")
+    add(checks, "p3:conan-linux-lockfile-default", "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock" in release_baseline_workflow, "release baseline workflow defaults to the Linux nosqlite lockfile path")
 
     examples_cmake = read("examples/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
     add(checks, "p3:legacy-examples-option", "BOOST_BUILD_V1_LEGACY_EXAMPLES" in root_cmake, "root CMake declares the legacy examples option")
     add(checks, "p3:legacy-examples-default-off", "if(BOOST_BUILD_V1_LEGACY_EXAMPLES)" in examples_cmake, "legacy examples are gated in examples/CMakeLists.txt")
+    add(checks, "p3:legacy-core-default-off", 'option(BOOST_BUILD_V1_LEGACY_CORE "Build legacy v1 core libraries under src/game" OFF)' in root_cmake, "legacy v1 core is opt-in")
+    add(checks, "p3:legacy-tests-default-off", 'option(BOOST_BUILD_V1_LEGACY_TESTS "Build legacy v1-root unit/integration tests" OFF)' in root_cmake, "legacy v1-root tests are opt-in")
+    add(checks, "p3:sqlite-default-off", 'option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" OFF)' in root_cmake, "default mainline keeps SQLite opt-in")
+
+    src_cmake = read("src/CMakeLists.txt")
+    tests_cmake = read("tests/CMakeLists.txt")
+    add(
+        checks,
+        "p3:legacy-core-not-default-subdir",
+        "if(BOOST_BUILD_V1_LEGACY_CORE OR BOOST_BUILD_V1_LEGACY_EXAMPLES OR BOOST_BUILD_V1_LEGACY_TESTS)" in src_cmake
+        and "add_subdirectory(game)" in src_cmake,
+        "src/game is only built behind legacy surface switches",
+    )
+    add(
+        checks,
+        "p3:legacy-tests-not-default-subdir",
+        "if(BOOST_BUILD_V1_LEGACY_TESTS)" in tests_cmake,
+        "root v1 unit/integration tests are only built behind BOOST_BUILD_V1_LEGACY_TESTS",
+    )
 
 
 def main() -> int:

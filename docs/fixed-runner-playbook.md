@@ -8,6 +8,14 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs
 
 容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。Windows/macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
 
+Ubuntu fixed-runner 建议同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移：
+
+```bash
+python scripts/bootstrap_conan.py
+python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Release --without-sqlite
+conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release --build=missing -s build_type=Release
+```
+
 ## N0 统一约定
 
 从 N0 开始，固定 runner 相关 summary 统一要求：

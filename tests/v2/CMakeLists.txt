@@ -25,6 +25,7 @@ add_executable(project_v2_unit_tests
     unit/gateway_response_parser_test.cpp
     unit/io_engine_test.cpp
     unit/json_file_store_test.cpp
+    unit/legacy_persistence_bridge_test.cpp
     unit/player_actor_test.cpp
     unit/room_actor_test.cpp
     unit/service_boundary_test.cpp
@@ -52,6 +53,7 @@ add_executable(project_v2_unit_tests
     unit/battle_replay_test.cpp
     unit/reconnect_test.cpp
     unit/redis_persistence_test.cpp
+    unit/runtime_metrics_exporter_test.cpp
     unit/proto_schema_test.cpp
     unit/cluster_router_test.cpp
     unit/remote_actor_test.cpp

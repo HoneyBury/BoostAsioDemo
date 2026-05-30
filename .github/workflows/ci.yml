@@ -20,10 +20,28 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          clean: false
-          fetch-depth: 0
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $repo = "https://github.com/${{ github.repository }}.git"
+          if (Test-Path .git) {
+            git remote set-url origin $repo
+          } else {
+            git init .
+            git remote add origin $repo
+          }
+          for ($i = 1; $i -le 3; $i++) {
+            try {
+              git fetch --force --prune origin $env:GITHUB_SHA
+              git checkout --force $env:GITHUB_SHA
+              git clean -ffdx -e .sccache/ -e build/ -e build*/
+              git status --short --branch
+              break
+            } catch {
+              if ($i -eq 3) { throw }
+              Start-Sleep -Seconds (10 * $i)
+            }
+          }
 
       - name: Restore sccache cache
         uses: actions/cache@v4
@@ -115,10 +133,28 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          clean: false
-          fetch-depth: 0
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $repo = "https://github.com/${{ github.repository }}.git"
+          if (Test-Path .git) {
+            git remote set-url origin $repo
+          } else {
+            git init .
+            git remote add origin $repo
+          }
+          for ($i = 1; $i -le 3; $i++) {
+            try {
+              git fetch --force --prune origin $env:GITHUB_SHA
+              git checkout --force $env:GITHUB_SHA
+              git clean -ffdx -e .sccache/ -e build/ -e build*/
+              git status --short --branch
+              break
+            } catch {
+              if ($i -eq 3) { throw }
+              Start-Sleep -Seconds (10 * $i)
+            }
+          }
 
       - name: Restore sccache cache
         uses: actions/cache@v4

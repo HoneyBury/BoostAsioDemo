@@ -56,6 +56,90 @@ function(project_record_missing_conan_dependency dep_name)
     endif()
 endfunction()
 
+function(project_configure_local_openssl_root candidate_root out_var)
+    set(_configured FALSE)
+    if(NOT EXISTS "${candidate_root}")
+        set(${out_var} FALSE PARENT_SCOPE)
+        return()
+    endif()
+
+    set(_include_dir "${candidate_root}/include")
+    if(NOT EXISTS "${_include_dir}/openssl/ssl.h")
+        set(${out_var} FALSE PARENT_SCOPE)
+        return()
+    endif()
+
+    set(_lib_candidates
+        "${candidate_root}/lib"
+        "${candidate_root}/lib64"
+        "${candidate_root}/lib/x86_64-linux-gnu"
+        "${candidate_root}/lib/aarch64-linux-gnu"
+        "${candidate_root}/bin"
+    )
+    find_library(_ssl_library
+        NAMES ssl libssl
+        PATHS ${_lib_candidates}
+        NO_DEFAULT_PATH
+    )
+    find_library(_crypto_library
+        NAMES crypto libcrypto
+        PATHS ${_lib_candidates}
+        NO_DEFAULT_PATH
+    )
+    if(_ssl_library AND _crypto_library)
+        set(OPENSSL_ROOT_DIR "${candidate_root}" CACHE PATH "OpenSSL root directory" FORCE)
+        set(OPENSSL_INCLUDE_DIR "${_include_dir}" CACHE PATH "OpenSSL include directory" FORCE)
+        set(OPENSSL_SSL_LIBRARY "${_ssl_library}" CACHE FILEPATH "OpenSSL SSL library" FORCE)
+        set(OPENSSL_CRYPTO_LIBRARY "${_crypto_library}" CACHE FILEPATH "OpenSSL Crypto library" FORCE)
+        set(_configured TRUE)
+    endif()
+    unset(_ssl_library CACHE)
+    unset(_crypto_library CACHE)
+    set(${out_var} "${_configured}" PARENT_SCOPE)
+endfunction()
+
+function(project_ensure_openssl)
+    if(TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
+        message(STATUS "OpenSSL target already available")
+        return()
+    endif()
+
+    # Conan exports OpenSSL config packages. Try CONFIG first so a Conan
+    # toolchain remains authoritative when BOOST_USE_CONAN_DEPS=ON.
+    find_package(OpenSSL CONFIG QUIET)
+    if(TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
+        message(STATUS "Using OpenSSL from CMake config package")
+        return()
+    endif()
+
+    find_package(OpenSSL QUIET)
+    if(TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
+        message(STATUS "Using system OpenSSL: ${OPENSSL_VERSION}")
+        return()
+    endif()
+
+    set(_local_roots
+        "${THIRD_PARTY_DIR}/openssl"
+        "${THIRD_PARTY_DIR}/openssl-src"
+        "${THIRD_PARTY_CACHE_DIR}/openssl-src"
+        "${THIRD_PARTY_BINARY_CACHE_DIR}/openssl-src"
+    )
+    foreach(_local_root IN LISTS _local_roots)
+        project_configure_local_openssl_root("${_local_root}" _openssl_local_configured)
+        if(_openssl_local_configured)
+            message(STATUS "Using local OpenSSL installation: ${_local_root}")
+            find_package(OpenSSL REQUIRED)
+            return()
+        endif()
+    endforeach()
+
+    message(FATAL_ERROR
+        "OpenSSL was not found. Install libssl-dev/openssl-devel, enable "
+        "Conan with BOOST_USE_CONAN_DEPS=ON, set OPENSSL_ROOT_DIR, or provide "
+        "a local OpenSSL install under third_party/openssl with include/ and lib/."
+    )
+endfunction()
+
 if(BOOST_USE_CONAN_DEPS)
     find_package(fmt CONFIG QUIET)
     if(NOT fmt_FOUND)
@@ -187,7 +271,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
     # ---------------------------------------------------------------------------
     # OpenSSL (v3.0+ required for TLS/mTLS)
     # ---------------------------------------------------------------------------
-    find_package(OpenSSL REQUIRED)
+    project_ensure_openssl()
     message(STATUS "OpenSSL found: ${OPENSSL_VERSION}")
     message(STATUS "  include: ${OPENSSL_INCLUDE_DIR}")
     message(STATUS "  ssl:     ${OPENSSL_SSL_LIBRARY}")

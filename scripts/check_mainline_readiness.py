@@ -159,6 +159,12 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     add(checks, "p3:legacy-tests-default-off", 'option(BOOST_BUILD_V1_LEGACY_TESTS "Build legacy v1-root unit/integration tests" OFF)' in root_cmake, "legacy v1-root tests are opt-in")
     add(checks, "p3:sqlite-default-off", 'option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" OFF)' in root_cmake, "default mainline keeps SQLite opt-in")
 
+    deps_cmake = read("cmake/Dependencies.cmake")
+    third_party_readme = read("third_party/README.md")
+    add(checks, "p3:openssl-central-resolver", "function(project_ensure_openssl)" in deps_cmake, "OpenSSL resolution is centralized")
+    add(checks, "p3:openssl-conan-system-local", "find_package(OpenSSL CONFIG QUIET)" in deps_cmake and "find_package(OpenSSL QUIET)" in deps_cmake and '"${THIRD_PARTY_DIR}/openssl"' in deps_cmake, "OpenSSL supports Conan, system and local install fallback")
+    add(checks, "p3:openssl-third-party-doc", "OpenSSL 是例外" in third_party_readme and "Conan config package" in third_party_readme, "third_party docs explain OpenSSL fallback policy")
+
     src_cmake = read("src/CMakeLists.txt")
     tests_cmake = read("tests/CMakeLists.txt")
     add(

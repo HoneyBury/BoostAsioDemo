@@ -81,6 +81,18 @@ def main() -> int:
     )
     add(
         checks,
+        "workflow:release-baseline:conan-validation-default-on",
+        "enable_conan_validation:" in release and "default: true" in release and "Run Conan lockfile validation" in release,
+        "release-baseline runs lockfile-based Conan validation by default",
+    )
+    add(
+        checks,
+        "workflow:release-baseline:scheduled-conan-validation",
+        "github.event_name != 'workflow_dispatch' || inputs.enable_conan_validation" in release,
+        "scheduled release-baseline runs Conan validation unless manual dispatch explicitly disables it",
+    )
+    add(
+        checks,
         "workflow:long-soak:real-conan-validation-build",
         "build/conan-long-soak-capacity-cmake" in long_soak and "--target project_v2" in long_soak,
         "long-soak-capacity performs a lockfile-based Conan configure/build preflight",

@@ -66,7 +66,7 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 
 - `--no-remote` 只适合本地 Conan cache 已预热完成的固定 runner。
 - 如果 lockfile 生成阶段报依赖未解析，不应回退到“口头使用 Conan”；应显式接入内网 remote 或先预热缓存后再重跑。
-- 建议 `release-baseline.yml` 与 `long-soak-capacity.yml` 显式引用同一份 `conan_lockfile`，让 release/capacity/long-soak 证据绑定到同一批依赖声明。
+- `release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 都必须显式引用同一份 `conan_lockfile`，让 release/capacity/long-soak/production evidence 证据绑定到同一批依赖声明。`release-baseline.yml` 的 Conan validation 默认开启；只有在诊断非依赖问题时才临时关闭，并且不能把关闭后的结果作为依赖可复现证据。
 - 当前已观察到的外部阻塞特征包括：内网 mirror `getaddrinfo failed`、公网 `conancenter` 访问触发 Windows `WinError 10013`。遇到这两类错误时，应先修 runner 网络/DNS/socket 权限，而不是继续修改仓库脚本。
 
 ## 预检与失败归因
@@ -190,6 +190,16 @@ python3 scripts/render_production_readiness_report.py
 - `runtime/validation/r3-production-readiness-report-summary.json`
 
 报告中的 `Bounded local candidate evidence` 表示当前本机/有界证据是否健康；`Final production fixed-runner/pre-production readiness` 表示固定 runner / 预发证据是否已经满足投产准入。两者必须分开看，不能用前者替代最终投产审批。
+
+## 当前固定 Runner 退出条件
+
+本阶段完成标准不是“workflow 文件存在”，而是 Ubuntu fixed-runner 上形成真实 summary：
+
+- `conan-validate.yml` 使用 `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` 完成 `conan install` 与 Conan CMake `project_v2` 构建。
+- `release-baseline.yml` 在 `enable_conan_validation=true` 下完成 baseline 三轮，并归档 `runtime/validation/release-baseline-summary.json` 与 `runtime/perf/release-baseline/summary.json`。
+- `long-soak-capacity.yml` 完成 2h soak、capacity、business-capacity，并归档 `runtime/validation/long-soak-capacity-summary.json` 与 `runtime/validation/fixed-runner-release-capacity-summary.json`。
+- `production-evidence.yml` 完成当前 runner 能力对应的 production evidence，并归档 `runtime/validation/production-evidence-summary.json`。
+- `python3 scripts/check_production_evidence_manifest.py --require-fixed-runner` 通过。
 
 ## 推荐运行矩阵
 

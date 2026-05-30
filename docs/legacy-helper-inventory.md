@@ -55,6 +55,13 @@
 - 不得新增新的 raw JSON-only 业务消息类型；仅允许在上表列出的兼容窗口内继续保留既有路径
 - 后续 raw JSON 退场的主剩余面已收敛到 room governance / control-plane 风格消息与内部 Raft raw JSON RPC
 
+退场推进顺序：
+
+1. room governance / control-plane 风格消息先补 typed/generated contract 状态说明，不新增 raw JSON-only handler。
+2. 内部 Raft raw JSON RPC 继续作为内部 RPC 边界保留，迁移前必须有等价集群/恢复测试。
+3. 默认 full-flow 新增检查点必须优先走 schema-first/typed envelope，不得以 legacy raw JSON 作为新功能入口。
+4. 当五个服务域的剩余兼容窗口都有 typed/generated 替代和 full-flow 证据后，再评估默认禁用 legacy raw JSON 输入。
+
 ## Legacy 构建面
 
 | 入口/模块 | 当前状态 | 默认状态 | 备注 |

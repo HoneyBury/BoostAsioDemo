@@ -1,6 +1,6 @@
 # 固定 Runner 执行手册
 
-更新时间：2026-05-28（N0-N3）
+更新时间：2026-05-30（N0-N3 + Conan fixed-runner）
 
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
@@ -8,7 +8,7 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs
 
 容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。Windows/macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
 
-Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`。
+Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 都必须在正式门禁前执行 lockfile-based `conan install` + `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`。
 
 手动命令：
 
@@ -17,6 +17,24 @@ python scripts/bootstrap_conan.py
 python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Release --without-sqlite
 conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release --build=missing -s build_type=Release
 ```
+
+## Ubuntu Fixed-Runner 第一批执行矩阵
+
+当前 1-3 个月主线的第一批真实证据按以下顺序刷新。它们不能用本机 smoke 或 `--allow-missing` 结果替代。
+
+| 顺序 | Workflow | 关键输入 | 必须归档的 summary |
+| --- | --- | --- | --- |
+| 1 | `conan-validate.yml` | `runner=["self-hosted","linux","x64","release-baseline"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
+| 2 | `release-baseline.yml` | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
+| 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `runtime/validation/long-soak-capacity-summary.json`、`runtime/validation/fixed-runner-release-capacity-summary.json` |
+| 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `runtime/validation/production-evidence-summary.json`、`runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json` |
+
+通过判据：
+
+- 每个 workflow 的 Conan lockfile install/build 预检通过。
+- `release-baseline-summary.json`、`long-soak-capacity-summary.json`、`fixed-runner-release-capacity-summary.json`、`production-evidence-summary.json` 均为 `overall_pass=true`。
+- 投产准入检查必须运行不带 `--allow-missing` 的 `python scripts/check_validation_summary_contract.py`，并运行 `python scripts/check_production_evidence_manifest.py --require-fixed-runner`。
+- 如 fixed runner 缺 Redis、kind 或外部网络，summary 必须明确失败在 `preflight` 或 Conan remote/cache 阶段，不得把缺失环境解释为业务通过。
 
 ## N0 统一约定
 
@@ -81,11 +99,14 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ev
 | `perf_preset` | `baseline` | `capacity` |
 | `perf_repetitions` | `3` | `3` |
 | `perf_timeout_seconds` | `900` | `1800` |
+| `enable_conan_validation` | `true` | `true` |
+| `conan_lockfile` | `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` | 同 baseline |
 
 通过标准：
 
 - `runtime/validation/release-baseline-summary.json` 中 `passed=true`。
 - `runtime/perf/release-baseline/summary.json` 中 `release_gates.overall_pass=true`。
+- Conan validation preflight 中 lockfile-based `conan install` 和 `project_v2` 构建通过。
 - GitHub Step Summary 显示 R4、业务性能步骤均为 `PASS`。
 
 ## Specialized E2E

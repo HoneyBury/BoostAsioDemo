@@ -29,7 +29,7 @@
 | helper/legacy 状态 | typed envelope helper 已接入主线，且 login/room/battle 第二批主业务消息已进入 typed request/response；legacy raw JSON 仍存在显式兼容窗口，但已主要收缩到 room governance / control-plane 风格消息与内部 Raft RPC | `include/v2/service/envelope_adapter.h`, `tests/v2/unit/service_boundary_test.cpp`, `docs/legacy-helper-inventory.md`, `proto/README.md` |
 | CI 平台 | 主 CI 已包含 Ubuntu、macOS、Windows matrix，并使用 Ninja/CMake preset | `.github/workflows/ci.yml`, `CMakePresets.json` |
 | 性能门禁 | perf label 触发 per-commit smoke；release baseline、capacity、long soak 已有 workflow 或固定 runner 入口 | `.github/workflows/perf-commit-check.yml`, `.github/workflows/release-baseline.yml`, `.github/workflows/long-soak-capacity.yml` |
-| 依赖管理 | 仍以 CMake FetchContent/third_party 混合方式为主，尚未迁移到 vcpkg/Conan lockfile 模式 | `cmake/Dependencies.cmake`, `third_party/` |
+| 依赖管理 | 默认构建仍保留 CMake FetchContent/third_party fallback；Conan 2 `nosqlite` profile/lockfile 路径已经落仓并接入 fixed-runner workflow，下一步是用 Ubuntu fixed-runner 实跑结果把它提升为默认推荐依赖路径 | `conanfile.py`, `conan/README.md`, `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`, `.github/workflows/conan-validate.yml`, `.github/workflows/release-baseline.yml`, `.github/workflows/long-soak-capacity.yml` |
 | 编译缓存 | Windows 主流程已接入 `sccache` + `actions/cache`，但收益基线和多平台推广仍需继续治理 | `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/release-baseline.yml`, `.github/workflows/perf-commit-check.yml` |
 | 近期代码趋势 | 最近提交集中在 battle tick/projectile、room lifecycle、SDK API、部署文档和 Docker 构建修复 | `git log --oneline -n 8` |
 
@@ -42,7 +42,7 @@
 | G1 | 项目命名仍带 demo 色彩 | 根 README 标题仍是 `BoostAsioDemo`，CMake 描述仍偏 game server | 短期完成命名和描述收敛，明确企业级框架定位 |
 | G2 | gRPC/proto 尚未成为默认主链 | `BOOST_BUILD_GRPC=OFF`，gRPC Gateway 虽已覆盖 Room/Battle/Match/Leaderboard 的基础 RPC，但仍缺 streaming/push、SDK-integrated full-flow、TLS、RBAC 和 observability 证据 | 中期完成 generated proto/gRPC full-flow 和性能对照，再决定是否进入默认链路 |
 | G3 | helper/legacy 兼容层仍在主链 | `BackendEnvelope` 与 typed helper 是当前实际运行路径；主业务 typed 覆盖已扩到 login/room/battle 第二批消息，但 room governance / control-plane 风格消息与内部 Raft RPC 仍保留 raw JSON 路径 | 先完成剩余 control-plane / governance 面与内部 RPC 的边界收束，再逐步移除 legacy raw payload |
-| G4 | 依赖治理未标准化 | `third_party/`、FetchContent、系统包探测并存；当前已补 Conan profile/lock 入口，并打通 `nosqlite` 主线路径，但尚未成为默认依赖入口 | 中期迁移到 vcpkg 或 Conan，并建立 cache/lockfile/reproducible build |
+| G4 | 依赖治理正在从 fallback 迁向 Conan lockfile | `third_party/`、FetchContent、系统包探测仍作为 fallback 并存；Conan profile/lock 入口、Linux/Windows `nosqlite` lockfile 和 fixed-runner workflow 预检已落地，但仍缺 Ubuntu fixed-runner 真实 summary 作为默认推荐依据 | 短期优先完成 Ubuntu fixed-runner lockfile install、release baseline、long-soak/capacity 和 production evidence；通过后把 Conan `nosqlite` 提升为主线推荐路径 |
 | G5 | 编译加速尚未系统化收口 | Windows 主流程已启用 sccache，但收益基线、命中率跟踪和非 Windows 路径仍未统一 | 短期补齐 build-time 基线和可观测收益，继续保持 Ninja/sccache/cache key 纪律 |
 | G6 | 平台结论仍需固定 runner 沉淀 | CI 有 Ubuntu/macOS/Windows，但生产容量、long soak、TLS overhead 仍依赖固定 runner 后续刷新 | 中长期将固定 runner 结果纳入 release 准入和 readiness report |
 | G6.5 | 自动 CI 平台矩阵需要和当前在线 runner 一致 | 开发者可能只开启 1-2 台 runner，如果 workflow 固定全平台会导致无意义排队 | 短期引入仓库内版本化 runner matrix，按当前活跃机器提交配置 |

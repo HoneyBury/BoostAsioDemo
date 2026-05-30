@@ -31,10 +31,10 @@
 
 当前 CI/CD 平台选择：
 
-- 自动触发的 workflow 平台矩阵由仓库内的 `.github/runner-matrix.json` 决定。
-- 当前提交配置为 Windows-only，因此推送后默认只会触发 Windows 自托管 runner。
-- 固定 runner / production evidence / release-capacity 的默认事实源已切到 Linux/Ubuntu labels，见 `.github/runner-matrix.json` 的 `defaults` 与 `docs/fixed-runner-playbook.md`。
-- 当你切换到 macOS、Linux 或多平台联调时，只需要提交更新 `.github/runner-matrix.json`。
+- 普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。
+- `.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；`.github/workflows/ci.yml` 也只在 `v*` tag 或手动 dispatch 时运行 Linux Conan 主线验证。
+- Windows 构建、性能 smoke、nightly stability、fixed-runner evidence、release/capacity 等入口保留 `workflow_dispatch`，需要时手动触发；具体触发条件以 `.github/workflows/*.yml` 为准。
+- `.github/runner-matrix.json` 作为版本化 runner/默认标签配置源，用于记录当前 active runner 选择和 fixed-runner 默认标签；变更 tag 策略或 runner 拓扑时需要同步更新 workflow 与该文件。
 
 ## 常用验证入口
 

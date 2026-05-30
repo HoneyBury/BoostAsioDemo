@@ -184,7 +184,9 @@ void CombatSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) 
         auto damage = source_attack->damage;
         static thread_local v2::security::AntiCheatManager ac_manager;
         if (!ac_manager.validate_damage(damage, kMinDamage, kMaxDamage)) {
-            for (auto& report : ac_manager.pending_reports()) {
+            for (std::size_t report_index = 0;
+                 report_index < ac_manager.pending_reports().size();
+                 ++report_index) {
                 AUDIT_LOG("cheat_damage", "player=<unknown> damage=" + std::to_string(damage));
             }
             continue;

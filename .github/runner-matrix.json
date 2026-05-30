@@ -5,12 +5,14 @@
     "ci": {
       "build_and_test": [
         {
-          "name": "windows-self-hosted",
-          "platform": "windows",
-          "runs_on": "[\"self-hosted\",\"Windows\",\"X64\"]",
-          "configure_preset": "windows-ninja-debug",
-          "build_preset": "windows-ninja-debug",
-          "test_preset": "windows-ninja-debug"
+          "name": "linux-self-hosted",
+          "platform": "linux",
+          "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]",
+          "configure_preset": "release",
+          "build_preset": "release",
+          "test_preset": "release",
+          "conan_profile": "conan/profiles/linux-gcc-x64",
+          "conan_lockfile": "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
         }
       ],
       "multi_process": [

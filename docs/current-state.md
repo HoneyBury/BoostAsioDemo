@@ -5,7 +5,7 @@
 本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.4.0` 为准；提交状态以 `git HEAD` 为准。
 
 legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy-helper-inventory.md`。
-自动触发的 CI/CD 平台矩阵由 `.github/runner-matrix.json` 管理；当前提交配置为 Windows-only。固定 runner / production evidence / release-capacity 默认事实源则按同一文件的 `defaults` 收敛到 Linux/Ubuntu labels。
+普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。`.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；`.github/workflows/ci.yml` 也只在 `v*` tag 或手动 dispatch 时运行 Linux Conan 主线验证。`.github/runner-matrix.json` 作为版本化 runner/默认标签配置源；固定 runner / production evidence / release-capacity 默认事实源按同一文件的 `defaults` 收敛到 Linux/Ubuntu labels。Windows 构建、性能 smoke、nightly stability、fixed-runner evidence、release/capacity 等入口保留 `workflow_dispatch`，具体触发条件以 `.github/workflows/*.yml` 为准。
 
 ## 稳定能力
 

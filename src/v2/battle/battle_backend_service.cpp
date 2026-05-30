@@ -444,8 +444,9 @@ private:
 
         std::vector<v2::realtime::PlayerContext> players;
         for (const auto& pid : player_ids_json) {
-            players.push_back(
-                v2::realtime::PlayerContext{.user_id = pid.get<std::string>()});
+            v2::realtime::PlayerContext player;
+            player.user_id = pid.get<std::string>();
+            players.push_back(std::move(player));
         }
 
         // Create the instance via InstanceRuntime

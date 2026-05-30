@@ -85,7 +85,7 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 
 GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-evidence.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","Linux","X64"]`。
 
-自动触发的 CI/CD 平台矩阵由仓库内的 `.github/runner-matrix.json` 决定。建议把“当前常开机器”作为提交中的 active matrix，只在实际会在线的 runner 上开启自动流水线，避免 workflow 长时间排队等待离线 runner。
+普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。`.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；其它固定 runner、性能、稳定性和专项验证入口保留 `workflow_dispatch`，需要时手动触发。`.github/runner-matrix.json` 是版本化 runner/默认标签配置源，变更 tag 策略或 runner 拓扑时需要同步更新 workflow 与该文件，避免真实触发行为和文档配置漂移。
 
 ## Release Baseline
 

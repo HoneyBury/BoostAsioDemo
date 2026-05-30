@@ -5,8 +5,6 @@ env:
   CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
-  schedule:
-    - cron: "50 19 * * 4"
   workflow_dispatch:
     inputs:
       runner:

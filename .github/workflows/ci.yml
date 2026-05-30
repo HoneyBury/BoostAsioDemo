@@ -40,10 +40,10 @@ jobs:
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Show Python version
+        shell: powershell
+        run: |
+          python --version
 
       - name: Show CMake version
         run: cmake --version
@@ -74,7 +74,10 @@ jobs:
 
       - name: Reset sccache stats
         shell: powershell
-        run: sccache --zero-stats || true
+        run: |
+          if (Get-Command sccache -ErrorAction SilentlyContinue) {
+            sccache --zero-stats
+          }
 
       - name: Configure
         run: cmake --preset windows-ninja-debug -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
@@ -94,7 +97,10 @@ jobs:
       - name: Show sccache stats (Windows)
         if: always() && runner.os == 'Windows'
         shell: powershell
-        run: sccache --show-stats || true
+        run: |
+          if (Get-Command sccache -ErrorAction SilentlyContinue) {
+            sccache --show-stats
+          }
 
       - name: Show sccache stats (non-Windows)
         if: always() && runner.os != 'Windows'
@@ -156,7 +162,10 @@ jobs:
       - name: Show sccache stats (Windows)
         if: always() && runner.os == 'Windows'
         shell: powershell
-        run: sccache --show-stats || true
+        run: |
+          if (Get-Command sccache -ErrorAction SilentlyContinue) {
+            sccache --show-stats
+          }
 
       - name: Show sccache stats (non-Windows)
         if: always() && runner.os != 'Windows'

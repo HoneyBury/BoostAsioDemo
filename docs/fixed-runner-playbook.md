@@ -8,7 +8,9 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs
 
 容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。Windows/macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
 
-Ubuntu fixed-runner 建议同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移：
+Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`。
+
+手动命令：
 
 ```bash
 python scripts/bootstrap_conan.py

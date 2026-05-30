@@ -170,6 +170,20 @@
 - `check_current_docs_install.py` 持续通过
 - 顶层 docs 不把 legacy/demo/实验面误写成当前默认能力
 
+## 2026-05-30 本轮收口
+
+本轮把 1-5 执行项推进到以下状态：
+
+1. Conan/SDK 依赖兼容：`project_boost_asio` 已统一承接 SDK 与 SDK tests 的 Boost.Asio 头文件路径；Conan Boost 目标优先使用 `Boost::headers`，避免误链 `boost::boost` 聚合库。
+2. Ubuntu fixed-runner 入口：`conan-validate.yml`、`release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 均默认指向 `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`。
+3. Workflow lockfile 消费：`long-soak-capacity.yml` 已从 lockfile hint 升级为真实 `conan install` + Conan CMake configure/build 预检；治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`。
+4. helper/raw JSON 退场准备：`check_legacy_helper_inventory.py` 现在要求文档明确剩余 raw JSON 仅限 room governance / control-plane 风格消息与内部 Raft raw JSON RPC，并继续禁止新增 raw JSON-only 业务 handler。
+5. gRPC 证据边界：`check_v3_grpc_poc_decision.py` 继续要求非登录路径证据作为下一步，同时保持 `defer_default_transport`。
+
+仍不能在本地伪造的退出条件：Ubuntu fixed-runner 上真实执行 lockfile-based `conan install`、release baseline、long-soak/capacity 和 production evidence，并归档对应 summary。
+
+本地治理允许用 `python3 scripts/check_validation_summary_contract.py --allow-missing` 验证 summary 契约形态；fixed-runner / 投产准入必须运行不带 `--allow-missing` 的严格检查，并要求真实 summary 存在。
+
 ## 当前明确不做
 
 - 不把 `AdminService` 迁入主线

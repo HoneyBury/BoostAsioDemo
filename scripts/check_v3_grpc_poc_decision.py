@@ -105,6 +105,7 @@ def validate_static_boundaries(checks: list[dict[str, Any]]) -> None:
     add(checks, "grpc benchmark uses real tcp io", "run_tcp_benchmark(std::uint16_t port" in grpc_benchmark and "BackendConnection conn" in grpc_benchmark and "conn.send_request(req)" in grpc_benchmark, "grpc vs tcp perf test uses real TCP backend requests")
     add(checks, "grpc benchmark uses real grpc io", "run_grpc_benchmark(std::uint16_t port" in grpc_benchmark and "Gateway::NewStub" in grpc_benchmark and "stub->RequestLogin(&ctx, req, &resp)" in grpc_benchmark, "grpc vs tcp perf test uses real gRPC RequestLogin calls")
     add(checks, "grpc benchmark remains login-only scope", "make_login_backend()" in grpc_benchmark and "GatewayGrpcServer" in grpc_benchmark, "grpc benchmark is real I/O but still limited to the currently implemented login path")
+    add(checks, "grpc non-login coverage documented as next evidence", "扩展到更多非登录路径" in read_text(ROOT / "docs/mainline-execution-plan.md") and "defer_default_transport" in read_text(ROOT / "docs/mainline-execution-plan.md"), "mainline plan requires non-login gRPC evidence while keeping default transport deferred")
 
 
 def validate_tcp_baseline(checks: list[dict[str, Any]], baseline_path: Path) -> None:

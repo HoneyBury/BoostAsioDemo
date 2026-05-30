@@ -7,6 +7,11 @@ add_executable(sdk_tests
     ../src/transport/connection_pool.cpp
 )
 target_link_libraries(sdk_tests PRIVATE boost_gateway_sdk boost_gateway_sdk_dll GTest::gtest_main)
+if(TARGET project_boost_asio)
+    target_link_libraries(sdk_tests PRIVATE project_boost_asio)
+elseif(TARGET boost::headers)
+    target_link_libraries(sdk_tests PRIVATE boost::headers)
+endif()
 if(COMMAND apply_project_warnings)
     apply_project_warnings(sdk_tests)
 endif()
@@ -31,7 +36,9 @@ target_include_directories(sdk_business_flow_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
         ${CMAKE_CURRENT_BINARY_DIR}/../include
 )
-if(TARGET boost::headers)
+if(TARGET project_boost_asio)
+    target_link_libraries(sdk_business_flow_tests PRIVATE project_boost_asio)
+elseif(TARGET boost::headers)
     target_link_libraries(sdk_business_flow_tests PRIVATE boost::headers)
 else()
     target_include_directories(sdk_business_flow_tests PRIVATE ${boost_SOURCE_DIR})

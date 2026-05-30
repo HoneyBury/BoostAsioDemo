@@ -2,6 +2,7 @@ name: Production Evidence
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
   schedule:
@@ -81,6 +82,21 @@ on:
         description: "Timeout for each P6 sub-gate"
         required: true
         default: "1200"
+      conan_profile:
+        description: "Repository Conan profile path for fixed-runner reproducibility preflight"
+        required: true
+        default: "conan/profiles/linux-gcc-x64"
+      conan_lockfile:
+        description: "Conan lockfile path relative to repo root for reproducible fixed-runner preflight"
+        required: true
+        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
+      conan_build_type:
+        description: "Conan preflight build type; keep Release for the Linux nosqlite lockfile"
+        required: true
+        default: "Release"
+        type: choice
+        options:
+          - Release
 
 permissions:
   contents: read
@@ -112,6 +128,19 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install conan
+          conan --version
+
       - name: Fixed runner preflight
         shell: bash
         run: |
@@ -129,6 +158,31 @@ jobs:
             args+=(--require-kind)
           fi
           python "${args[@]}"
+
+      - name: Conan lockfile install preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/bootstrap_conan.py
+          args=(conan install . --output-folder=build/conan-production-evidence --build=missing -s build_type=${{ inputs.conan_build_type || 'Release' }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
+          if [ -n "${{ inputs.conan_lockfile }}" ]; then
+            test -f "${{ inputs.conan_lockfile }}"
+            args+=(--lockfile "${{ inputs.conan_lockfile }}")
+          fi
+          "${args[@]}"
+
+      - name: Configure Conan validation build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/conan-production-evidence-cmake -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DENABLE_TESTING=OFF \
+            -DCMAKE_BUILD_TYPE=${{ inputs.conan_build_type || 'Release' }} \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-production-evidence/build/${{ inputs.conan_build_type || 'Release' }}/generators/conan_toolchain.cmake
+
+      - name: Build Conan validation target
+        run: cmake --build build/conan-production-evidence-cmake --parallel --target project_v2
 
       - name: Configure
         run: cmake --preset ${{ inputs.configure_preset || 'default' }}

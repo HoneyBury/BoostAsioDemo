@@ -40,9 +40,15 @@ if(NOT TARGET nlohmann_json::nlohmann_json AND NOT BOOST_USE_CONAN_DEPS)
 endif()
 
 set(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT "")
-if(DEFINED nlohmann_json_SOURCE_DIR AND EXISTS "${nlohmann_json_SOURCE_DIR}/include/nlohmann/json.hpp")
+foreach(_boost_gateway_sdk_json_candidate IN LISTS nlohmann_json_INCLUDE_DIRS nlohmann_json_INCLUDE_DIR)
+    if(EXISTS "${_boost_gateway_sdk_json_candidate}/nlohmann/json.hpp")
+        set(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT "${_boost_gateway_sdk_json_candidate}")
+        break()
+    endif()
+endforeach()
+if(NOT BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT AND DEFINED nlohmann_json_SOURCE_DIR AND EXISTS "${nlohmann_json_SOURCE_DIR}/include/nlohmann/json.hpp")
     set(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT "${nlohmann_json_SOURCE_DIR}/include")
-elseif(TARGET nlohmann_json::nlohmann_json)
+elseif(NOT BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT AND TARGET nlohmann_json::nlohmann_json)
     get_target_property(_boost_gateway_sdk_json_include_dirs nlohmann_json::nlohmann_json INTERFACE_INCLUDE_DIRECTORIES)
     foreach(_boost_gateway_sdk_json_dir IN LISTS _boost_gateway_sdk_json_include_dirs)
         if(EXISTS "${_boost_gateway_sdk_json_dir}/nlohmann/json.hpp")
@@ -104,16 +110,18 @@ target_include_directories(boost_gateway_sdk_dll
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
 )
-if(TARGET boost::headers)
+if(TARGET project_boost_asio)
+    target_link_libraries(boost_gateway_sdk_dll PRIVATE project_boost_asio)
+elseif(TARGET boost::headers)
     target_link_libraries(boost_gateway_sdk_dll PRIVATE boost::headers)
 else()
     target_include_directories(boost_gateway_sdk_dll PRIVATE ${boost_SOURCE_DIR})
+    target_compile_definitions(boost_gateway_sdk_dll
+        PRIVATE
+            BOOST_ALL_NO_LIB
+            BOOST_ERROR_CODE_HEADER_ONLY
+    )
 endif()
-target_compile_definitions(boost_gateway_sdk_dll
-    PRIVATE
-        BOOST_ALL_NO_LIB
-        BOOST_ERROR_CODE_HEADER_ONLY
-)
 if(WIN32)
     target_compile_definitions(boost_gateway_sdk_dll PRIVATE _WIN32_WINNT=0x0A00)
 endif()
@@ -126,7 +134,11 @@ target_include_directories(boost_gateway_sdk
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/boost_gateway>
 )
 
-if(TARGET boost::headers)
+if(TARGET project_boost_asio)
+    target_link_libraries(boost_gateway_sdk PRIVATE $<BUILD_INTERFACE:project_boost_asio>)
+    target_compile_definitions(boost_gateway_sdk PUBLIC
+        BOOST_ALL_NO_LIB BOOST_ERROR_CODE_HEADER_ONLY)
+elseif(TARGET boost::headers)
     target_link_libraries(boost_gateway_sdk PUBLIC boost::headers)
 else()
     target_include_directories(boost_gateway_sdk PUBLIC

@@ -26,6 +26,9 @@ REQUIRED_DOC_TOKENS = (
     "login/room/battle/match/leaderboard",
     "服务级 handler coverage matrix",
     "typed response wrap",
+    "room governance / control-plane",
+    "内部 Raft raw JSON RPC",
+    "不得新增新的 raw JSON-only 业务消息类型",
 )
 
 REQUIRED_REFERENCES = (

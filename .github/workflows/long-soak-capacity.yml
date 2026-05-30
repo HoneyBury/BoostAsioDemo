@@ -2,6 +2,7 @@ name: Long Soak Capacity
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
   schedule:
@@ -90,6 +91,19 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install conan
+          conan --version
+
       - name: Fixed runner preflight
         shell: bash
         run: |
@@ -99,16 +113,33 @@ jobs:
             --build-dir "${{ inputs.build_dir || 'build/release' }}" \
             --summary-path runtime/validation/long-soak-capacity-preflight-summary.json
 
-      - name: Configure
-        run: cmake --preset ${{ inputs.configure_preset || 'release' }}
-
-      - name: Conan lockfile hint
-        if: inputs.conan_lockfile != ''
+      - name: Conan lockfile install preflight
         shell: bash
         run: |
           set -euo pipefail
-          test -f "${{ inputs.conan_lockfile }}"
-          echo "Using fixed-runner Conan lockfile: ${{ inputs.conan_lockfile }}"
+          python scripts/bootstrap_conan.py
+          args=(conan install . --output-folder=build/conan-long-soak-capacity --build=missing -s build_type=${{ inputs.configuration || 'Release' }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
+          if [ -n "${{ inputs.conan_lockfile }}" ]; then
+            test -f "${{ inputs.conan_lockfile }}"
+            args+=(--lockfile "${{ inputs.conan_lockfile }}")
+          fi
+          "${args[@]}"
+
+      - name: Configure Conan validation build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/conan-long-soak-capacity-cmake -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DENABLE_TESTING=OFF \
+            -DCMAKE_BUILD_TYPE=${{ inputs.configuration || 'Release' }} \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-long-soak-capacity/build/${{ inputs.configuration || 'Release' }}/generators/conan_toolchain.cmake
+
+      - name: Build Conan validation target
+        run: cmake --build build/conan-long-soak-capacity-cmake --parallel --target project_v2
+
+      - name: Configure
+        run: cmake --preset ${{ inputs.configure_preset || 'release' }}
 
       - name: Build validation targets
         run: cmake --build ${{ inputs.build_dir || 'build/release' }} --config ${{ inputs.configuration || 'Release' }}

@@ -19,6 +19,7 @@ Canonical groups migrated so far:
 - CI/CD runner matrix helper: `scripts/tools/read_runner_matrix.py`
 - Conan bootstrap helper: `scripts/tools/bootstrap_conan.py`
 - Conan lockfile helper: `scripts/tools/generate_conan_lock.py`
+- Conan lockfile workflow gate: `scripts/check_conan_lockfile_workflows.py`
 
 Use these stable public entrypoints first:
 

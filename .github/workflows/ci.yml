@@ -28,9 +28,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-default-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
           restore-keys: |
-            sccache-${{ runner.os }}-default-
+            sccache-${{ runner.os }}-release-
             sccache-${{ runner.os }}-
 
       - name: Show tool versions
@@ -67,7 +67,7 @@ jobs:
             -o "&:with_sqlite=False" \
             --output-folder=build/conan-ci \
             --build=missing \
-            -s build_type=Debug
+            -s build_type=Release
 
       - name: Detect sccache
         id: sccache
@@ -90,11 +90,11 @@ jobs:
         shell: bash
         run: |
           args=(
-            cmake -S . -B build/default -G Ninja
+            cmake -S . -B build/release -G Ninja
             -DBOOST_USE_CONAN_DEPS=ON
             -DENABLE_TESTING=ON
-            -DCMAKE_BUILD_TYPE=Debug
-            -DCMAKE_TOOLCHAIN_FILE=build/conan-ci/build/Debug/generators/conan_toolchain.cmake
+            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-ci/build/Release/generators/conan_toolchain.cmake
           )
           if [ "${{ steps.sccache.outputs.available }}" = "true" ]; then
             args+=(-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache)
@@ -103,15 +103,15 @@ jobs:
 
       - name: Build
         shell: bash
-        run: cmake --build --preset default --parallel
+        run: cmake --build build/release --parallel
 
       - name: Test
         shell: bash
-        run: ctest --preset default --timeout 300
+        run: ctest --test-dir build/release --output-on-failure --timeout 300
 
       - name: R4 contract gate
         shell: bash
-        run: python3 scripts/verify_r4_contract.py --build-dir build/default --skip-build --skip-arch-baseline --configuration Debug
+        run: python3 scripts/verify_r4_contract.py --build-dir build/release --skip-build --skip-arch-baseline --configuration Release
 
       - name: Monitoring operability gate
         shell: bash

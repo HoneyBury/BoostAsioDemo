@@ -3,7 +3,6 @@ name: CI
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   SCCACHE_DIR: ${{ github.workspace }}/.sccache
-  BOOST_CONAN_VALIDATE: "false"
   CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
@@ -15,202 +14,69 @@ permissions:
   contents: read
 
 jobs:
-  build-and-test:
-    runs-on: ["self-hosted", "Windows", "X64"]
+  linux-build-and-test:
+    runs-on: ["self-hosted", "Linux", "X64"]
 
     steps:
       - name: Checkout
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $repo = "https://github.com/${{ github.repository }}.git"
-          if (Test-Path .git) {
-            git remote set-url origin $repo
-          } else {
-            git init .
-            git remote add origin $repo
-          }
-          for ($i = 1; $i -le 3; $i++) {
-            try {
-              git fetch --force --prune origin $env:GITHUB_SHA
-              git checkout --force $env:GITHUB_SHA
-              git clean -ffdx -e .sccache/ -e build/ -e build*/
-              git status --short --branch
-              break
-            } catch {
-              if ($i -eq 3) { throw }
-              Start-Sleep -Seconds (10 * $i)
-            }
-          }
+        uses: actions/checkout@v4
+        with:
+          clean: false
+          fetch-depth: 0
 
       - name: Restore sccache cache
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-windows-ninja-debug-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          key: sccache-${{ runner.os }}-default-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
           restore-keys: |
-            sccache-${{ runner.os }}-windows-ninja-debug-
+            sccache-${{ runner.os }}-default-
             sccache-${{ runner.os }}-
 
-      - name: Show Ninja version
-        shell: powershell
-        run: ninja --version
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Show Python version
-        shell: powershell
+      - name: Show tool versions
+        shell: bash
         run: |
-          python --version
+          set -euo pipefail
+          cmake --version
+          ninja --version
+          python3 --version
 
-      - name: Show CMake version
-        run: cmake --version
-
-      - name: Install sccache
-        shell: powershell
+      - name: Ensure sccache
+        shell: bash
         run: |
-          choco install sccache -y --no-progress
+          set -euo pipefail
+          if command -v sccache >/dev/null 2>&1; then
+            sccache --version
+            exit 0
+          fi
+          cargo install sccache
           sccache --version
-
-      - name: Install Conan
-        if: env.BOOST_CONAN_VALIDATE == 'true'
-        shell: powershell
-        run: |
-          python -m pip install --upgrade pip
-          pip install conan
-          conan --version
-
-      - name: Conan dependency PoC
-        if: env.BOOST_CONAN_VALIDATE == 'true'
-        shell: powershell
-        run: |
-          python scripts/bootstrap_conan.py
-          # This stays opt-in because some runners may block direct conancenter access.
-          conan install . --profile:host conan/profiles/windows-msvc-x64 --profile:build conan/profiles/windows-msvc-x64 --lockfile conan/locks/windows-msvc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
-          cmake -S . -B build/windows-ninja-debug-conan -G Ninja -DBOOST_USE_CONAN_DEPS=ON -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
-          cmake --build build/windows-ninja-debug-conan --parallel --target project_v2
 
       - name: Reset sccache stats
-        shell: powershell
-        run: |
-          if (Get-Command sccache -ErrorAction SilentlyContinue) {
-            sccache --zero-stats
-          }
+        shell: bash
+        run: sccache --zero-stats || true
 
       - name: Configure
-        run: cmake --preset windows-ninja-debug -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        shell: bash
+        run: cmake --preset default -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build
-        run: cmake --build --preset windows-ninja-debug --parallel
+        shell: bash
+        run: cmake --build --preset default --parallel
 
       - name: Test
-        run: ctest --preset windows-ninja-debug --timeout 300
+        shell: bash
+        run: ctest --preset default --timeout 300
 
       - name: R4 contract gate
-        run: python scripts/verify_r4_contract.py --build-dir build/windows-ninja-debug --skip-build --skip-arch-baseline --configuration Debug
+        shell: bash
+        run: python3 scripts/verify_r4_contract.py --build-dir build/default --skip-build --skip-arch-baseline --configuration Debug
 
       - name: Monitoring operability gate
-        run: python scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
-
-      - name: Show sccache stats (Windows)
-        if: always() && runner.os == 'Windows'
-        continue-on-error: true
-        shell: powershell
-        run: |
-          if (Get-Command sccache -ErrorAction SilentlyContinue) {
-            sccache --show-stats
-          }
-
-      - name: Show sccache stats (non-Windows)
-        if: always() && runner.os != 'Windows'
         shell: bash
-        run: sccache --show-stats || true
+        run: python3 scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
 
-  multi-process-build:
-    runs-on: ["self-hosted", "Windows", "X64"]
-    needs: build-and-test
-
-    steps:
-      - name: Checkout
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $repo = "https://github.com/${{ github.repository }}.git"
-          if (Test-Path .git) {
-            git remote set-url origin $repo
-          } else {
-            git init .
-            git remote add origin $repo
-          }
-          for ($i = 1; $i -le 3; $i++) {
-            try {
-              git fetch --force --prune origin $env:GITHUB_SHA
-              git checkout --force $env:GITHUB_SHA
-              git clean -ffdx -e .sccache/ -e build/ -e build*/
-              git status --short --branch
-              break
-            } catch {
-              if ($i -eq 3) { throw }
-              Start-Sleep -Seconds (10 * $i)
-            }
-          }
-
-      - name: Restore sccache cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-multi-process-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
-          restore-keys: |
-            sccache-${{ runner.os }}-multi-process-
-            sccache-${{ runner.os }}-
-
-      - name: Show Ninja version
-        shell: powershell
-        run: ninja --version
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Show CMake version
-        run: cmake --version
-
-      - name: Install sccache
-        shell: powershell
-        run: |
-          choco install sccache -y --no-progress
-          sccache --version
-
-      - name: Configure
-        run: cmake --preset windows-ninja-debug -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-
-      - name: Build all targets
-        run: cmake --build --preset windows-ninja-debug --parallel --target v2_gateway_demo v2_login_backend v2_room_backend v2_battle_backend v2_leaderboard_backend
-
-      - name: Verify binaries exist
-        run: |
-          python -c "
-          import os, sys
-          binaries = ['v2_gateway_demo', 'v2_login_backend', 'v2_room_backend', 'v2_battle_backend', 'v2_leaderboard_backend']
-          build_dir = 'build/windows-ninja-debug'
-          ext = '.exe'
-          missing = [b for b in binaries if not os.path.exists(os.path.join(build_dir, b + ext))]
-          if missing:
-              print(f'Missing binaries: {missing}')
-              sys.exit(1)
-          print(f'All {len(binaries)} binaries found in {build_dir}')
-          "
-
-      - name: Show sccache stats (Windows)
-        if: always() && runner.os == 'Windows'
-        continue-on-error: true
-        shell: powershell
-        run: |
-          if (Get-Command sccache -ErrorAction SilentlyContinue) {
-            sccache --show-stats
-          }
-
-      - name: Show sccache stats (non-Windows)
-        if: always() && runner.os != 'Windows'
+      - name: Show sccache stats
+        if: always()
         shell: bash
         run: sccache --show-stats || true
